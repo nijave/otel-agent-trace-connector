@@ -7,22 +7,29 @@ if [[ -z "${OPENAI_API_KEY:-}" ]]; then
 fi
 
 export E2E_CODEX_MODEL="${E2E_CODEX_MODEL:-gpt-5.1-codex-mini}"
-export E2E_CA_BUNDLE="${E2E_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
-if [[ ! -r "${E2E_CA_BUNDLE}" ]]; then
-  echo "E2E_CA_BUNDLE is not readable: ${E2E_CA_BUNDLE}" >&2
-  exit 2
+compose_files=(-f compose.yaml)
+if [[ -n "${E2E_CA_BUNDLE:-}" ]]; then
+  if [[ ! -f "${E2E_CA_BUNDLE}" || ! -r "${E2E_CA_BUNDLE}" ]]; then
+    echo "E2E_CA_BUNDLE is not a readable file: ${E2E_CA_BUNDLE}" >&2
+    exit 2
+  fi
+  compose_files+=(-f compose.ca.yaml)
 fi
 
 export E2E_RUN_ID="${E2E_RUN_ID:-codex-otel-$(date +%s)-$$}"
 mkdir -p .e2e-output
 rm -f .e2e-output/raw-logs.json .e2e-output/raw-traces.json .e2e-output/canonical-traces.json
 
+run_compose() {
+  docker compose "${compose_files[@]}" "$@"
+}
+
 cleanup() {
-  docker compose down --remove-orphans
+  run_compose down --remove-orphans
 }
 trap cleanup EXIT
 
-docker compose build
-docker compose up --detach --wait collector
-docker compose run --rm --no-deps codex
-docker compose run --rm --no-deps validator
+run_compose build
+run_compose up --detach --wait collector
+run_compose run --rm --no-deps codex
+run_compose run --rm --no-deps validator

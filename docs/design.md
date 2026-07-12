@@ -249,14 +249,13 @@ request. It:
 The agent process has a configurable ten-minute default timeout so retries or
 transport stalls cannot leave an unbounded paid session running.
 
-The runner pins `gpt-5.1-codex-mini` by default to minimize live-test cost. It
-also mounts the host CA bundle into the Codex container and sets
-`SSL_CERT_FILE`, preserving TLS verification while supporting managed trust
-roots that are absent from the base image. Both defaults remain configurable
-for environments with different model access or CA-bundle locations. Before
-execution, the ephemeral runner uses Codex's noninteractive API-key login so the
-pinned CLI attaches the supplied key; the credential store is discarded with
-the runner container.
+The runner pins `gpt-5.1-codex-mini` by default to minimize live-test cost. Its
+image installs Debian's standard public CA bundle rather than assuming a host
+path. An optional Compose override mounts a managed/private PEM bundle, which
+the runner appends to the image roots before setting `SSL_CERT_FILE`; it never
+disables verification or replaces public roots. Before execution, the ephemeral
+runner uses Codex's noninteractive API-key login so the pinned CLI attaches the
+supplied key; the credential store is discarded with the runner container.
 
 The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.

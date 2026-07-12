@@ -1,6 +1,10 @@
 FROM node:24-bookworm-slim
 
 ARG CODEX_VERSION=0.144.1
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install --global "@openai/codex@${CODEX_VERSION}"
 
 RUN mkdir -p /codex-home /work
