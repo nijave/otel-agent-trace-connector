@@ -260,6 +260,22 @@ supplied key; the credential store is discarded with the runner container.
 The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.
 
+The Claude Code E2E is a separate Compose project so it cannot accidentally
+consume the Codex credential or inherit Codex service dependencies. It runs the
+current pinned Claude Code release in bare print mode with only Bash exposed,
+explicit tool approval, bounded turns, a hard dollar ceiling, no session
+persistence, and the same timeout/CA strategy as Codex. Claude exports only beta
+traces; content-bearing telemetry gates remain disabled. Validation requires
+both the untouched native hierarchy and its normalized counterpart, including
+the interaction, LLM request, and Bash tool spans. The live Claude test is
+prepared but intentionally unrun.
+
+CI never runs either paid E2E. It compiles their runners and validator, builds
+all images, validates both Compose graphs and Collector configurations, and
+runs normal plus race-enabled tests. Tags are released by GoReleaser after OCB
+generates the custom Collector main package; release output is kept separate
+from OCB's generated `dist` source tree.
+
 The unique run marker is added by the Collector resource processor before
 correlation. Codex constructs a fixed SDK resource and does not currently honor
 `OTEL_RESOURCE_ATTRIBUTES`, so relying on the agent container environment would

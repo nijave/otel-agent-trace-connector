@@ -1,0 +1,6 @@
+services:
+  claude:
+    environment:
+      E2E_EXTRA_CA_BUNDLE: /etc/ssl/certs/e2e-extra-ca-bundle.pem
+    volumes:
+      - "${E2E_CA_BUNDLE:?set E2E_CA_BUNDLE to an absolute PEM bundle path}:/etc/ssl/certs/e2e-extra-ca-bundle.pem:ro"

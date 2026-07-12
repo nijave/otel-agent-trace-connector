@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Check shell syntax
+        run: |
+          bash -n scripts/e2e.sh scripts/e2e-claude.sh
+          sh -n e2e/codex/run.sh e2e/claude/run.sh
+      - name: Lint shell scripts
+        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh e2e/codex/run.sh e2e/claude/run.sh
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go test -race ./...
+
+  build:
+    name: Build and validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build custom Collector
+        run: go run go.opentelemetry.io/collector/cmd/builder@v0.156.0 --config builder-config.yaml
+      - name: Validate Collector configurations
+        env:
+          AWS_REGION: us-east-1
+          E2E_RUN_ID: ci-validation
+          OTEL_QUEUE_DIRECTORY: /tmp/otelcol-queue
+          OTEL_QUEUE_MAX_SIZE_BYTES: "10485760"
+          OTEL_S3_BUCKET: validation-only
+        run: |
+          ./dist/otelcol-coding-agents validate --config collector-config.yaml
+          ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
+      - name: Validate Compose configurations
+        env:
+          ANTHROPIC_API_KEY: validation-only
+          E2E_RUN_ID: ci-validation
+          OPENAI_API_KEY: validation-only
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.claude.yaml config --quiet
+      - name: Build container images
+        run: |
+          docker build --tag otelcol-coding-agents:ci .
+          docker build --tag codex-e2e:ci e2e/codex
+          docker build --tag claude-e2e:ci e2e/claude
+          docker build --file e2e/validator/Dockerfile --tag trace-validator:ci .
+      - name: Verify GoReleaser configuration
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.17.0
+          args: check

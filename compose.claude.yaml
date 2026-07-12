@@ -1,0 +1,57 @@
+services:
+  collector:
+    build:
+      context: .
+      args:
+        OCB_VERSION: "0.156.0"
+    volumes:
+      - ./.e2e-output:/output
+    environment:
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:13133/"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  claude:
+    build:
+      context: e2e/claude
+      args:
+        CLAUDE_CODE_VERSION: "${CLAUDE_CODE_VERSION:-2.1.207}"
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required for the live Claude E2E test}"
+      CLAUDE_CODE_ENABLE_TELEMETRY: "1"
+      CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1"
+      E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
+      E2E_CLAUDE_MAX_BUDGET_USD: "${E2E_CLAUDE_MAX_BUDGET_USD:-0.25}"
+      E2E_CLAUDE_MAX_TURNS: "${E2E_CLAUDE_MAX_TURNS:-3}"
+      E2E_CLAUDE_MODEL: "${E2E_CLAUDE_MODEL:-haiku}"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
+      OTEL_LOGS_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://collector:4318/v1/traces
+      OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: http/protobuf
+      OTEL_TRACES_EXPORT_INTERVAL: "500"
+      # OTEL_LOG_* content gates are intentionally absent and therefore disabled.
+    depends_on:
+      collector:
+        condition: service_healthy
+
+  validator:
+    build:
+      context: .
+      dockerfile: e2e/validator/Dockerfile
+    environment:
+      E2E_AGENT: claude_code
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
+      RAW_TRACE_FILE: /output/raw-traces.json
+      TRACE_FILE: /output/canonical-traces.json
+    volumes:
+      - ./.e2e-output:/output:ro
+    depends_on:
+      collector:
+        condition: service_healthy
+      claude:
+        condition: service_completed_successfully

@@ -27,7 +27,7 @@ Repository layout:
 ├── config.go, factory.go       # public Collector component surface
 ├── internal/codex/             # stateful log correlation and trace building
 ├── internal/claude/            # stateless native-span normalization
-├── e2e/                        # real Codex runner and OTLP JSON validator
+├── e2e/                        # real agent runners and OTLP JSON validator
 ├── examples/otelcol-s3.yaml    # S3 export with persistent local queues
 ├── builder-config.yaml         # pinned OCB distribution
 ├── compose.ca.yaml             # optional managed/private CA overlay
@@ -214,6 +214,50 @@ When invoking Compose directly with a managed CA, add
 `E2E_CA_BUNDLE` first. The wrapper script selects that overlay automatically.
 
 The repository's automated verification does not run this paid test.
+
+## Live Claude Code E2E
+
+The Claude Compose test runs pinned Claude Code in recommended bare,
+non-interactive mode and requires exactly one Bash tool invocation. Native beta
+traces are exported over OTLP, preserved in the raw trace pipeline, normalized
+by `coding_agent/claude`, and checked together by the validator. Prompt text,
+tool arguments, tool output, and raw API bodies remain disabled.
+
+The setup is prepared but has not been run. When you intend to incur an
+Anthropic API charge:
+
+```bash
+export ANTHROPIC_API_KEY=...
+./scripts/e2e-claude.sh
+```
+
+Claude Code defaults to the `haiku` alias, at most three agent turns, a $0.25
+budget ceiling, and a ten-minute process timeout. Override those safeguards only
+when intentional:
+
+```bash
+E2E_CLAUDE_MODEL=haiku E2E_CLAUDE_MAX_TURNS=3 E2E_CLAUDE_MAX_BUDGET_USD=0.25 ./scripts/e2e-claude.sh
+```
+
+For a managed/private CA, set `E2E_CA_BUNDLE` just as for the Codex test. The
+Claude-specific Compose overlay appends it to the image's installed public
+roots without disabling certificate validation.
+
+## CI and releases
+
+GitHub Actions runs formatting, shell syntax, lint, vet, unit/integration tests,
+race tests, custom Collector builds, Collector/Compose validation, container
+builds, and GoReleaser configuration checks. Live agent E2Es remain manual and
+never receive credentials in CI.
+
+Pushing a semantic version tag such as `v0.1.0` runs GoReleaser and creates a
+GitHub release containing cross-platform custom Collector archives and SHA-256
+checksums:
+
+```bash
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
 
 ## References
 
