@@ -1,0 +1,210 @@
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package codingagentconnector
+
+import (
+	"context"
+	"sort"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/connector"
+	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.uber.org/zap"
+)
+
+type turnKey struct{ provider, conversationID string }
+
+type turnState struct {
+	key          turnKey
+	events       []agentEvent
+	resource     map[string]any
+	first        time.Time
+	last         time.Time
+	lastSeen     time.Time
+	completeSeen bool
+	promptSeen   bool
+	truncated    bool
+}
+
+type codingAgentConnector struct {
+	config *Config
+	set    connector.Settings
+	next   consumer.Traces
+
+	mu        sync.Mutex
+	turns     map[turnKey]*turnState
+	stop      chan struct{}
+	done      chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
+}
+
+func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
+	return &codingAgentConnector{
+		config: cfg, set: set, next: next, turns: make(map[turnKey]*turnState),
+		stop: make(chan struct{}), done: make(chan struct{}),
+	}
+}
+
+func (*codingAgentConnector) Capabilities() consumer.Capabilities {
+	return consumer.Capabilities{MutatesData: false}
+}
+
+func (c *codingAgentConnector) Start(context.Context, component.Host) error {
+	c.startOnce.Do(func() { go c.sweepLoop() })
+	return nil
+}
+
+func (c *codingAgentConnector) Shutdown(ctx context.Context) error {
+	c.stopOnce.Do(func() { close(c.stop) })
+	select {
+	case <-c.done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return c.flushAll(ctx, "shutdown")
+}
+
+func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) error {
+	events := make([]agentEvent, 0, logs.LogRecordCount())
+	for i := 0; i < logs.ResourceLogs().Len(); i++ {
+		rl := logs.ResourceLogs().At(i)
+		for j := 0; j < rl.ScopeLogs().Len(); j++ {
+			records := rl.ScopeLogs().At(j).LogRecords()
+			for k := 0; k < records.Len(); k++ {
+				if event, ok := parseEvent(records.At(k), rl.Resource()); ok {
+					events = append(events, event)
+				}
+			}
+		}
+	}
+	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
+	var ready []*turnState
+	now := time.Now()
+	c.mu.Lock()
+	for _, event := range events {
+		key := turnKey{provider: event.provider, conversationID: event.conversationID}
+		turn := c.turns[key]
+		if event.name == "codex.user_prompt" && turn != nil && turn.promptSeen {
+			delete(c.turns, key)
+			ready = append(ready, turn)
+			turn = nil
+		}
+		if turn == nil {
+			if len(c.turns) >= c.config.MaxActiveTurns {
+				ready = append(ready, c.evictOldestLocked())
+			}
+			turn = &turnState{key: key, first: event.timestamp, last: event.timestamp, lastSeen: now, resource: event.resource}
+			c.turns[key] = turn
+		}
+		turn.add(event, now, c.config.MaxEvents)
+	}
+	c.mu.Unlock()
+	return c.emit(ctx, ready, "superseded")
+}
+
+func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
+	if event.timestamp.Before(t.first) {
+		t.first = event.timestamp
+	}
+	if event.timestamp.After(t.last) {
+		t.last = event.timestamp
+	}
+	t.lastSeen = now
+	if event.name == "codex.user_prompt" {
+		t.promptSeen = true
+	}
+	if event.name == "codex.sse_event" && stringValue(event.attrs["event.kind"]) == "response.completed" {
+		t.completeSeen = true
+	}
+	if len(t.events) < maxEvents {
+		t.events = append(t.events, event)
+	} else {
+		t.truncated = true
+	}
+}
+
+func (c *codingAgentConnector) sweepLoop() {
+	interval := c.config.ReorderWindow / 2
+	if interval <= 0 || interval > time.Second {
+		interval = time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer func() { ticker.Stop(); close(c.done) }()
+	for {
+		select {
+		case now := <-ticker.C:
+			ready, reasons := c.collectReady(now)
+			for i, turn := range ready {
+				if err := c.next.ConsumeTraces(context.Background(), buildTrace(turn, reasons[i])); err != nil {
+					c.set.Logger.Error("failed to emit reconstructed coding-agent trace", zap.Error(err))
+				}
+			}
+		case <-c.stop:
+			return
+		}
+	}
+}
+
+func (c *codingAgentConnector) collectReady(now time.Time) ([]*turnState, []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var turns []*turnState
+	var reasons []string
+	for key, turn := range c.turns {
+		reason := ""
+		if turn.completeSeen && now.Sub(turn.lastSeen) >= c.config.ReorderWindow {
+			reason = "completed"
+		}
+		if now.Sub(turn.lastSeen) >= c.config.TurnTimeout {
+			reason = "timeout"
+		}
+		if reason != "" {
+			delete(c.turns, key)
+			turns = append(turns, turn)
+			reasons = append(reasons, reason)
+		}
+	}
+	return turns, reasons
+}
+
+func (c *codingAgentConnector) evictOldestLocked() *turnState {
+	var oldestKey turnKey
+	var oldest *turnState
+	for key, turn := range c.turns {
+		if oldest == nil || turn.lastSeen.Before(oldest.lastSeen) {
+			oldestKey, oldest = key, turn
+		}
+	}
+	delete(c.turns, oldestKey)
+	return oldest
+}
+
+func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, reason string) error {
+	for _, turn := range turns {
+		if turn == nil {
+			continue
+		}
+		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reason)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *codingAgentConnector) flushAll(ctx context.Context, reason string) error {
+	c.mu.Lock()
+	turns := make([]*turnState, 0, len(c.turns))
+	for key, turn := range c.turns {
+		turns = append(turns, turn)
+		delete(c.turns, key)
+	}
+	c.mu.Unlock()
+	return c.emit(ctx, turns, reason)
+}
+
+var _ connector.Logs = (*codingAgentConnector)(nil)

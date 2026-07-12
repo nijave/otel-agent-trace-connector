@@ -1,0 +1,7 @@
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[otel]
+environment = "e2e"
+log_user_prompt = false
+exporter = { otlp-http = { endpoint = "http://collector:4318/v1/logs", protocol = "binary" } }

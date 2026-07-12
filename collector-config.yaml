@@ -1,0 +1,53 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+connectors:
+  coding_agent:
+    turn_timeout: 30s
+    reorder_window: 2s
+    max_active_turns: 100
+    max_events_per_turn: 1000
+  coding_agent/claude:
+
+processors:
+  batch:
+    timeout: 500ms
+
+exporters:
+  file/raw:
+    path: /output/raw-logs.json
+    format: json
+    flush_interval: 100ms
+  file/canonical:
+    path: /output/canonical-traces.json
+    format: json
+    flush_interval: 100ms
+  file/raw-traces:
+    path: /output/raw-traces.json
+    format: json
+    flush_interval: 100ms
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs/vendor:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/raw, coding_agent]
+    traces/native:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/raw-traces, coding_agent/claude]
+    traces/canonical:
+      receivers: [coding_agent, coding_agent/claude]
+      processors: [batch]
+      exporters: [file/canonical]
