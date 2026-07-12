@@ -31,6 +31,7 @@ Repository layout:
 ├── examples/otelcol-s3.yaml    # S3 export with persistent local queues
 ├── builder-config.yaml         # pinned OCB distribution
 ├── compose.ca.yaml             # optional managed/private CA overlay
+├── compose.claude.aws-profile.yaml # optional AWS profile/SSO overlay
 └── collector-config.yaml       # raw and canonical pipelines
 ```
 
@@ -217,26 +218,94 @@ The repository's automated verification does not run this paid test.
 
 ## Live Claude Code E2E
 
-The Claude Compose test runs pinned Claude Code in recommended bare,
-non-interactive mode and requires exactly one Bash tool invocation. Native beta
-traces are exported over OTLP, preserved in the raw trace pipeline, normalized
-by `coding_agent/claude`, and checked together by the validator. Prompt text,
-tool arguments, tool output, and raw API bodies remain disabled.
+The Claude Compose test runs pinned Claude Code exclusively through Amazon
+Bedrock in recommended bare, non-interactive mode and requires exactly one Bash
+tool invocation. Native beta traces are preserved in the raw trace pipeline,
+normalized by `coding_agent/claude`, and checked together by the validator.
+Prompt text, tool arguments, tool output, and raw API bodies remain disabled.
+`ANTHROPIC_API_KEY` and the direct Anthropic API are not used.
+The Bedrock-backed live test is prepared but has not been run.
 
-The setup is prepared but has not been run. When you intend to incur an
-Anthropic API charge:
+Before running, submit the Anthropic model use-case form once in the Bedrock
+model catalog, ensure the model or inference profile is available in the chosen
+region, and grant the test principal these actions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:ListInferenceProfiles",
+      "bedrock:GetInferenceProfile",
+      "bedrock:CallWithBearerToken"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+Restrict `Resource` to approved foundation-model and inference-profile ARNs
+where IAM permits. Initial model subscription can additionally require the AWS
+Marketplace permissions documented in the official Claude Code Bedrock guide.
+
+### Recommended: short-lived Bedrock bearer token
+
+The recommended wrapper uses AWS's official token-generator library on the
+host. It resolves your normal host AWS credential chain, generates a
+region-bound Bedrock bearer token with a 15-minute default lifetime, and passes
+only that token to the agent container. AWS profiles, credential processes, SSO
+state, and role assumption never need to work inside the container.
+
+Install `uv`, authenticate the AWS CLI on the host, then run:
 
 ```bash
-export ANTHROPIC_API_KEY=...
+aws sso login --profile my-bedrock-profile
+AWS_PROFILE=my-bedrock-profile AWS_REGION=us-east-1 \
+  ./scripts/e2e-claude-bedrock.sh
+```
+
+Set `E2E_BEDROCK_TOKEN_TTL_SECONDS` between 900 and 43200 to request another
+lifetime. The actual key expires at the earlier of that duration or the source
+AWS session. The wrapper does not print or write the token; it passes the token
+as an environment variable to an ephemeral container. Treat local Docker access
+as privileged because Docker operators can inspect container environments.
+
+### Other credential-chain options
+
+Temporary AWS credentials can be supplied directly to the base runner:
+
+```bash
+export AWS_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_SESSION_TOKEN=...
 ./scripts/e2e-claude.sh
 ```
 
-Claude Code defaults to the `haiku` alias, at most three agent turns, a $0.25
-budget ceiling, and a ten-minute process timeout. Override those safeguards only
-when intentional:
+For a profile without generating a bearer token, authenticate on the host and
+run the base wrapper. It mounts `~/.aws` read-only, including the SSO cache:
 
 ```bash
-E2E_CLAUDE_MODEL=haiku E2E_CLAUDE_MAX_TURNS=3 E2E_CLAUDE_MAX_BUDGET_USD=0.25 ./scripts/e2e-claude.sh
+aws sso login --profile my-bedrock-profile
+AWS_PROFILE=my-bedrock-profile AWS_REGION=us-east-1 ./scripts/e2e-claude.sh
+```
+
+Set `E2E_AWS_CONFIG_DIR` if the configuration directory is not `~/.aws`.
+An already-generated Bedrock key can be supplied as
+`AWS_BEARER_TOKEN_BEDROCK`.
+
+The test defaults to the US cross-region Claude Haiku 4.5 inference profile,
+at most three agent turns, a $0.25 budget ceiling, and a ten-minute timeout.
+Override the model with another inference profile ID or application inference
+profile ARN that the account can invoke:
+
+```bash
+AWS_REGION=us-east-1 \
+  E2E_CLAUDE_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0 \
+  ./scripts/e2e-claude-bedrock.sh
 ```
 
 For a managed/private CA, set `E2E_CA_BUNDLE` just as for the Codex test. The
@@ -266,5 +335,7 @@ git push origin v0.1.0
 - [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - [Codex observability and telemetry](https://developers.openai.com/codex/config-advanced#observability-and-telemetry)
 - [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage)
+- [Claude Code on Amazon Bedrock](https://code.claude.com/docs/en/amazon-bedrock)
+- [Amazon Bedrock API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)
 - [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.156.0/exporter/awss3exporter)
 - [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.156.0/extension/storage/filestorage)

@@ -261,14 +261,19 @@ The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.
 
 The Claude Code E2E is a separate Compose project so it cannot accidentally
-consume the Codex credential or inherit Codex service dependencies. It runs the
-current pinned Claude Code release in bare print mode with only Bash exposed,
-explicit tool approval, bounded turns, a hard dollar ceiling, no session
-persistence, and the same timeout/CA strategy as Codex. Claude exports only beta
-traces; content-bearing telemetry gates remain disabled. Validation requires
-both the untouched native hierarchy and its normalized counterpart, including
-the interaction, LLM request, and Bash tool spans. The live Claude test is
-prepared but intentionally unrun.
+consume the Codex credential or inherit Codex service dependencies. It routes
+exclusively through the Bedrock Invoke API using an explicit region and pinned
+inference profile; direct Anthropic credentials are not accepted. The preferred
+host wrapper converts the normal AWS credential chain into a short-lived,
+region-bound Bedrock bearer token and passes only that token into the container.
+Direct temporary credentials and a read-only AWS profile/SSO overlay remain
+available as fallbacks. It runs the current pinned Claude Code release in bare
+print mode with only Bash exposed, explicit tool approval, bounded turns, a hard
+dollar ceiling, no session persistence, and the same timeout/CA strategy as
+Codex. Claude exports only beta traces; content-bearing telemetry gates remain
+disabled. Validation requires both the untouched native hierarchy and its
+normalized counterpart, including the interaction, LLM request, and Bash tool
+spans. The live Claude test is prepared but intentionally unrun.
 
 CI never runs either paid E2E. It compiles their runners and validator, builds
 all images, validates both Compose graphs and Collector configurations, and

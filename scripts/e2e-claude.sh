@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  echo "ANTHROPIC_API_KEY is required; this test runs a real paid Claude Code session." >&2
+if [[ -z "${AWS_REGION:-}" ]]; then
+  echo "AWS_REGION is required; this test runs a real paid Claude model on Bedrock." >&2
   exit 2
 fi
 
-export E2E_CLAUDE_MODEL="${E2E_CLAUDE_MODEL:-haiku}"
+export E2E_CLAUDE_MODEL="${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
 compose_files=(-f compose.claude.yaml)
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  export E2E_AWS_CONFIG_DIR="${E2E_AWS_CONFIG_DIR:-${HOME}/.aws}"
+  if [[ ! -d "${E2E_AWS_CONFIG_DIR}" || ! -r "${E2E_AWS_CONFIG_DIR}" ]]; then
+    echo "E2E_AWS_CONFIG_DIR is not a readable directory: ${E2E_AWS_CONFIG_DIR}" >&2
+    exit 2
+  fi
+  compose_files+=(-f compose.claude.aws-profile.yaml)
+fi
 if [[ -n "${E2E_CA_BUNDLE:-}" ]]; then
   if [[ ! -f "${E2E_CA_BUNDLE}" || ! -r "${E2E_CA_BUNDLE}" ]]; then
     echo "E2E_CA_BUNDLE is not a readable file: ${E2E_CA_BUNDLE}" >&2

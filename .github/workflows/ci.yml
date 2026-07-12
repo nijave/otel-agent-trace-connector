@@ -37,10 +37,12 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Check shell syntax
         run: |
-          bash -n scripts/e2e.sh scripts/e2e-claude.sh
+          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh
           sh -n e2e/codex/run.sh e2e/claude/run.sh
       - name: Lint shell scripts
-        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh e2e/codex/run.sh e2e/claude/run.sh
+        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh e2e/codex/run.sh e2e/claude/run.sh
+      - name: Check Python helper syntax
+        run: python3 scripts/bedrock-token_test.py
       - run: go vet ./...
       - run: go test ./...
       - run: go test -race ./...
@@ -68,12 +70,17 @@ jobs:
           ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
       - name: Validate Compose configurations
         env:
-          ANTHROPIC_API_KEY: validation-only
+          AWS_ACCESS_KEY_ID: validation-only
+          AWS_REGION: us-east-1
+          AWS_SECRET_ACCESS_KEY: validation-only
           E2E_RUN_ID: ci-validation
           OPENAI_API_KEY: validation-only
         run: |
           docker compose -f compose.yaml config --quiet
-          docker compose -f compose.claude.yaml config --quiet
+          docker compose -f compose.claude.yaml config --format json \
+            | jq -e '.services.claude.environment.CLAUDE_CODE_USE_BEDROCK == "1" and (.services.claude.environment | has("ANTHROPIC_API_KEY") | not)'
+          AWS_PROFILE=validation E2E_AWS_CONFIG_DIR=/tmp \
+            docker compose -f compose.claude.yaml -f compose.claude.aws-profile.yaml config --quiet
       - name: Build container images
         run: |
           docker build --tag otelcol-coding-agents:ci .

@@ -1,0 +1,8 @@
+services:
+  claude:
+    environment:
+      AWS_PROFILE: "${AWS_PROFILE:?set AWS_PROFILE for the mounted AWS configuration}"
+      AWS_SDK_LOAD_CONFIG: "1"
+    volumes:
+      # Includes config, credentials, and the IAM Identity Center cache.
+      - "${E2E_AWS_CONFIG_DIR:?set E2E_AWS_CONFIG_DIR to the host .aws directory}:/root/.aws:ro"
