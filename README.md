@@ -28,6 +28,7 @@ Repository layout:
 ├── internal/codex/             # stateful log correlation and trace building
 ├── internal/claude/            # stateless native-span normalization
 ├── e2e/                        # real Codex runner and OTLP JSON validator
+├── examples/otelcol-s3.yaml    # S3 export with persistent local queues
 ├── builder-config.yaml         # pinned OCB distribution
 └── collector-config.yaml       # raw and canonical pipelines
 ```
@@ -105,6 +106,40 @@ See the [official Codex observability documentation](https://developers.openai.c
 Claude Code should export its native beta traces directly. See the
 [official Claude Code monitoring documentation](https://code.claude.com/docs/en/monitoring-usage#traces-beta).
 
+### S3 reference deployment
+
+[`examples/otelcol-s3.yaml`](examples/otelcol-s3.yaml) is a production-oriented
+reference that stores raw logs, raw native traces, and canonical traces under
+separate S3 prefixes. Each S3 exporter uses a bounded `sending_queue` backed by
+the Collector file-storage extension, so completed batches waiting for S3 can
+survive a Collector restart.
+
+Build the distribution, provide a pre-existing bucket, and run the example:
+
+```bash
+builder --config builder-config.yaml
+export OTEL_S3_BUCKET=my-telemetry-bucket
+export AWS_REGION=us-east-1
+export OTEL_QUEUE_DIRECTORY=/var/lib/otelcol/sending-queue
+./dist/otelcol-coding-agents --config examples/otelcol-s3.yaml
+```
+
+Mount `OTEL_QUEUE_DIRECTORY` on durable local storage with sufficient capacity;
+an ephemeral container filesystem defeats restart recovery. Each Collector
+replica should have its own local volume. The default file-storage limit is 1
+GiB per queue database and can be changed with
+`OTEL_QUEUE_MAX_SIZE_BYTES`. Queue capacity is also bounded to 10,000 requests
+per exporter.
+
+The example intentionally contains no access keys. Supply credentials through
+the standard AWS SDK credential chain, preferably with a workload, task, or
+instance role granting only the required bucket access. `OTEL_S3_BASE_PREFIX`
+defaults to `coding-agent-otel` and can be overridden.
+
+The queues persist telemetry that has reached an exporter; they do not persist
+the connector's active Codex turn-correlation state. Also account for the raw
+telemetry privacy considerations below before enabling this configuration.
+
 ## Tests
 
 The normal test suite includes:
@@ -168,3 +203,5 @@ The repository's automated verification does not run this paid test.
 - [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - [Codex observability and telemetry](https://developers.openai.com/codex/config-advanced#observability-and-telemetry)
 - [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage)
+- [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.156.0/exporter/awss3exporter)
+- [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.156.0/extension/storage/filestorage)

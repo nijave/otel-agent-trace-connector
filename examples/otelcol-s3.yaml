@@ -1,0 +1,142 @@
+# Production-oriented reference configuration. AWS credentials are deliberately
+# absent: use the standard AWS SDK credential chain (prefer a workload role).
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage/sending_queue:
+    # Mount this directory on durable local storage. Do not use the container's
+    # ephemeral writable layer when restart-safe delivery is required.
+    directory: ${env:OTEL_QUEUE_DIRECTORY:-/var/lib/otelcol/sending-queue}
+    create_directory: true
+    max_size: ${env:OTEL_QUEUE_MAX_SIZE_BYTES:-1073741824}
+    fsync: true
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+connectors:
+  coding_agent:
+    turn_timeout: 10m
+    reorder_window: 30s
+    max_active_turns: 10000
+    max_events_per_turn: 1000
+  coding_agent/claude:
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  # Preserve the original vendor telemetry independently of normalization.
+  awss3/raw-logs:
+    s3uploader:
+      region: ${env:AWS_REGION:-us-east-1}
+      s3_bucket: ${env:OTEL_S3_BUCKET}
+      s3_base_prefix: ${env:OTEL_S3_BASE_PREFIX:-coding-agent-otel}
+      s3_prefix: raw/logs
+      s3_partition_format: year=%Y/month=%m/day=%d/hour=%H
+      s3_partition_timezone: UTC
+      file_prefix: telemetry
+      storage_class: INTELLIGENT_TIERING
+      compression: gzip
+      retry_mode: standard
+      retry_max_attempts: 5
+      retry_max_backoff: 30s
+      unique_key_func_name: uuidv7
+    marshaler: otlp_proto
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 0s
+    sending_queue:
+      enabled: true
+      storage: file_storage/sending_queue
+      num_consumers: 4
+      queue_size: 10000
+      sizer: requests
+
+  awss3/raw-traces:
+    s3uploader:
+      region: ${env:AWS_REGION:-us-east-1}
+      s3_bucket: ${env:OTEL_S3_BUCKET}
+      s3_base_prefix: ${env:OTEL_S3_BASE_PREFIX:-coding-agent-otel}
+      s3_prefix: raw/traces
+      s3_partition_format: year=%Y/month=%m/day=%d/hour=%H
+      s3_partition_timezone: UTC
+      file_prefix: telemetry
+      storage_class: INTELLIGENT_TIERING
+      compression: gzip
+      retry_mode: standard
+      retry_max_attempts: 5
+      retry_max_backoff: 30s
+      unique_key_func_name: uuidv7
+    marshaler: otlp_proto
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 0s
+    sending_queue:
+      enabled: true
+      storage: file_storage/sending_queue
+      num_consumers: 4
+      queue_size: 10000
+      sizer: requests
+
+  # Store connector-normalized traces without replacing either raw stream.
+  awss3/canonical-traces:
+    s3uploader:
+      region: ${env:AWS_REGION:-us-east-1}
+      s3_bucket: ${env:OTEL_S3_BUCKET}
+      s3_base_prefix: ${env:OTEL_S3_BASE_PREFIX:-coding-agent-otel}
+      s3_prefix: canonical/traces
+      s3_partition_format: year=%Y/month=%m/day=%d/hour=%H
+      s3_partition_timezone: UTC
+      file_prefix: telemetry
+      storage_class: INTELLIGENT_TIERING
+      compression: gzip
+      retry_mode: standard
+      retry_max_attempts: 5
+      retry_max_backoff: 30s
+      unique_key_func_name: uuidv7
+    marshaler: otlp_proto
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 0s
+    sending_queue:
+      enabled: true
+      storage: file_storage/sending_queue
+      num_consumers: 4
+      queue_size: 10000
+      sizer: requests
+
+service:
+  extensions: [health_check, file_storage/sending_queue]
+  pipelines:
+    # Fan out original Codex logs to S3 and to the normalizing connector.
+    logs/vendor:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awss3/raw-logs, coding_agent]
+    # Fan out original Claude/native traces to S3 and to the connector.
+    traces/native:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [awss3/raw-traces, coding_agent/claude]
+    # Store only generated/normalized traces in this third pipeline.
+    traces/canonical:
+      receivers: [coding_agent, coding_agent/claude]
+      processors: [batch]
+      exporters: [awss3/canonical-traces]

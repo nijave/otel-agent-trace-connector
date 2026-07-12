@@ -209,6 +209,24 @@ flushes. Background finalization logs downstream failures because the original
 receiver request is no longer active. Production deployments should use a
 reliable downstream exporter with queue/retry support.
 
+The S3 reference configuration fans out ingestion so normalization never
+replaces source data. It uses one exporter for each of raw Codex logs, raw
+Claude/native traces, and canonical normalized traces. Separate exporter
+instances give each stream an independent S3 prefix and persistent queue
+identity. Their `sending_queue` instances use the file-storage extension with
+`fsync` enabled, bounded request counts, bounded database size, and indefinite
+retry. This preserves completed batches across Collector restarts while bounding
+local disk use. Once either bound is exhausted, backpressure or data loss remains
+possible, so production capacity and alerting must be sized for the expected S3
+outage.
+
+File storage is deliberately local rather than shared. Each Collector replica
+must own a durable volume, and replacing a replica without its volume abandons
+that replica's queue. AWS credentials are resolved externally through the SDK
+credential chain; static secrets do not belong in the Collector configuration.
+Persistent exporter queues do not change the connector state contract above:
+an active Codex turn that has not yet been emitted can still be lost in a crash.
+
 ## Testing strategy
 
 The ordinary, non-billable suite covers parsing, validation, deterministic IDs,
