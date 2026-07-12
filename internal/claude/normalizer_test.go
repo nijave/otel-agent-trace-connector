@@ -1,22 +1,42 @@
-package codingagentconnector
+package claude
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/collector/component"
-	"go.opentelemetry.io/collector/connector"
+	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.uber.org/zap"
 )
+
+type traceSink struct {
+	mu     sync.Mutex
+	traces []ptrace.Traces
+}
+
+func (*traceSink) Capabilities() consumer.Capabilities { return consumer.Capabilities{} }
+func (s *traceSink) ConsumeTraces(_ context.Context, traces ptrace.Traces) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	copied := ptrace.NewTraces()
+	traces.CopyTo(copied)
+	s.traces = append(s.traces, copied)
+	return nil
+}
+func (s *traceSink) all() []ptrace.Traces {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]ptrace.Traces(nil), s.traces...)
+}
 
 func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
 	rs.Resource().Attributes().PutStr("service.name", "claude-code")
 	rs.Resource().Attributes().PutStr("service.version", "2.3.4")
+	rs.Resource().Attributes().PutStr("session.id", "session-1")
 	spans := rs.ScopeSpans().AppendEmpty().Spans()
 	traceID := pcommon.TraceID{1}
 	rootID := pcommon.SpanID{2}
@@ -24,7 +44,6 @@ func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.
 	root.SetName("claude_code.interaction")
 	root.SetTraceID(traceID)
 	root.SetSpanID(rootID)
-	root.Attributes().PutStr("session.id", "session-1")
 	llm := spans.AppendEmpty()
 	llm.SetName("claude_code.llm_request")
 	llm.SetTraceID(traceID)
@@ -39,7 +58,7 @@ func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.
 	tool.Attributes().PutStr("tool_name", "Bash")
 
 	sink := &traceSink{}
-	normalizer := &claudeTraceNormalizer{next: sink}
+	normalizer := New(sink)
 	require.NoError(t, normalizer.ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	output := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
@@ -57,13 +76,28 @@ func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.
 	require.Equal(t, "claude_code.interaction", input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Name())
 }
 
-func TestFactoryCreatesClaudeTraceNormalizer(t *testing.T) {
-	factory := NewFactory()
-	instance, err := factory.CreateTracesToTraces(context.Background(), connectorSettings(), factory.CreateDefaultConfig(), &traceSink{})
-	require.NoError(t, err)
-	require.NotNil(t, instance)
+func TestClaudeTraceNormalizerFiltersOtherProviders(t *testing.T) {
+	input := ptrace.NewTraces()
+	input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("codex.internal")
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Empty(t, sink.all())
 }
 
-func connectorSettings() connector.Settings {
-	return connector.Settings{ID: component.NewID(componentType), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
+func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
+	t.Helper()
+	for i := 0; i < spans.Len(); i++ {
+		if spans.At(i).Name() == name {
+			return spans.At(i)
+		}
+	}
+	require.FailNow(t, "span not found", name)
+	return ptrace.Span{}
+}
+
+func attrString(t *testing.T, span ptrace.Span, key string) string {
+	t.Helper()
+	value, ok := span.Attributes().Get(key)
+	require.True(t, ok)
+	return value.Str()
 }

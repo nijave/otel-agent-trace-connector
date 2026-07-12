@@ -1,4 +1,4 @@
-package codingagentconnector
+package codex
 
 import (
 	"context"
@@ -37,13 +37,12 @@ func (s *traceSink) all() []ptrace.Traces {
 }
 
 func TestConnectorCorrelatesOutOfOrderBatchAndFinalizes(t *testing.T) {
-	cfg := createDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 5 * time.Millisecond
 	cfg.TurnTimeout = time.Second
 	sink := &traceSink{}
-	set := connector.Settings{ID: component.NewID(componentType), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
-	instance, err := NewFactory().CreateLogsToTraces(context.Background(), set, cfg, sink)
-	require.NoError(t, err)
+	set := connector.Settings{ID: component.NewID(component.MustNewType("coding_agent")), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
+	instance := newConnector(cfg, set, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
 
@@ -59,7 +58,7 @@ func TestConnectorCorrelatesOutOfOrderBatchAndFinalizes(t *testing.T) {
 }
 
 func TestConnectorSplitsConsecutivePrompts(t *testing.T) {
-	cfg := createDefaultConfig()
+	cfg := NewDefaultConfig()
 	sink := &traceSink{}
 	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	base := time.Now()
@@ -71,7 +70,7 @@ func TestConnectorSplitsConsecutivePrompts(t *testing.T) {
 }
 
 func TestConnectorBoundsStateAndEvents(t *testing.T) {
-	cfg := createDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.MaxActiveTurns = 1
 	cfg.MaxEvents = 1
 	sink := &traceSink{}
@@ -84,6 +83,7 @@ func TestConnectorBoundsStateAndEvents(t *testing.T) {
 	second.attrs["conversation.id"] = "second"
 	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(first, second)))
 	require.Len(t, sink.all(), 1)
+	require.Equal(t, "evicted", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
 	require.Len(t, instance.turns, 1)
 	for _, turn := range instance.turns {
 		turn.add(testEvent("codex.api_request", time.Now().Add(2*time.Second), nil), time.Now(), cfg.MaxEvents)
@@ -91,8 +91,47 @@ func TestConnectorBoundsStateAndEvents(t *testing.T) {
 	}
 }
 
+func TestZeroReorderWindowFinalizesPromptly(t *testing.T) {
+	cfg := NewDefaultConfig()
+	cfg.ReorderWindow = 0
+	cfg.TurnTimeout = time.Second
+	sink := &traceSink{}
+	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	require.NoError(t, instance.Start(context.Background(), nil))
+	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
+	base := time.Now()
+	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(
+		testEvent("codex.user_prompt", base, nil),
+		testEvent("codex.sse_event", base.Add(time.Millisecond), map[string]any{"event.kind": "response.completed"}),
+	)))
+	require.Eventually(t, func() bool { return len(sink.all()) == 1 }, 250*time.Millisecond, 5*time.Millisecond)
+}
+
+func TestCompletedTurnWinsOverTimeoutThreshold(t *testing.T) {
+	cfg := NewDefaultConfig()
+	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, &traceSink{})
+	now := time.Now()
+	key := turnKey{provider: "codex", conversationID: "conversation-1"}
+	instance.turns[key] = &turnState{key: key, completeSeen: true, lastSeen: now.Add(-2 * cfg.TurnTimeout)}
+	turns, reasons := instance.collectReady(now)
+	require.Len(t, turns, 1)
+	require.Equal(t, []string{"completed"}, reasons)
+}
+
+func TestToolAfterCompletionRequiresAnotherCompletion(t *testing.T) {
+	cfg := NewDefaultConfig()
+	now := time.Now()
+	turn := &turnState{first: now, last: now}
+	turn.add(testEvent("codex.sse_event", now, map[string]any{"event.kind": "response.completed"}), now, cfg.MaxEvents)
+	require.True(t, turn.completeSeen)
+	turn.add(testEvent("codex.tool_result", now.Add(time.Second), map[string]any{"tool_name": "shell"}), now, cfg.MaxEvents)
+	require.False(t, turn.completeSeen)
+	turn.add(testEvent("codex.sse_event", now.Add(2*time.Second), map[string]any{"event.kind": "response.completed"}), now, cfg.MaxEvents)
+	require.True(t, turn.completeSeen)
+}
+
 func TestShutdownFlushesIncompleteTurn(t *testing.T) {
-	cfg := createDefaultConfig()
+	cfg := NewDefaultConfig()
 	sink := &traceSink{}
 	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))

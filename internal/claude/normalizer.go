@@ -1,7 +1,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package codingagentconnector
+package claude
 
 import (
 	"context"
@@ -21,40 +21,72 @@ type claudeTraceNormalizer struct {
 	component.ShutdownFunc
 }
 
+// New creates the stateless Claude Code traces-to-traces edge.
+func New(next consumer.Traces) connector.Traces {
+	return &claudeTraceNormalizer{next: next}
+}
+
 func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
 func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
-	input.CopyTo(output)
-	for i := 0; i < output.ResourceSpans().Len(); i++ {
-		rs := output.ResourceSpans().At(i)
+	for i := 0; i < input.ResourceSpans().Len(); i++ {
+		inputResourceSpans := input.ResourceSpans().At(i)
+		if !containsClaudeSpans(inputResourceSpans) {
+			continue
+		}
+		rs := output.ResourceSpans().AppendEmpty()
+		inputResourceSpans.CopyTo(rs)
 		version := resourceString(rs.Resource(), "service.version")
+		resourceSessionID := resourceString(rs.Resource(), "session.id")
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
-				normalizeClaudeSpan(spans.At(k), version)
+				normalizeClaudeSpan(spans.At(k), version, resourceSessionID)
 			}
 		}
+	}
+	if output.SpanCount() == 0 {
+		return nil
 	}
 	return n.next.ConsumeTraces(ctx, output)
 }
 
-func normalizeClaudeSpan(span ptrace.Span, version string) {
+func containsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
+	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
+		spans := resourceSpans.ScopeSpans().At(i).Spans()
+		for j := 0; j < spans.Len(); j++ {
+			switch spans.At(j).Name() {
+			case "claude_code.interaction", "claude_code.llm_request", "claude_code.tool":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string) {
 	switch span.Name() {
 	case "claude_code.interaction":
 		span.SetName("invoke_agent claude_code")
 		span.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 		span.Attributes().PutStr("gen_ai.agent.name", "claude_code")
+		span.Attributes().PutStr("coding_agent.source.event", "claude_code.interaction")
 		putClaudeCommon(span.Attributes(), version)
-		if sessionID := firstSpanString(span, "session.id", "session_id"); sessionID != "" {
+		sessionID := firstSpanString(span, "session.id", "session_id")
+		if sessionID == "" {
+			sessionID = resourceSessionID
+		}
+		if sessionID != "" {
 			span.Attributes().PutStr("gen_ai.conversation.id", sessionID)
 		}
 	case "claude_code.llm_request":
 		model := firstSpanString(span, "gen_ai.request.model", "model")
 		span.SetName("chat" + optionalNameSuffix(model))
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
+		span.Attributes().PutStr("coding_agent.source.event", "claude_code.llm_request")
 		putClaudeCommon(span.Attributes(), version)
 		if model != "" {
 			span.Attributes().PutStr("gen_ai.request.model", model)
@@ -63,6 +95,7 @@ func normalizeClaudeSpan(span ptrace.Span, version string) {
 		tool := firstSpanString(span, "gen_ai.tool.name", "tool_name")
 		span.SetName("execute_tool" + optionalNameSuffix(tool))
 		span.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+		span.Attributes().PutStr("coding_agent.source.event", "claude_code.tool")
 		putClaudeCommon(span.Attributes(), version)
 		if tool != "" {
 			span.Attributes().PutStr("gen_ai.tool.name", tool)

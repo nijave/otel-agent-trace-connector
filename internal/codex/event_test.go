@@ -1,4 +1,4 @@
-package codingagentconnector
+package codex
 
 import (
 	"testing"
@@ -35,6 +35,35 @@ func TestParseEventSupportsMapBody(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "response.completed", event.attrs["event.kind"])
 	require.Equal(t, true, event.attrs["coding_agent.timestamp.inferred"])
+}
+
+func TestParseEventUsesEventTimestampAndDiscardsContent(t *testing.T) {
+	record := plog.NewLogRecord()
+	record.Attributes().PutStr("event.name", "codex.tool_result")
+	record.Attributes().PutStr("conversation.id", "conversation-1")
+	record.Attributes().PutStr("event.timestamp", "2026-07-11T12:34:56.123Z")
+	record.Attributes().PutStr("arguments", "secret command")
+	record.Attributes().PutStr("output", "secret output")
+	event, ok := parseEvent(record, pcommon.NewResource())
+	require.True(t, ok)
+	require.Equal(t, 2026, event.timestamp.Year())
+	_, hasArguments := event.attrs["arguments"]
+	_, hasOutput := event.attrs["output"]
+	require.False(t, hasArguments)
+	require.False(t, hasOutput)
+	require.NotContains(t, event.attrs, "coding_agent.timestamp.inferred")
+}
+
+func TestParseEventFallsBackToObservedTimestamp(t *testing.T) {
+	record := plog.NewLogRecord()
+	record.Attributes().PutStr("event.name", "codex.api_request")
+	record.Attributes().PutStr("conversation.id", "conversation-1")
+	record.Attributes().PutStr("event.timestamp", "not-a-timestamp")
+	want := time.Date(2026, 7, 11, 13, 0, 0, 0, time.UTC)
+	record.SetObservedTimestamp(pcommon.NewTimestampFromTime(want))
+	event, ok := parseEvent(record, pcommon.NewResource())
+	require.True(t, ok)
+	require.True(t, want.Equal(event.timestamp))
 }
 
 func TestParseEventIgnoresUnsupportedRecords(t *testing.T) {

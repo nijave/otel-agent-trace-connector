@@ -19,6 +19,11 @@ connectors:
   coding_agent/claude:
 
 processors:
+  resource/e2e:
+    attributes:
+      - key: e2e.run.id
+        value: ${env:E2E_RUN_ID:-unscoped}
+        action: upsert
   batch:
     timeout: 500ms
 
@@ -41,11 +46,11 @@ service:
   pipelines:
     logs/vendor:
       receivers: [otlp]
-      processors: [batch]
+      processors: [resource/e2e, batch]
       exporters: [file/raw, coding_agent]
     traces/native:
       receivers: [otlp]
-      processors: [batch]
+      processors: [resource/e2e, batch]
       exporters: [file/raw-traces, coding_agent/claude]
     traces/canonical:
       receivers: [coding_agent, coding_agent/claude]

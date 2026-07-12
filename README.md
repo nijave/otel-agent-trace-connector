@@ -20,6 +20,18 @@ invoke_agent <agent>
 The raw vendor logs and traces are exported separately. Normalization never
 copies prompt text, tool arguments, or tool output into generated Codex spans.
 
+Repository layout:
+
+```text
+.
+├── config.go, factory.go       # public Collector component surface
+├── internal/codex/             # stateful log correlation and trace building
+├── internal/claude/            # stateless native-span normalization
+├── e2e/                        # real Codex runner and OTLP JSON validator
+├── builder-config.yaml         # pinned OCB distribution
+└── collector-config.yaml       # raw and canonical pipelines
+```
+
 ## Status
 
 The component is at development stability. It uses Collector v0.156.0 and Go
@@ -132,7 +144,7 @@ export OPENAI_API_KEY=...
 Optional overrides:
 
 ```bash
-CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=gpt-5.1-codex ./scripts/e2e.sh
+CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=gpt-5.1-codex E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
 
 The script writes raw logs, raw native traces, and canonical traces under
@@ -140,8 +152,11 @@ The script writes raw logs, raw native traces, and canonical traces under
 
 ```bash
 export E2E_RUN_ID="manual-$(date +%s)"
-docker compose up --build --abort-on-container-exit --exit-code-from validator validator
-docker compose down --volumes
+docker compose build
+docker compose up --detach --wait collector
+docker compose run --rm --no-deps codex
+docker compose run --rm --no-deps validator
+docker compose down
 ```
 
 The repository's automated verification does not run this paid test.

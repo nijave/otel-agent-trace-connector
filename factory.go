@@ -8,19 +8,21 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
-	"go.opentelemetry.io/collector/connector/xconnector"
 	"go.opentelemetry.io/collector/consumer"
+
+	"github.com/nijave/otel-agent-trace-connector/internal/claude"
+	"github.com/nijave/otel-agent-trace-connector/internal/codex"
 )
 
 var componentType = component.MustNewType("coding_agent")
 
-// NewFactory creates a logs-to-traces coding-agent connector factory.
+// NewFactory creates the coding-agent connector factory.
 func NewFactory() connector.Factory {
-	return xconnector.NewFactory(
+	return connector.NewFactory(
 		componentType,
 		func() component.Config { return createDefaultConfig() },
-		xconnector.WithLogsToTraces(createLogsToTraces, component.StabilityLevelDevelopment),
-		xconnector.WithTracesToTraces(createTracesToTraces, component.StabilityLevelDevelopment),
+		connector.WithLogsToTraces(createLogsToTraces, component.StabilityLevelDevelopment),
+		connector.WithTracesToTraces(createTracesToTraces, component.StabilityLevelDevelopment),
 	)
 }
 
@@ -30,7 +32,7 @@ func createLogsToTraces(
 	cfg component.Config,
 	next consumer.Traces,
 ) (connector.Logs, error) {
-	return newConnector(cfg.(*Config), set, next), nil
+	return codex.New(cfg.(*Config), set, next), nil
 }
 
 func createTracesToTraces(
@@ -39,5 +41,5 @@ func createTracesToTraces(
 	_ component.Config,
 	next consumer.Traces,
 ) (connector.Traces, error) {
-	return &claudeTraceNormalizer{next: next}, nil
+	return claude.New(next), nil
 }

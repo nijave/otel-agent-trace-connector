@@ -1,7 +1,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package codingagentconnector
+package codex
 
 import (
 	"fmt"
@@ -46,12 +46,21 @@ func parseEvent(record plog.LogRecord, resource pcommon.Resource) (agentEvent, b
 	if conversationID == "" {
 		return agentEvent{}, false
 	}
+	stripContent(attrs)
 	var ts time.Time
 	if record.Timestamp() != 0 {
 		ts = record.Timestamp().AsTime()
-	} else if record.ObservedTimestamp() != 0 {
-		ts = record.ObservedTimestamp().AsTime()
 	} else {
+		if value := stringValue(attrs["event.timestamp"]); value != "" {
+			if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+				ts = parsed
+			}
+		}
+		if ts.IsZero() && record.ObservedTimestamp() != 0 {
+			ts = record.ObservedTimestamp().AsTime()
+		}
+	}
+	if ts.IsZero() {
 		ts = time.Now()
 		attrs["coding_agent.timestamp.inferred"] = true
 	}
@@ -59,6 +68,12 @@ func parseEvent(record plog.LogRecord, resource pcommon.Resource) (agentEvent, b
 		name: name, provider: "codex", conversationID: conversationID,
 		timestamp: ts, attrs: attrs, resource: resource.Attributes().AsRaw(),
 	}, true
+}
+
+func stripContent(attrs map[string]any) {
+	for _, key := range []string{"prompt", "arguments", "output"} {
+		delete(attrs, key)
+	}
 }
 
 func stringValue(v any) string {

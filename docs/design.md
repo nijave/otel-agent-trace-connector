@@ -15,6 +15,8 @@ implementation rather than treated as a future proposal.
 
 The connector does not fork `opentelemetry-collector-contrib`, and it does not
 expect runtime plugin loading. Component changes require a new OCB build.
+The OCB manifest explicitly sets the Go import alias because the repository
+name contains hyphens, which are not valid in a Go package identifier.
 
 ## Research basis
 
@@ -52,6 +54,28 @@ One Collector component type, `coding_agent`, exposes two edges:
 Keeping these under one component makes the distribution and provider contract
 easy to discover while retaining signal-correct Collector behavior. The input
 pipelines export raw telemetry in parallel before normalization.
+
+### Package architecture
+
+The public module root contains only `Config`, `NewFactory`, and factory edge
+adapters. Stateful Codex logic lives in `internal/codex`; native Claude logic
+lives in `internal/claude`. This prevents provider schemas and correlation
+helpers from becoming accidental public API.
+
+This organization was compared against the v0.156.0 Contrib count, routing,
+spanmetrics, and servicegraph connectors. The implementation follows their
+common patterns: a small `NewFactory`, typed default configuration, Collector
+`Validate`, factory/config conformance tests, downstream consumers injected at
+construction, explicit `Start`/`Shutdown`, copy-on-write when reporting
+`MutatesData: false`, bounded state, and background loops owned by component
+lifecycle. Mature single-purpose Contrib connectors generally keep behavior in
+one package and reserve `internal` for metadata or stores. This component has
+two intentionally different provider paths, so provider-focused internal
+packages give the same encapsulation without mixing stateful and stateless
+logic.
+Only standard logs and traces edges are registered, so the component uses
+`connector.NewFactory`; it does not depend directly on the profile-aware
+experimental `xconnector` factory.
 
 ## Canonical semantics
 
@@ -93,14 +117,15 @@ it during the reorder window.
 A turn may contain multiple model calls separated by tools. Consequently the
 first `response.completed` cannot close a turn. After any completion event, the
 turn closes only when no further event arrives for `reorder_window`. A later
-tool result or model completion resets the quiet period.
+tool result or model request invalidates the earlier completion and requires a
+new `response.completed`; every later event resets the quiet period.
 
 Other finalization reasons are:
 
 - `superseded`: another prompt arrives for the conversation;
 - `timeout`: no completion arrives before `turn_timeout`;
 - `shutdown`: the Collector drains active state;
-- `superseded` on state eviction (currently shared with prompt supersession).
+- `evicted`: the active-turn bound admits a newer conversation.
 
 The emitted root records the finish reason and whether the turn is complete.
 Timeout roots use OTel error status. Shutdown and superseded roots remain unset
@@ -121,7 +146,7 @@ batched; source timestamps are still used for span timing.
 - Each `codex.tool_result` becomes an `execute_tool` span.
 - Matching `codex.tool_decision` records become events on the tool span.
 - Other safe operational events become root span events.
-- The last completion supplies aggregate root token usage.
+- Completion token counts are summed across model calls for aggregate root usage.
 
 Trace IDs are SHA-256-derived from provider, conversation ID, and prompt
 timestamp. Span IDs add a stable role/event discriminator. This makes replay of
@@ -152,11 +177,15 @@ All other Claude spans, including permission wait, tool execution, hooks, and
 subagent descendants, retain their native names and hierarchy. The normalizer
 adds provider/client/source attributes and maps `session.id` to
 `gen_ai.conversation.id` on the interaction span when available.
+Resource groups without any Claude Code span are not emitted by this edge; they
+remain available in the parallel raw trace pipeline without polluting the
+canonical coding-agent pipeline.
 
 ## Privacy and security
 
-Codex prompt content, tool arguments, and tool output are never copied into
-synthetic spans. Safe length/count/status fields are retained. Raw telemetry is
+Codex prompt content, tool arguments, and tool output are discarded from the
+connector's in-memory event copy and never copied into synthetic spans. Safe
+length/count/status fields are retained. Raw telemetry is
 still exported by the example pipeline, so operators must apply their own
 retention, authorization, and redaction policies to that raw destination.
 
@@ -199,8 +228,16 @@ request. It:
 7. checks the canonical root, chat/tool children, trace parenting, completion,
    conversation ID, and sensitive-attribute absence.
 
+The agent process has a configurable ten-minute default timeout so retries or
+transport stalls cannot leave an unbounded paid session running.
+
 The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.
+
+The unique run marker is added by the Collector resource processor before
+correlation. Codex constructs a fixed SDK resource and does not currently honor
+`OTEL_RESOURCE_ATTRIBUTES`, so relying on the agent container environment would
+make stale-output detection ineffective.
 
 ## Known limitations and future work
 

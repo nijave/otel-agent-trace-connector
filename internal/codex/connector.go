@@ -1,7 +1,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package codingagentconnector
+package codex
 
 import (
 	"context"
@@ -26,6 +26,7 @@ type turnState struct {
 	last         time.Time
 	lastSeen     time.Time
 	completeSeen bool
+	completionAt time.Time
 	promptSeen   bool
 	truncated    bool
 }
@@ -48,6 +49,11 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) *co
 		config: cfg, set: set, next: next, turns: make(map[turnKey]*turnState),
 		stop: make(chan struct{}), done: make(chan struct{}),
 	}
+}
+
+// New creates the stateful Codex logs-to-traces edge.
+func New(cfg *Config, set connector.Settings, next consumer.Traces) connector.Logs {
+	return newConnector(cfg, set, next)
 }
 
 func (*codingAgentConnector) Capabilities() consumer.Capabilities {
@@ -84,6 +90,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
 	var ready []*turnState
+	var reasons []string
 	now := time.Now()
 	c.mu.Lock()
 	for _, event := range events {
@@ -92,11 +99,13 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		if event.name == "codex.user_prompt" && turn != nil && turn.promptSeen {
 			delete(c.turns, key)
 			ready = append(ready, turn)
+			reasons = append(reasons, "superseded")
 			turn = nil
 		}
 		if turn == nil {
 			if len(c.turns) >= c.config.MaxActiveTurns {
 				ready = append(ready, c.evictOldestLocked())
+				reasons = append(reasons, "evicted")
 			}
 			turn = &turnState{key: key, first: event.timestamp, last: event.timestamp, lastSeen: now, resource: event.resource}
 			c.turns[key] = turn
@@ -104,7 +113,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		turn.add(event, now, c.config.MaxEvents)
 	}
 	c.mu.Unlock()
-	return c.emit(ctx, ready, "superseded")
+	return c.emitFinalized(ctx, ready, reasons)
 }
 
 func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
@@ -119,7 +128,12 @@ func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
 		t.promptSeen = true
 	}
 	if event.name == "codex.sse_event" && stringValue(event.attrs["event.kind"]) == "response.completed" {
-		t.completeSeen = true
+		if !event.timestamp.Before(t.completionAt) {
+			t.completeSeen = true
+			t.completionAt = event.timestamp
+		}
+	} else if t.completeSeen && !event.timestamp.Before(t.completionAt) && continuesTurn(event.name) {
+		t.completeSeen = false
 	}
 	if len(t.events) < maxEvents {
 		t.events = append(t.events, event)
@@ -128,9 +142,15 @@ func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
 	}
 }
 
+func continuesTurn(eventName string) bool {
+	return eventName == "codex.tool_result" || eventName == "codex.api_request" || eventName == "codex.websocket_request"
+}
+
 func (c *codingAgentConnector) sweepLoop() {
 	interval := c.config.ReorderWindow / 2
-	if interval <= 0 || interval > time.Second {
+	if interval <= 0 {
+		interval = 10 * time.Millisecond
+	} else if interval > time.Second {
 		interval = time.Second
 	}
 	ticker := time.NewTicker(interval)
@@ -159,8 +179,7 @@ func (c *codingAgentConnector) collectReady(now time.Time) ([]*turnState, []stri
 		reason := ""
 		if turn.completeSeen && now.Sub(turn.lastSeen) >= c.config.ReorderWindow {
 			reason = "completed"
-		}
-		if now.Sub(turn.lastSeen) >= c.config.TurnTimeout {
+		} else if now.Sub(turn.lastSeen) >= c.config.TurnTimeout {
 			reason = "timeout"
 		}
 		if reason != "" {
@@ -190,6 +209,18 @@ func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, rea
 			continue
 		}
 		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reason)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *codingAgentConnector) emitFinalized(ctx context.Context, turns []*turnState, reasons []string) error {
+	for i, turn := range turns {
+		if turn == nil {
+			continue
+		}
+		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i])); err != nil {
 			return err
 		}
 	}

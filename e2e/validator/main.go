@@ -80,6 +80,11 @@ func validateTraces(traces ptrace.Traces, runID string) error {
 				if stringAttr(root, "gen_ai.conversation.id") == "" {
 					return errors.New("conversation id is missing")
 				}
+				for _, sensitive := range []string{"prompt", "arguments", "output"} {
+					if _, exists := root.Attributes().Get(sensitive); exists {
+						return fmt.Errorf("sensitive root attribute %q was copied", sensitive)
+					}
+				}
 				chat, tool := false, false
 				for childIndex := 0; childIndex < spans.Len(); childIndex++ {
 					child := spans.At(childIndex)
@@ -89,6 +94,9 @@ func validateTraces(traces ptrace.Traces, runID string) error {
 					switch stringAttr(child, "gen_ai.operation.name") {
 					case "chat":
 						chat = true
+						if _, ok := child.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+							return errors.New("chat input token usage is missing")
+						}
 					case "execute_tool":
 						tool = true
 					}

@@ -1,7 +1,7 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package codingagentconnector
+package codex
 
 import (
 	"crypto/sha256"
@@ -78,7 +78,11 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	attrs.PutStr("gen_ai.provider.name", "openai")
 	attrs.PutStr("gen_ai.conversation.id", turn.key.conversationID)
 	attrs.PutStr("coding_agent.client.name", "codex")
-	attrs.PutStr("coding_agent.source.event", "codex.user_prompt")
+	sourceEvent := "codex.user_prompt"
+	if !turn.promptSeen && len(events) > 0 {
+		sourceEvent = events[0].name
+	}
+	attrs.PutStr("coding_agent.source.event", sourceEvent)
 	attrs.PutStr("coding_agent.turn.finish_reason", reason)
 	attrs.PutBool("coding_agent.turn.complete", reason == "completed")
 	attrs.PutBool("coding_agent.turn.prompt_observed", turn.promptSeen)
@@ -90,12 +94,7 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	if version := lastStringAttr(events, "app.version"); version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
 	}
-	if completion := lastCompletion(events); completion != nil {
-		copyIntAttr(attrs, completion.attrs, "input_token_count", "gen_ai.usage.input_tokens")
-		copyIntAttr(attrs, completion.attrs, "output_token_count", "gen_ai.usage.output_tokens")
-		copyIntAttr(attrs, completion.attrs, "cached_token_count", "gen_ai.usage.cache_read.input_tokens")
-		copyIntAttr(attrs, completion.attrs, "reasoning_token_count", "coding_agent.usage.reasoning_tokens")
-	}
+	putAggregateUsage(attrs, events)
 }
 
 func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []agentEvent, turnStart time.Time) {
@@ -113,7 +112,9 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if len(apiRequests) > 0 {
 			request := apiRequests[len(apiRequests)-1]
 			start = request.timestamp.Add(-durationFromAttrs(request.attrs))
-			apiRequests = apiRequests[:len(apiRequests)-1]
+			// Earlier requests are retries for this completion, not starts for a
+			// later model call.
+			apiRequests = apiRequests[:0]
 		}
 		if start.After(event.timestamp) {
 			start = event.timestamp
@@ -147,13 +148,16 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 
 func appendToolSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []agentEvent) {
 	decisions := make(map[string][]agentEvent)
-	toolIndex := 0
 	for _, event := range events {
 		if event.name == "codex.tool_decision" {
 			callID := stringValue(event.attrs["call_id"])
-			decisions[callID] = append(decisions[callID], event)
-			continue
+			if callID != "" {
+				decisions[callID] = append(decisions[callID], event)
+			}
 		}
+	}
+	toolIndex := 0
+	for _, event := range events {
 		if event.name != "codex.tool_result" {
 			continue
 		}
@@ -250,13 +254,31 @@ func lastStringAttr(events []agentEvent, key string) string {
 	return ""
 }
 
-func lastCompletion(events []agentEvent) *agentEvent {
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].name == "codex.sse_event" && stringValue(events[i].attrs["event.kind"]) == "response.completed" {
-			return &events[i]
+func putAggregateUsage(attrs pcommon.Map, events []agentEvent) {
+	totals := map[string]int64{}
+	seen := map[string]bool{}
+	for _, event := range events {
+		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
+			continue
+		}
+		for _, key := range []string{"input_token_count", "output_token_count", "cached_token_count", "reasoning_token_count"} {
+			if value, ok := int64Value(event.attrs[key]); ok {
+				totals[key] += value
+				seen[key] = true
+			}
 		}
 	}
-	return nil
+	mappings := map[string]string{
+		"input_token_count":     "gen_ai.usage.input_tokens",
+		"output_token_count":    "gen_ai.usage.output_tokens",
+		"cached_token_count":    "gen_ai.usage.cache_read.input_tokens",
+		"reasoning_token_count": "coding_agent.usage.reasoning_tokens",
+	}
+	for source, destination := range mappings {
+		if seen[source] {
+			attrs.PutInt(destination, totals[source])
+		}
+	}
 }
 
 func copyIntAttr(dst pcommon.Map, src map[string]any, from, to string) {

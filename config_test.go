@@ -39,6 +39,6 @@ func TestFactoryDefaultsAreIndependent(t *testing.T) {
 	first := factory.CreateDefaultConfig().(*Config)
 	second := factory.CreateDefaultConfig().(*Config)
 	first.MaxEvents = 1
-	require.Equal(t, defaultMaxEvents, second.MaxEvents)
+	require.Equal(t, 1000, second.MaxEvents)
 	require.Equal(t, componentType, factory.Type())
 }

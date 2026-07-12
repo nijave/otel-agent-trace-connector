@@ -1,4 +1,4 @@
-package codingagentconnector
+package codex
 
 import (
 	"testing"
@@ -17,8 +17,10 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 		events: []agentEvent{
 			testEvent("codex.user_prompt", base, map[string]any{"model": "gpt-test", "app.version": "1.2.3", "prompt": "secret"}),
 			testEvent("codex.api_request", base.Add(2*time.Second), map[string]any{"duration_ms": "1000"}),
-			testEvent("codex.tool_decision", base.Add(2500*time.Millisecond), map[string]any{"tool_name": "shell", "call_id": "call-1", "decision": "approved", "source": "Config"}),
 			testEvent("codex.tool_result", base.Add(3*time.Second), map[string]any{"tool_name": "shell", "call_id": "call-1", "duration_ms": "200", "success": "true", "arguments": "secret command", "output": "secret output"}),
+			// Equal timestamps and later batch order exercise order-independent
+			// decision/result correlation without placing an event after span end.
+			testEvent("codex.tool_decision", base.Add(3*time.Second), map[string]any{"tool_name": "shell", "call_id": "call-1", "decision": "approved", "source": "Config"}),
 			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "input_token_count": "12", "output_token_count": int64(3), "cached_token_count": 2}),
 		},
 	}
@@ -63,6 +65,38 @@ func TestBuildTraceMarksTimeout(t *testing.T) {
 	root := buildTrace(turn, "timeout").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
 	require.False(t, attrBool(t, root, "coding_agent.turn.complete"))
+}
+
+func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 5, "output_token_count": 2}),
+			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 7, "output_token_count": 3}),
+		},
+	}
+	root := buildTrace(turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, int64(12), attrInt(t, root, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(5), attrInt(t, root, "gen_ai.usage.output_tokens"))
+}
+
+func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base.Add(4 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": 100}),
+			testEvent("codex.api_request", base.Add(2*time.Second), map[string]any{"duration_ms": 100}),
+			testEvent("codex.sse_event", base.Add(3*time.Second), map[string]any{"event.kind": "response.completed"}),
+			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed"}),
+		},
+	}
+	spans := buildTrace(turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.True(t, base.Add(1900*time.Millisecond).Equal(spans.At(1).StartTimestamp().AsTime()))
+	require.True(t, base.Equal(spans.At(2).StartTimestamp().AsTime()))
 }
 
 func testEvent(name string, timestamp time.Time, additional map[string]any) agentEvent {

@@ -10,6 +10,7 @@ receivers:
 
 processors:
   - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.156.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor v0.156.0
 
 exporters:
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.156.0
@@ -19,4 +20,5 @@ extensions:
 
 connectors:
   - gomod: github.com/nijave/otel-agent-trace-connector v0.0.0
+    name: codingagentconnector
     path: .
