@@ -179,8 +179,16 @@ export OPENAI_API_KEY=...
 Optional overrides:
 
 ```bash
-CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=gpt-5.1-codex E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
+CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=gpt-5.1-codex-mini E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
+
+The E2E defaults to `gpt-5.1-codex-mini`, the smaller, lower-cost Codex model,
+and mounts the host CA bundle read-only so managed/private certificate
+authorities remain trusted inside the Codex container. On hosts where the CA
+bundle is elsewhere, set `E2E_CA_BUNDLE` to its absolute path. TLS verification
+remains enabled. The runner authenticates through Codex's noninteractive
+API-key login; its credential store exists only inside the ephemeral runner
+container.
 
 The script writes raw logs, raw native traces, and canonical traces under
 `.e2e-output/`. To inspect or rerun Compose manually:
