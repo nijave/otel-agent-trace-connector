@@ -49,18 +49,11 @@ and operational limits.
 
 ## Build
 
-The connector component (`connector/codingagentconnector/`) and the E2E validator
-(repo root) are separate Go modules. Test each:
+The connector component (`connector/codingagentconnector/`) and the e2e validator
+(repo root) are separate Go modules, so run tests in both:
 
 ```bash
-go test ./...                                   # root module (E2E validator)
-(cd connector/codingagentconnector && go test ./... && go test -race ./...)
-```
-
-If your normal Go module cache is read-only, use a writable cache:
-
-```bash
-GOMODCACHE=/tmp/otel-agent-trace-connector-gomodcache go test ./...
+go test ./... && (cd connector/codingagentconnector && go test -race ./...)
 ```
 
 Build the custom Collector container:
