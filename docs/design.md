@@ -14,9 +14,10 @@ implementation rather than treated as a future proposal.
    distribution with OCB.
 
 The connector does not fork `opentelemetry-collector-contrib`, and it does not
-expect runtime plugin loading. Component changes require a new OCB build.
-The OCB manifest explicitly sets the Go import alias because the repository
-name contains hyphens, which are not valid in a Go package identifier.
+expect runtime plugin loading. Component changes require a new OCB build. The
+connector's module directory is named `codingagentconnector` (a valid Go package
+identifier), so OCB derives the import alias automatically and the manifest needs
+no explicit `name`.
 
 ## Research basis
 

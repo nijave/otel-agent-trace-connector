@@ -22,5 +22,4 @@ extensions:
 
 connectors:
   - gomod: github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector v0.0.0
-    name: codingagentconnector
     path: ./connector/codingagentconnector
