@@ -24,6 +24,7 @@ jobs:
         run: |
           go vet ./...
           go test ./...
+          (cd connector/codingagentconnector && go vet ./... && go test ./...)
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser

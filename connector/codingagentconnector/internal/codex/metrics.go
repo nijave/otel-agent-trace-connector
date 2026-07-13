@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/nijave/otel-agent-trace-connector/internal/metadata"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
 // telemetry adapts the mdatagen-generated TelemetryBuilder to the connector's

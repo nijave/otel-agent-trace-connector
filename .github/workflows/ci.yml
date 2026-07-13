@@ -43,9 +43,18 @@ jobs:
         run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh e2e/codex/run.sh e2e/claude/run.sh
       - name: Check Python helper syntax
         run: python3 scripts/bedrock-token_test.py
-      - run: go vet ./...
-      - run: go test ./...
-      - run: go test -race ./...
+      - name: Vet
+        run: |
+          go vet ./...
+          (cd connector/codingagentconnector && go vet ./...)
+      - name: Test
+        run: |
+          go test ./...
+          (cd connector/codingagentconnector && go test ./...)
+      - name: Race test
+        run: |
+          go test -race ./...
+          (cd connector/codingagentconnector && go test -race ./...)
 
   build:
     name: Build and validate
@@ -57,6 +66,9 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: Build custom Collector
+        # GOWORK=off: the OCB-generated dist module is outside the repo go.work.
+        env:
+          GOWORK: "off"
         run: go run go.opentelemetry.io/collector/cmd/builder@v0.156.0 --config builder-config.yaml
       - name: Validate Collector configurations
         env:

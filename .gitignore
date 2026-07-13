@@ -2,3 +2,5 @@
 /release-dist/
 /.e2e-output/
 __pycache__/
+# `go build ./...` from the repo root emits the e2e validator binary here.
+/validator

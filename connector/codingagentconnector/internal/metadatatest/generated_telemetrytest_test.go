@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
 
-	"github.com/nijave/otel-agent-trace-connector/internal/metadata"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 	"go.opentelemetry.io/collector/component/componenttest"
 )
 

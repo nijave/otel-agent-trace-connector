@@ -10,9 +10,9 @@ import (
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/consumer"
 
-	"github.com/nijave/otel-agent-trace-connector/internal/claude"
-	"github.com/nijave/otel-agent-trace-connector/internal/codex"
-	"github.com/nijave/otel-agent-trace-connector/internal/metadata"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
 var componentType = metadata.Type

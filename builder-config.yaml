@@ -21,6 +21,6 @@ extensions:
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.156.0
 
 connectors:
-  - gomod: github.com/nijave/otel-agent-trace-connector v0.0.0
+  - gomod: github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector v0.0.0
     name: codingagentconnector
-    path: .
+    path: ./connector/codingagentconnector

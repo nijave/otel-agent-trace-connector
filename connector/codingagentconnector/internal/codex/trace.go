@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-const instrumentationScope = "github.com/nijave/otel-agent-trace-connector"
+const instrumentationScope = "github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector"
 
 // defaultScopeVersion is used for the emitted instrumentation scope when the
 // Collector build info does not carry a version (for example in unit tests).

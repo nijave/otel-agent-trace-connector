@@ -20,7 +20,7 @@ import (
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 
-	"github.com/nijave/otel-agent-trace-connector/internal/metadata"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
 type turnKey struct{ provider, conversationID string }

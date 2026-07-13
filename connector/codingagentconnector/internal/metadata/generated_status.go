@@ -10,7 +10,7 @@ import (
 
 var (
 	Type      = component.MustNewType("coding_agent")
-	ScopeName = "github.com/nijave/otel-agent-trace-connector"
+	ScopeName = "github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector"
 )
 
 const (

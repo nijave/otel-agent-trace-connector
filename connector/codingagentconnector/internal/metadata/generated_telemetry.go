@@ -15,11 +15,11 @@ import (
 )
 
 func Meter(settings component.TelemetrySettings) metric.Meter {
-	return settings.MeterProvider.Meter("github.com/nijave/otel-agent-trace-connector")
+	return settings.MeterProvider.Meter("github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector")
 }
 
 func Tracer(settings component.TelemetrySettings) trace.Tracer {
-	return settings.TracerProvider.Tracer("github.com/nijave/otel-agent-trace-connector")
+	return settings.TracerProvider.Tracer("github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector")
 }
 
 // TelemetryBuilder provides an interface for components to report telemetry
