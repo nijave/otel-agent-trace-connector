@@ -317,6 +317,11 @@ make stale-output detection ineffective.
   fields).
 - Add GitHub Copilot support: the same provider edge + live E2E for Copilot,
   likewise pending confirmation of its telemetry format.
+- TODO: generate committed OTLP fixtures from real Codex and Claude runs
+  (sanitized) so trace building and validation can be exercised against real data
+  as fast, unpaid unit tests, reducing reliance on the paid live E2E. The e2e
+  validation logic already lives in plain Go tests (`e2e/validator`), so fixtures
+  would slot in as table cases there.
 - Provider schemas are not stable APIs; fixtures and E2E should be rerun before
   upgrading pinned client or Collector versions.
 - Upstream semantic-convention changes may replace some `coding_agent.*` fields.

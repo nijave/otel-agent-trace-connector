@@ -1,56 +1,16 @@
-package main
+// Package validator holds the OTLP trace assertions for the live e2e tests. The
+// pure checks here are unit-tested in validator_test.go; the live path that reads
+// real collector output is in live_test.go (behind the `e2e` build tag).
+package validator
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
-
-func main() {
-	runID := os.Getenv("E2E_RUN_ID")
-	path := os.Getenv("TRACE_FILE")
-	agent := os.Getenv("E2E_AGENT")
-	if agent == "" {
-		agent = "codex"
-	}
-	if runID == "" || path == "" {
-		fail("E2E_RUN_ID and TRACE_FILE are required")
-	}
-	if agent != "codex" && agent != "claude_code" {
-		fail(fmt.Sprintf("unsupported E2E_AGENT %q", agent))
-	}
-	rawPath := os.Getenv("RAW_TRACE_FILE")
-	if agent == "claude_code" && rawPath == "" {
-		fail("RAW_TRACE_FILE is required for Claude Code validation")
-	}
-	deadline := time.Now().Add(45 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		if err := validateCanonicalFile(path, runID, agent); err != nil {
-			lastErr = err
-			time.Sleep(250 * time.Millisecond)
-			continue
-		}
-		if agent == "claude_code" {
-			if err := validateClaudeRawFile(rawPath, runID); err != nil {
-				lastErr = err
-				time.Sleep(250 * time.Millisecond)
-				continue
-			}
-		}
-		if agent == "claude_code" {
-			fmt.Printf("validated raw and canonical Claude Code traces for run %s\n", runID)
-		} else {
-			fmt.Printf("validated canonical Codex trace for run %s\n", runID)
-		}
-		return
-	}
-	fail(fmt.Sprintf("E2E traces did not become valid: %v", lastErr))
-}
 
 func validateCanonicalFile(path, runID, agent string) error {
 	return validateTraceFile(path, runID, func(traces ptrace.Traces, runID string) error {
@@ -264,4 +224,3 @@ func boolAttr(span ptrace.Span, key string) bool {
 	value, ok := span.Attributes().Get(key)
 	return ok && value.Bool()
 }
-func fail(message string) { fmt.Fprintln(os.Stderr, message); os.Exit(1) }

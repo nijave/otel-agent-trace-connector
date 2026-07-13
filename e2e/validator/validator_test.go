@@ -1,4 +1,4 @@
-package main
+package validator
 
 import (
 	"os"
@@ -62,6 +62,16 @@ func TestValidateClaudeTracesRejectsContentEventOnGrandchild(t *testing.T) {
 	grandchild.SetParentSpanID(spans.At(2).SpanID())
 	grandchild.Events().AppendEmpty().SetName("tool.output")
 	require.ErrorContains(t, validateClaudeRawTraces(traces, "run-claude"), "span event")
+}
+
+func TestValidateClaudeRawFileParsesActualOTLPJSON(t *testing.T) {
+	traces := validClaudeTraces("run-claude", false)
+	encoded, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
+	require.NoError(t, err)
+	path := t.TempDir() + "/raw.json"
+	require.NoError(t, os.WriteFile(path, append(encoded, '\n'), 0o600))
+	require.NoError(t, validateClaudeRawFile(path, "run-claude"))
+	require.Error(t, validateClaudeRawFile(path, "different-run"))
 }
 
 func validateFile(path, runID string) error {

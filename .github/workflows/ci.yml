@@ -60,6 +60,8 @@ jobs:
         run: |
           go test ./...
           (cd connector/codingagentconnector && go test ./...)
+          # Compile the e2e-tagged validator test and confirm it skips without a run.
+          go test -tags=e2e ./e2e/validator/
       - name: Race test
         run: |
           go test -race ./...
@@ -101,7 +103,6 @@ jobs:
           docker build --tag otelcol-coding-agents:ci .
           docker build --tag codex-e2e:ci e2e/codex
           docker build --tag claude-e2e:ci e2e/claude
-          docker build --file e2e/validator/Dockerfile --tag trace-validator:ci .
       - name: Verify GoReleaser configuration
         uses: goreleaser/goreleaser-action@v7
         with:

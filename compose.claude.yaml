@@ -1,4 +1,4 @@
-# Claude Code (Bedrock) e2e stack. The shared collector and validator come from
+# Claude Code (Bedrock) e2e stack. The shared collector comes from
 # compose.base.yaml; only the Claude agent is defined here, so this stack never
 # requires the Codex OPENAI_API_KEY.
 #

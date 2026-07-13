@@ -32,7 +32,7 @@ Repository layout:
 ├── e2e/                             # real agent runners and OTLP JSON validator
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
-├── compose.base.yaml                # shared collector + validator for both e2e stacks
+├── compose.base.yaml                # shared collector for both e2e stacks
 └── collector-config.yaml            # raw and canonical pipelines
 ```
 
@@ -149,138 +149,14 @@ telemetry privacy considerations below before enabling this configuration.
 
 ## Tests
 
-The normal test suite includes:
+The default suite (`go test`) covers event parsing and coercion, config
+validation, deterministic trace construction/hierarchy/tokens/status/redaction,
+bounded-state/out-of-order/timeout/shutdown/turn-splitting, factory/lifecycle,
+Claude native-tree normalization, and the e2e trace-validation assertions in
+`e2e/validator`.
 
-- event parsing and type-coercion unit tests;
-- configuration validation tests;
-- deterministic trace construction, hierarchy, token, status, and redaction tests;
-- bounded-state, out-of-order, timeout/shutdown, and turn-splitting tests;
-- Collector factory/lifecycle integration tests;
-- Claude native-tree normalization and non-mutation tests;
-- the E2E output validator as a separately compiled Go command.
-
-The live E2E is intentionally separate because it calls a real model and may
-incur API cost.
-
-## Live Codex E2E
-
-The Compose test builds the custom Collector, launches a real non-interactive
-Codex session which must use one harmless shell tool, waits for trace
-reconstruction, and validates the exported OTLP JSON. It requires a unique run
-ID and checks the root/child hierarchy, canonical attributes, completion state,
-and absence of sensitive copied fields.
-
-Prerequisites:
-
-- Docker with Compose v2;
-- an `OPENAI_API_KEY` authorized for Codex/API usage;
-- network access to build images and call the model.
-
-Run it only when you intend to incur the model request:
-
-```bash
-export OPENAI_API_KEY=...
-./scripts/e2e.sh
-```
-
-Optional overrides:
-
-```bash
-CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=gpt-5.1-codex-mini E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
-```
-
-The E2E defaults to `gpt-5.1-codex-mini`, the smaller, lower-cost Codex model. Its
-image installs the Debian `ca-certificates` package, so public TLS works out of the
-box. The runner authenticates through Codex's noninteractive API-key login; its
-credential store exists only inside the ephemeral runner container.
-
-The script writes raw logs, raw native traces, and canonical traces under
-`.e2e-output/`. To inspect or rerun Compose manually:
-
-```bash
-export E2E_RUN_ID="manual-$(date +%s)"
-export OPENAI_API_KEY=...
-docker compose build
-docker compose up --detach --wait collector
-docker compose run --rm --no-deps agent
-docker compose run --rm --no-deps validator
-docker compose down
-```
-
-The repository's automated verification does not run this paid test.
-
-## Live Claude Code E2E
-
-The Claude Compose test runs pinned Claude Code exclusively through Amazon
-Bedrock in recommended bare, non-interactive mode and requires exactly one Bash
-tool invocation. Native beta traces are preserved in the raw trace pipeline,
-normalized by `coding_agent/claude`, and checked together by the validator.
-Prompt text, tool arguments, tool output, and raw API bodies remain disabled.
-`ANTHROPIC_API_KEY` and the direct Anthropic API are not used.
-The Bedrock-backed live test is prepared but has not been run.
-
-Before running, submit the Anthropic model use-case form once in the Bedrock
-model catalog, ensure the model or inference profile is available in the chosen
-region, and grant the test principal these actions:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": [
-      "bedrock:InvokeModel",
-      "bedrock:InvokeModelWithResponseStream",
-      "bedrock:ListInferenceProfiles",
-      "bedrock:GetInferenceProfile",
-      "bedrock:CallWithBearerToken"
-    ],
-    "Resource": "*"
-  }]
-}
-```
-
-Restrict `Resource` to approved foundation-model and inference-profile ARNs
-where IAM permits. Initial model subscription can additionally require the AWS
-Marketplace permissions documented in the official Claude Code Bedrock guide.
-
-### Credentials: one ephemeral Bedrock API key
-
-The container receives exactly one credential — an ephemeral Bedrock API key
-(`AWS_BEARER_TOKEN_BEDROCK`). All host AWS credential resolution (profiles, SSO,
-credential processes, role assumption) stays on the host, outside the container.
-See the [Bedrock API keys guide](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html).
-
-`scripts/e2e-claude-bedrock.sh` mints a short-lived, region-bound token from your
-normal host AWS credential chain (using AWS's official token generator; requires
-`uv`) and passes only that token to the container:
-
-```bash
-aws sso login --profile my-bedrock-profile
-AWS_PROFILE=my-bedrock-profile AWS_REGION=us-east-1 ./scripts/e2e-claude-bedrock.sh
-```
-
-Set `E2E_BEDROCK_TOKEN_TTL_SECONDS` between 900 and 43200 to request another
-lifetime; the key expires at the earlier of that duration or the source AWS
-session. The wrapper never prints or writes the token. Treat local Docker access
-as privileged, since Docker operators can inspect container environments.
-
-If you already have a Bedrock API key, run the test directly:
-
-```bash
-AWS_REGION=us-east-1 AWS_BEARER_TOKEN_BEDROCK=bedrock-api-key-... ./scripts/e2e-claude.sh
-```
-
-The test defaults to the US cross-region Claude Haiku 4.5 inference profile,
-at most three agent turns, a $0.25 budget ceiling, and a ten-minute timeout.
-Override the model with another inference profile ID or application inference
-profile ARN that the account can invoke:
-
-```bash
-AWS_REGION=us-east-1 \
-  E2E_CLAUDE_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0 \
-  ./scripts/e2e-claude-bedrock.sh
-```
+The live, paid end-to-end tests (real Codex and Claude runs) are opt-in and
+documented separately in [`e2e/README.md`](e2e/README.md).
 
 ## CI and releases
 
