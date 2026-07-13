@@ -32,8 +32,7 @@ Repository layout:
 ├── e2e/                             # real agent runners and OTLP JSON validator
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
-├── compose.ca.yaml                  # optional managed/private CA overlay
-├── compose.claude.aws-profile.yaml  # optional AWS profile/SSO overlay
+├── compose.base.yaml                # shared collector + validator for both e2e stacks
 └── collector-config.yaml            # raw and canonical pipelines
 ```
 
@@ -197,35 +196,23 @@ Optional overrides:
 CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=gpt-5.1-codex-mini E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
 
-The E2E defaults to `gpt-5.1-codex-mini`, the smaller, lower-cost Codex model.
-Its image installs the standard Debian `ca-certificates` package, so public TLS
-roots work without depending on host paths. Environments with TLS interception
-or private certificate authorities can add their PEM bundle without replacing
-the image's public roots:
-
-```bash
-E2E_CA_BUNDLE=/absolute/path/to/managed-ca-bundle.pem ./scripts/e2e.sh
-```
-
-TLS verification remains enabled. The runner authenticates through Codex's
-noninteractive API-key login; its credential store exists only inside the
-ephemeral runner container.
+The E2E defaults to `gpt-5.1-codex-mini`, the smaller, lower-cost Codex model. Its
+image installs the Debian `ca-certificates` package, so public TLS works out of the
+box. The runner authenticates through Codex's noninteractive API-key login; its
+credential store exists only inside the ephemeral runner container.
 
 The script writes raw logs, raw native traces, and canonical traces under
 `.e2e-output/`. To inspect or rerun Compose manually:
 
 ```bash
 export E2E_RUN_ID="manual-$(date +%s)"
+export OPENAI_API_KEY=...
 docker compose build
 docker compose up --detach --wait collector
-docker compose run --rm --no-deps codex
+docker compose run --rm --no-deps agent
 docker compose run --rm --no-deps validator
 docker compose down
 ```
-
-When invoking Compose directly with a managed CA, add
-`-f compose.yaml -f compose.ca.yaml` to each command and export
-`E2E_CA_BUNDLE` first. The wrapper script selects that overlay automatically.
 
 The repository's automated verification does not run this paid test.
 
@@ -264,51 +251,32 @@ Restrict `Resource` to approved foundation-model and inference-profile ARNs
 where IAM permits. Initial model subscription can additionally require the AWS
 Marketplace permissions documented in the official Claude Code Bedrock guide.
 
-### Recommended: short-lived Bedrock bearer token
+### Credentials: one ephemeral Bedrock API key
 
-The recommended wrapper uses AWS's official token-generator library on the
-host. It resolves your normal host AWS credential chain, generates a
-region-bound Bedrock bearer token with a 15-minute default lifetime, and passes
-only that token to the agent container. AWS profiles, credential processes, SSO
-state, and role assumption never need to work inside the container.
+The container receives exactly one credential — an ephemeral Bedrock API key
+(`AWS_BEARER_TOKEN_BEDROCK`). All host AWS credential resolution (profiles, SSO,
+credential processes, role assumption) stays on the host, outside the container.
+See the [Bedrock API keys guide](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html).
 
-Install `uv`, authenticate the AWS CLI on the host, then run:
+`scripts/e2e-claude-bedrock.sh` mints a short-lived, region-bound token from your
+normal host AWS credential chain (using AWS's official token generator; requires
+`uv`) and passes only that token to the container:
 
 ```bash
 aws sso login --profile my-bedrock-profile
-AWS_PROFILE=my-bedrock-profile AWS_REGION=us-east-1 \
-  ./scripts/e2e-claude-bedrock.sh
+AWS_PROFILE=my-bedrock-profile AWS_REGION=us-east-1 ./scripts/e2e-claude-bedrock.sh
 ```
 
 Set `E2E_BEDROCK_TOKEN_TTL_SECONDS` between 900 and 43200 to request another
-lifetime. The actual key expires at the earlier of that duration or the source
-AWS session. The wrapper does not print or write the token; it passes the token
-as an environment variable to an ephemeral container. Treat local Docker access
-as privileged because Docker operators can inspect container environments.
+lifetime; the key expires at the earlier of that duration or the source AWS
+session. The wrapper never prints or writes the token. Treat local Docker access
+as privileged, since Docker operators can inspect container environments.
 
-### Other credential-chain options
-
-Temporary AWS credentials can be supplied directly to the base runner:
+If you already have a Bedrock API key, run the test directly:
 
 ```bash
-export AWS_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_SESSION_TOKEN=...
-./scripts/e2e-claude.sh
+AWS_REGION=us-east-1 AWS_BEARER_TOKEN_BEDROCK=bedrock-api-key-... ./scripts/e2e-claude.sh
 ```
-
-For a profile without generating a bearer token, authenticate on the host and
-run the base wrapper. It mounts `~/.aws` read-only, including the SSO cache:
-
-```bash
-aws sso login --profile my-bedrock-profile
-AWS_PROFILE=my-bedrock-profile AWS_REGION=us-east-1 ./scripts/e2e-claude.sh
-```
-
-Set `E2E_AWS_CONFIG_DIR` if the configuration directory is not `~/.aws`.
-An already-generated Bedrock key can be supplied as
-`AWS_BEARER_TOKEN_BEDROCK`.
 
 The test defaults to the US cross-region Claude Haiku 4.5 inference profile,
 at most three agent turns, a $0.25 budget ceiling, and a ten-minute timeout.
@@ -320,10 +288,6 @@ AWS_REGION=us-east-1 \
   E2E_CLAUDE_MODEL=us.anthropic.claude-haiku-4-5-20251001-v1:0 \
   ./scripts/e2e-claude-bedrock.sh
 ```
-
-For a managed/private CA, set `E2E_CA_BUNDLE` just as for the Codex test. The
-Claude-specific Compose overlay appends it to the image's installed public
-roots without disabling certificate validation.
 
 ## CI and releases
 

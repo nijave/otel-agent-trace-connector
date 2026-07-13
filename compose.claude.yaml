@@ -1,20 +1,16 @@
-services:
-  collector:
-    build:
-      context: .
-      args:
-        OCB_VERSION: "0.156.0"
-    volumes:
-      - ./.e2e-output:/output
-    environment:
-      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:13133/"]
-      interval: 1s
-      timeout: 2s
-      retries: 30
+# Claude Code (Bedrock) e2e stack. The shared collector and validator come from
+# compose.base.yaml; only the Claude agent is defined here, so this stack never
+# requires the Codex OPENAI_API_KEY.
+#
+# Credentials: a single ephemeral Bedrock API key (AWS_BEARER_TOKEN_BEDROCK) is
+# the only credential passed into the container. All host AWS credential
+# resolution stays outside the container -- see scripts/e2e-claude-bedrock.sh.
+# https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html
+include:
+  - compose.base.yaml
 
-  claude:
+services:
+  agent:
     build:
       context: e2e/claude
       args:
@@ -22,21 +18,15 @@ services:
     environment:
       CLAUDE_CODE_USE_BEDROCK: "1"
       AWS_REGION: "${AWS_REGION:?AWS_REGION is required for the live Claude Bedrock E2E test}"
-      AWS_DEFAULT_REGION: "${AWS_REGION:?AWS_REGION is required for the live Claude Bedrock E2E test}"
-      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
-      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
-      AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
-      AWS_BEARER_TOKEN_BEDROCK: "${AWS_BEARER_TOKEN_BEDROCK:-}"
-      AWS_CONTAINER_CREDENTIALS_FULL_URI: "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}"
-      AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: "${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}"
+      AWS_BEARER_TOKEN_BEDROCK: "${AWS_BEARER_TOKEN_BEDROCK:?AWS_BEARER_TOKEN_BEDROCK is required; generate one with scripts/e2e-claude-bedrock.sh}"
       CLAUDE_CODE_ENABLE_TELEMETRY: "1"
       CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
       E2E_CLAUDE_MAX_BUDGET_USD: "${E2E_CLAUDE_MAX_BUDGET_USD:-0.25}"
       E2E_CLAUDE_MAX_TURNS: "${E2E_CLAUDE_MAX_TURNS:-3}"
-      E2E_CLAUDE_MODEL: "${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
-      ANTHROPIC_MODEL: "${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
+      E2E_CLAUDE_MODEL: &claude_model "${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
+      ANTHROPIC_MODEL: *claude_model
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: *claude_model
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
       OTEL_LOGS_EXPORTER: none
       OTEL_METRICS_EXPORTER: none
@@ -48,20 +38,3 @@ services:
     depends_on:
       collector:
         condition: service_healthy
-
-  validator:
-    build:
-      context: .
-      dockerfile: e2e/validator/Dockerfile
-    environment:
-      E2E_AGENT: claude_code
-      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
-      RAW_TRACE_FILE: /output/raw-traces.json
-      TRACE_FILE: /output/canonical-traces.json
-    volumes:
-      - ./.e2e-output:/output:ro
-    depends_on:
-      collector:
-        condition: service_healthy
-      claude:
-        condition: service_completed_successfully

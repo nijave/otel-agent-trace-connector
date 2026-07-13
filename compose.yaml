@@ -1,20 +1,11 @@
-services:
-  collector:
-    build:
-      context: .
-      args:
-        OCB_VERSION: "0.156.0"
-    volumes:
-      - ./.e2e-output:/output
-    environment:
-      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e.sh}"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:13133/"]
-      interval: 1s
-      timeout: 2s
-      retries: 30
+# Codex e2e stack. The shared collector and validator come from compose.base.yaml;
+# only the Codex agent is defined here, so this stack never requires Claude/AWS
+# credentials. The validator defaults E2E_AGENT to codex, so no override is needed.
+include:
+  - compose.base.yaml
 
-  codex:
+services:
+  agent:
     build:
       context: e2e/codex
       args:
@@ -28,18 +19,3 @@ services:
     depends_on:
       collector:
         condition: service_healthy
-
-  validator:
-    build:
-      context: .
-      dockerfile: e2e/validator/Dockerfile
-    environment:
-      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e.sh}"
-      TRACE_FILE: /output/canonical-traces.json
-    volumes:
-      - ./.e2e-output:/output:ro
-    depends_on:
-      collector:
-        condition: service_healthy
-      codex:
-        condition: service_completed_successfully

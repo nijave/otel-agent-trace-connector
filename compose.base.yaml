@@ -1,0 +1,38 @@
+# Shared services for both e2e stacks. Included by compose.yaml (Codex) and
+# compose.claude.yaml (Claude); each of those defines only its own `agent`
+# service, which keeps the required-credential env isolated per stack. The
+# validator is parameterized by E2E_AGENT (set to claude_code by the Claude
+# script) rather than overridden per stack, since overriding an included service
+# is rejected by some Compose versions.
+services:
+  collector:
+    build:
+      context: .
+      args:
+        OCB_VERSION: "0.156.0"
+    volumes:
+      - ./.e2e-output:/output
+    environment:
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run the matching scripts/e2e*.sh}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:13133/"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  validator:
+    build:
+      context: .
+      dockerfile: e2e/validator/Dockerfile
+    environment:
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run the matching scripts/e2e*.sh}"
+      E2E_AGENT: "${E2E_AGENT:-codex}"
+      TRACE_FILE: /output/canonical-traces.json
+      RAW_TRACE_FILE: /output/raw-traces.json
+    volumes:
+      - ./.e2e-output:/output:ro
+    depends_on:
+      collector:
+        condition: service_healthy
+      agent:
+        condition: service_completed_successfully

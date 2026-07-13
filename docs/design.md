@@ -268,30 +268,29 @@ The agent process has a configurable ten-minute default timeout so retries or
 transport stalls cannot leave an unbounded paid session running.
 
 The runner pins `gpt-5.1-codex-mini` by default to minimize live-test cost. Its
-image installs Debian's standard public CA bundle rather than assuming a host
-path. An optional Compose override mounts a managed/private PEM bundle, which
-the runner appends to the image roots before setting `SSL_CERT_FILE`; it never
-disables verification or replaces public roots. Before execution, the ephemeral
-runner uses Codex's noninteractive API-key login so the pinned CLI attaches the
-supplied key; the credential store is discarded with the runner container.
+image installs Debian's standard `ca-certificates` package so public TLS works
+without host paths. Before execution, the ephemeral runner uses Codex's
+noninteractive API-key login so the pinned CLI attaches the supplied key; the
+credential store is discarded with the runner container.
 
 The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.
 
-The Claude Code E2E is a separate Compose project so it cannot accidentally
-consume the Codex credential or inherit Codex service dependencies. It routes
-exclusively through the Bedrock Invoke API using an explicit region and pinned
-inference profile; direct Anthropic credentials are not accepted. The preferred
-host wrapper converts the normal AWS credential chain into a short-lived,
-region-bound Bedrock bearer token and passes only that token into the container.
-Direct temporary credentials and a read-only AWS profile/SSO overlay remain
-available as fallbacks. It runs the current pinned Claude Code release in bare
-print mode with only Bash exposed, explicit tool approval, bounded turns, a hard
-dollar ceiling, no session persistence, and the same timeout/CA strategy as
-Codex. Claude exports only beta traces; content-bearing telemetry gates remain
-disabled. Validation requires both the untouched native hierarchy and its
-normalized counterpart, including the interaction, LLM request, and Bash tool
-spans. The live Claude test is prepared but intentionally unrun.
+The Claude Code E2E uses its own Compose file (`compose.claude.yaml`) that
+defines only the Claude agent, so it cannot accidentally require or consume the
+Codex credential. It routes exclusively through the Bedrock Invoke API using an
+explicit region and pinned inference profile; direct Anthropic credentials are
+not accepted. The container receives exactly one credential: an ephemeral Bedrock
+API key (`AWS_BEARER_TOKEN_BEDROCK`). All host AWS credential resolution stays
+outside the container; the preferred host wrapper converts the normal AWS
+credential chain into a short-lived, region-bound token and passes only that
+token in, allowlisted by the Compose `environment:` block. It runs the current
+pinned Claude Code release in bare print mode with only Bash exposed, explicit
+tool approval, bounded turns, a hard dollar ceiling, and no session persistence.
+Claude exports only beta traces; content-bearing telemetry gates remain disabled.
+Validation requires both the untouched native hierarchy and its normalized
+counterpart, including the interaction, LLM request, and Bash tool spans. The
+live Claude test is prepared but intentionally unrun.
 
 CI never runs either paid E2E. It compiles their runners and validator, builds
 all images, validates both Compose graphs and Collector configurations, and

@@ -6,18 +6,6 @@ if [ -z "${OPENAI_API_KEY:-}" ]; then
   exit 2
 fi
 
-if [ -n "${E2E_EXTRA_CA_BUNDLE:-}" ]; then
-  if [ ! -f "${E2E_EXTRA_CA_BUNDLE}" ] || [ ! -r "${E2E_EXTRA_CA_BUNDLE}" ]; then
-    echo "E2E_EXTRA_CA_BUNDLE is not a readable file: ${E2E_EXTRA_CA_BUNDLE}" >&2
-    exit 2
-  fi
-
-  # Retain the image's public roots and append any managed/private roots.
-  cat /etc/ssl/certs/ca-certificates.crt "${E2E_EXTRA_CA_BUNDLE}" \
-    > /tmp/e2e-ca-certificates.crt
-  export SSL_CERT_FILE=/tmp/e2e-ca-certificates.crt
-fi
-
 # The pinned CLI requires its explicit noninteractive login flow before it will
 # attach an API key. CODEX_HOME and this credential store are container-local.
 printf '%s' "${OPENAI_API_KEY}" | codex login --with-api-key >/dev/null

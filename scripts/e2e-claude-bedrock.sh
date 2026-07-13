@@ -22,7 +22,8 @@ if [[ "${AWS_BEARER_TOKEN_BEDROCK}" != bedrock-api-key-* ]]; then
   exit 1
 fi
 
-# The bearer token is the only AWS credential passed into the agent container.
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE \
-  AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+# The container only ever receives the variables allowlisted in
+# compose.claude.yaml's `environment:` block (this token plus AWS_REGION). Docker
+# Compose does not forward other host variables, so host AWS credentials never
+# reach the container -- there is no denylist to maintain here.
 exec "${script_dir}/e2e-claude.sh"
