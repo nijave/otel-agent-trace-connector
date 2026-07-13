@@ -60,10 +60,10 @@ pipelines export raw telemetry in parallel before normalization.
 
 The connector is its own Go module at `connector/codingagentconnector/`, matching
 the per-component module layout of `opentelemetry-collector-contrib` so it can be
-upstreamed with minimal changes. The E2E validator remains in the repository-root
-module, and a `go.work` ties the two together for local development. The
-OCB-generated `dist/` module is intentionally excluded from the workspace, so the
-distribution build runs with `GOWORK=off`.
+upstreamed with minimal changes. The E2E validator and the tooling/OCB modules
+(`internal/tools`, generated `dist`) are separate modules built independently;
+the repository deliberately avoids a `go.work` workspace so each module builds in
+isolation, as in Contrib.
 
 The component module root contains `Config`, `NewFactory`, the factory edge
 adapters, and the mdatagen inputs/outputs (`metadata.yaml`, `doc.go`, and the

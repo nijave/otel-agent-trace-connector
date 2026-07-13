@@ -32,7 +32,6 @@ Repository layout:
 ├── e2e/                             # real agent runners and OTLP JSON validator
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
-├── go.work                          # ties the component and validator modules
 ├── compose.ca.yaml                  # optional managed/private CA overlay
 ├── compose.claude.aws-profile.yaml  # optional AWS profile/SSO overlay
 └── collector-config.yaml            # raw and canonical pipelines
@@ -51,9 +50,8 @@ and operational limits.
 
 ## Build
 
-The repository is a Go workspace (`go.work`) with two modules: the connector
-component under `connector/codingagentconnector/` and the E2E validator at the
-repo root. Test each module:
+The connector component (`connector/codingagentconnector/`) and the E2E validator
+(repo root) are separate Go modules. Test each:
 
 ```bash
 go test ./...                                   # root module (E2E validator)
@@ -72,18 +70,17 @@ Build the custom Collector container:
 docker build -t otelcol-coding-agents:dev .
 ```
 
-Or install OCB v0.156.0 and generate the distribution directly. The OCB-generated
-`dist/` module is not part of the workspace, so disable it for the build:
+Or install OCB v0.156.0 and generate the distribution directly:
 
 ```bash
-GOWORK=off builder --config builder-config.yaml
+builder --config builder-config.yaml
 ./dist/otelcol-coding-agents --config collector-config.yaml
 ```
 
 Regenerate the component's mdatagen artifacts after editing `metadata.yaml`:
 
 ```bash
-(cd connector/codingagentconnector && go generate ./...)
+./scripts/generate.sh
 ```
 
 ## Collector configuration
