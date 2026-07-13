@@ -1,0 +1,48 @@
+type: coding_agent
+github_project: nijave/otel-agent-trace-connector
+
+status:
+  class: connector
+  stability:
+    development: [logs_to_traces, traces_to_traces]
+  distributions: []
+  codeowners:
+    active: [nijave]
+
+tests:
+  config:
+
+telemetry:
+  metrics:
+    coding_agent_active_turns:
+      enabled: true
+      stability: development
+      description: Codex turns currently held in correlation state.
+      unit: "1"
+      gauge:
+        value_type: int
+        async: true
+    coding_agent_events_dropped:
+      enabled: true
+      stability: development
+      description: Redelivered Codex events dropped by within-turn deduplication.
+      unit: "1"
+      sum:
+        value_type: int
+        monotonic: true
+    coding_agent_turns_emitted:
+      enabled: true
+      stability: development
+      description: Reconstructed coding-agent turns emitted downstream, labeled by finish reason.
+      unit: "1"
+      sum:
+        value_type: int
+        monotonic: true
+    coding_agent_turns_truncated:
+      enabled: true
+      stability: development
+      description: Emitted turns that exceeded max_events_per_turn and dropped events.
+      unit: "1"
+      sum:
+        value_type: int
+        monotonic: true

@@ -12,17 +12,18 @@ import (
 
 	"github.com/nijave/otel-agent-trace-connector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/internal/codex"
+	"github.com/nijave/otel-agent-trace-connector/internal/metadata"
 )
 
-var componentType = component.MustNewType("coding_agent")
+var componentType = metadata.Type
 
 // NewFactory creates the coding-agent connector factory.
 func NewFactory() connector.Factory {
 	return connector.NewFactory(
 		componentType,
 		func() component.Config { return createDefaultConfig() },
-		connector.WithLogsToTraces(createLogsToTraces, component.StabilityLevelDevelopment),
-		connector.WithTracesToTraces(createTracesToTraces, component.StabilityLevelDevelopment),
+		connector.WithLogsToTraces(createLogsToTraces, metadata.LogsToTracesStability),
+		connector.WithTracesToTraces(createTracesToTraces, metadata.TracesToTracesStability),
 	)
 }
 

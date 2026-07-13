@@ -97,8 +97,8 @@ func TestTelemetryCountsEmittedTurnsByReason(t *testing.T) {
 	require.NoError(t, instance.Shutdown(context.Background()))
 
 	rm := collectMetrics(t, reader)
-	require.Equal(t, int64(1), counterValue(t, rm, "coding_agent_turns_emitted", attribute.String("finish_reason", "evicted")))
-	require.Equal(t, int64(1), counterValue(t, rm, "coding_agent_turns_emitted", attribute.String("finish_reason", "shutdown")))
+	require.Equal(t, int64(1), counterValue(t, rm, "otelcol_coding_agent_turns_emitted", attribute.String("finish_reason", "evicted")))
+	require.Equal(t, int64(1), counterValue(t, rm, "otelcol_coding_agent_turns_emitted", attribute.String("finish_reason", "shutdown")))
 }
 
 func TestTelemetryCountsDroppedDuplicateEvents(t *testing.T) {
@@ -116,7 +116,7 @@ func TestTelemetryCountsDroppedDuplicateEvents(t *testing.T) {
 	require.NoError(t, instance.ConsumeLogs(context.Background(), batch()))
 
 	rm := collectMetrics(t, reader)
-	require.Equal(t, int64(2), counterValue(t, rm, "coding_agent_events_dropped"))
+	require.Equal(t, int64(2), counterValue(t, rm, "otelcol_coding_agent_events_dropped"))
 }
 
 func TestTelemetryCountsTruncatedTurns(t *testing.T) {
@@ -131,8 +131,8 @@ func TestTelemetryCountsTruncatedTurns(t *testing.T) {
 	require.NoError(t, instance.Shutdown(context.Background()))
 
 	rm := collectMetrics(t, reader)
-	require.Equal(t, int64(1), counterValue(t, rm, "coding_agent_turns_truncated"))
-	require.Equal(t, int64(1), counterValue(t, rm, "coding_agent_turns_emitted", attribute.String("finish_reason", "shutdown")))
+	require.Equal(t, int64(1), counterValue(t, rm, "otelcol_coding_agent_turns_truncated"))
+	require.Equal(t, int64(1), counterValue(t, rm, "otelcol_coding_agent_turns_emitted", attribute.String("finish_reason", "shutdown")))
 }
 
 func TestTelemetryReportsActiveTurns(t *testing.T) {
@@ -143,5 +143,5 @@ func TestTelemetryReportsActiveTurns(t *testing.T) {
 		promptEvent("b", base),
 	)))
 	rm := collectMetrics(t, reader)
-	require.Equal(t, int64(2), gaugeValue(t, rm, "coding_agent_active_turns"))
+	require.Equal(t, int64(2), gaugeValue(t, rm, "otelcol_coding_agent_active_turns"))
 }

@@ -19,6 +19,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
+
+	"github.com/nijave/otel-agent-trace-connector/internal/metadata"
 )
 
 type turnKey struct{ provider, conversationID string }
@@ -52,16 +54,16 @@ type codingAgentConnector struct {
 	stopOnce  sync.Once
 
 	telemetry *telemetry
-	metricReg metric.Registration
 }
 
 func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*codingAgentConnector, error) {
-	meterProvider := set.MeterProvider
-	if meterProvider == nil {
-		meterProvider = noopmetric.NewMeterProvider()
+	// The generated Meter helper dereferences the MeterProvider directly, so
+	// supply a no-op provider when the settings omit one (e.g. in unit tests).
+	ts := set.TelemetrySettings
+	if ts.MeterProvider == nil {
+		ts.MeterProvider = noopmetric.NewMeterProvider()
 	}
-	meter := meterProvider.Meter(instrumentationScope)
-	tel, err := newTelemetry(meter)
+	builder, err := metadata.NewTelemetryBuilder(ts)
 	if err != nil {
 		return nil, err
 	}
@@ -73,18 +75,16 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 		config: cfg, set: set, next: next, scopeVersion: scopeVersion,
 		turns: make(map[turnKey]*turnState),
 		stop:  make(chan struct{}), done: make(chan struct{}),
-		telemetry: tel,
+		telemetry: &telemetry{builder: builder},
 	}
 	// Report active-turn count on demand so operators can watch state approach
 	// max_active_turns without the connector maintaining a hand-balanced counter.
-	reg, err := meter.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
-		observer.ObserveInt64(tel.activeTurns, c.activeTurnCount())
+	if err := builder.RegisterCodingAgentActiveTurnsCallback(func(_ context.Context, observer metric.Int64Observer) error {
+		observer.Observe(c.activeTurnCount())
 		return nil
-	}, tel.activeTurns)
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
-	c.metricReg = reg
 	return c, nil
 }
 
@@ -112,9 +112,7 @@ func (c *codingAgentConnector) Start(context.Context, component.Host) error {
 }
 
 func (c *codingAgentConnector) Shutdown(ctx context.Context) error {
-	if c.metricReg != nil {
-		_ = c.metricReg.Unregister()
-	}
+	c.telemetry.builder.Shutdown()
 	c.stopOnce.Do(func() { close(c.stop) })
 	// Only wait for the sweep loop if it was ever started; otherwise done never
 	// closes and Shutdown would block until the context deadline.
