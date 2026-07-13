@@ -154,9 +154,9 @@ func TestCompletedTurnWinsOverTimeoutThreshold(t *testing.T) {
 	now := time.Now()
 	key := turnKey{provider: "codex", conversationID: "conversation-1"}
 	instance.turns[key] = &turnState{key: key, completeSeen: true, lastSeen: now.Add(-2 * cfg.TurnTimeout)}
-	turns, reasons := instance.collectReady(now)
-	require.Len(t, turns, 1)
-	require.Equal(t, []string{"completed"}, reasons)
+	finalized := instance.collectReady(now)
+	require.Len(t, finalized, 1)
+	require.Equal(t, "completed", finalized[0].reason)
 }
 
 func TestToolAfterCompletionRequiresAnotherCompletion(t *testing.T) {

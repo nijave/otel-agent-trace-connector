@@ -107,11 +107,11 @@ func stringValue(v any) string {
 	switch value := v.(type) {
 	case string:
 		return value
-	case fmt.Stringer:
-		return value.String()
 	case nil:
 		return ""
 	default:
+		// fmt.Sprint invokes String() for fmt.Stringer values, so no dedicated
+		// case is needed for them.
 		return fmt.Sprint(value)
 	}
 }

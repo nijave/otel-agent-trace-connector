@@ -25,6 +25,14 @@ import (
 
 type turnKey struct{ provider, conversationID string }
 
+// finalizedTurn pairs a turn removed from active state with the reason it was
+// finalized, so the emit path carries them together instead of as index-matched
+// parallel slices.
+type finalizedTurn struct {
+	turn   *turnState
+	reason string
+}
+
 type turnState struct {
 	key          turnKey
 	events       []agentEvent
@@ -140,8 +148,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		}
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
-	var ready []*turnState
-	var reasons []string
+	var finalized []finalizedTurn
 	var dropped int64
 	now := time.Now()
 	c.mu.Lock()
@@ -156,14 +163,12 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		}
 		if event.name == "codex.user_prompt" && turn != nil && turn.promptSeen {
 			delete(c.turns, key)
-			ready = append(ready, turn)
-			reasons = append(reasons, "superseded")
+			finalized = append(finalized, finalizedTurn{turn: turn, reason: "superseded"})
 			turn = nil
 		}
 		if turn == nil {
 			if len(c.turns) >= c.config.MaxActiveTurns {
-				ready = append(ready, c.evictOldestLocked())
-				reasons = append(reasons, "evicted")
+				finalized = append(finalized, finalizedTurn{turn: c.evictOldestLocked(), reason: "evicted"})
 			}
 			turn = &turnState{key: key, first: event.timestamp, last: event.timestamp, lastSeen: now, resource: event.resource}
 			c.turns[key] = turn
@@ -172,7 +177,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 	}
 	c.mu.Unlock()
 	c.telemetry.recordDroppedEvents(ctx, dropped)
-	return c.emit(ctx, ready, reasons)
+	return c.emit(ctx, finalized)
 }
 
 func (t *turnState) seenEvent(event agentEvent) bool {
@@ -230,12 +235,8 @@ func (c *codingAgentConnector) sweepLoop() {
 	for {
 		select {
 		case now := <-ticker.C:
-			ready, reasons := c.collectReady(now)
-			for i, turn := range ready {
-				if err := c.next.ConsumeTraces(context.Background(), buildTrace(turn, reasons[i], c.scopeVersion)); err != nil {
-					c.set.Logger.Error("failed to emit reconstructed coding-agent trace", zap.Error(err))
-				}
-				c.telemetry.recordEmitted(context.Background(), reasons[i], turn.truncated)
+			if err := c.emit(context.Background(), c.collectReady(now)); err != nil {
+				c.set.Logger.Error("failed to emit reconstructed coding-agent trace", zap.Error(err))
 			}
 		case <-c.stop:
 			return
@@ -243,11 +244,10 @@ func (c *codingAgentConnector) sweepLoop() {
 	}
 }
 
-func (c *codingAgentConnector) collectReady(now time.Time) ([]*turnState, []string) {
+func (c *codingAgentConnector) collectReady(now time.Time) []finalizedTurn {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var turns []*turnState
-	var reasons []string
+	var finalized []finalizedTurn
 	for key, turn := range c.turns {
 		reason := ""
 		if turn.completeSeen && now.Sub(turn.lastSeen) >= c.config.ReorderWindow {
@@ -257,11 +257,10 @@ func (c *codingAgentConnector) collectReady(now time.Time) ([]*turnState, []stri
 		}
 		if reason != "" {
 			delete(c.turns, key)
-			turns = append(turns, turn)
-			reasons = append(reasons, reason)
+			finalized = append(finalized, finalizedTurn{turn: turn, reason: reason})
 		}
 	}
-	return turns, reasons
+	return finalized
 }
 
 func (c *codingAgentConnector) evictOldestLocked() *turnState {
@@ -276,33 +275,31 @@ func (c *codingAgentConnector) evictOldestLocked() *turnState {
 	return oldest
 }
 
-func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, reasons []string) error {
+func (c *codingAgentConnector) emit(ctx context.Context, finalized []finalizedTurn) error {
 	// Continue past a failing turn so one transient downstream error during a
 	// drain does not abandon the turns already removed from active state.
 	var errs error
-	for i, turn := range turns {
-		if turn == nil {
+	for _, ft := range finalized {
+		if ft.turn == nil {
 			continue
 		}
-		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i], c.scopeVersion)); err != nil {
+		if err := c.next.ConsumeTraces(ctx, buildTrace(ft.turn, ft.reason, c.scopeVersion)); err != nil {
 			errs = errors.Join(errs, err)
 		}
-		c.telemetry.recordEmitted(ctx, reasons[i], turn.truncated)
+		c.telemetry.recordEmitted(ctx, ft.reason, ft.turn.truncated)
 	}
 	return errs
 }
 
 func (c *codingAgentConnector) flushAll(ctx context.Context, reason string) error {
 	c.mu.Lock()
-	turns := make([]*turnState, 0, len(c.turns))
-	reasons := make([]string, 0, len(c.turns))
+	finalized := make([]finalizedTurn, 0, len(c.turns))
 	for key, turn := range c.turns {
-		turns = append(turns, turn)
-		reasons = append(reasons, reason)
+		finalized = append(finalized, finalizedTurn{turn: turn, reason: reason})
 		delete(c.turns, key)
 	}
 	c.mu.Unlock()
-	return c.emit(ctx, turns, reasons)
+	return c.emit(ctx, finalized)
 }
 
 var _ connector.Logs = (*codingAgentConnector)(nil)

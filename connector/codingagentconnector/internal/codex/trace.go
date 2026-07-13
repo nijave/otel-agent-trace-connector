@@ -20,6 +20,16 @@ const instrumentationScope = "github.com/nijave/otel-agent-trace-connector/conne
 // Collector build info does not carry a version (for example in unit tests).
 const defaultScopeVersion = "0.1.0"
 
+// tokenUsageAttrs maps Codex completion token counts to their canonical
+// destination attributes. It is the single source of truth for both per-chat-span
+// usage and the aggregate root usage.
+var tokenUsageAttrs = []struct{ source, dest string }{
+	{"input_token_count", "gen_ai.usage.input_tokens"},
+	{"output_token_count", "gen_ai.usage.output_tokens"},
+	{"cached_token_count", "gen_ai.usage.cache_read.input_tokens"},
+	{"reasoning_token_count", "coding_agent.usage.reasoning_tokens"},
+}
+
 func buildTrace(turn *turnState, reason, scopeVersion string) ptrace.Traces {
 	events := append([]agentEvent(nil), turn.events...)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
@@ -141,10 +151,9 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if model != "" {
 			span.Attributes().PutStr("gen_ai.request.model", model)
 		}
-		copyIntAttr(span.Attributes(), event.attrs, "input_token_count", "gen_ai.usage.input_tokens")
-		copyIntAttr(span.Attributes(), event.attrs, "output_token_count", "gen_ai.usage.output_tokens")
-		copyIntAttr(span.Attributes(), event.attrs, "cached_token_count", "gen_ai.usage.cache_read.input_tokens")
-		copyIntAttr(span.Attributes(), event.attrs, "reasoning_token_count", "coding_agent.usage.reasoning_tokens")
+		for _, m := range tokenUsageAttrs {
+			copyIntAttr(span.Attributes(), event.attrs, m.source, m.dest)
+		}
 		completionIndex++
 	}
 }
@@ -264,22 +273,16 @@ func putAggregateUsage(attrs pcommon.Map, events []agentEvent) {
 		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
 			continue
 		}
-		for _, key := range []string{"input_token_count", "output_token_count", "cached_token_count", "reasoning_token_count"} {
-			if value, ok := int64Value(event.attrs[key]); ok {
-				totals[key] += value
-				seen[key] = true
+		for _, m := range tokenUsageAttrs {
+			if value, ok := int64Value(event.attrs[m.source]); ok {
+				totals[m.source] += value
+				seen[m.source] = true
 			}
 		}
 	}
-	mappings := map[string]string{
-		"input_token_count":     "gen_ai.usage.input_tokens",
-		"output_token_count":    "gen_ai.usage.output_tokens",
-		"cached_token_count":    "gen_ai.usage.cache_read.input_tokens",
-		"reasoning_token_count": "coding_agent.usage.reasoning_tokens",
-	}
-	for source, destination := range mappings {
-		if seen[source] {
-			attrs.PutInt(destination, totals[source])
+	for _, m := range tokenUsageAttrs {
+		if seen[m.source] {
+			attrs.PutInt(m.dest, totals[m.source])
 		}
 	}
 }
