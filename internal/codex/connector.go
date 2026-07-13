@@ -38,9 +38,10 @@ type turnState struct {
 }
 
 type codingAgentConnector struct {
-	config *Config
-	set    connector.Settings
-	next   consumer.Traces
+	config       *Config
+	set          connector.Settings
+	next         consumer.Traces
+	scopeVersion string
 
 	mu        sync.Mutex
 	turns     map[turnKey]*turnState
@@ -64,9 +65,14 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 	if err != nil {
 		return nil, err
 	}
+	scopeVersion := set.BuildInfo.Version
+	if scopeVersion == "" {
+		scopeVersion = defaultScopeVersion
+	}
 	c := &codingAgentConnector{
-		config: cfg, set: set, next: next, turns: make(map[turnKey]*turnState),
-		stop: make(chan struct{}), done: make(chan struct{}),
+		config: cfg, set: set, next: next, scopeVersion: scopeVersion,
+		turns: make(map[turnKey]*turnState),
+		stop:  make(chan struct{}), done: make(chan struct{}),
 		telemetry: tel,
 	}
 	// Report active-turn count on demand so operators can watch state approach
@@ -228,7 +234,7 @@ func (c *codingAgentConnector) sweepLoop() {
 		case now := <-ticker.C:
 			ready, reasons := c.collectReady(now)
 			for i, turn := range ready {
-				if err := c.next.ConsumeTraces(context.Background(), buildTrace(turn, reasons[i])); err != nil {
+				if err := c.next.ConsumeTraces(context.Background(), buildTrace(turn, reasons[i], c.scopeVersion)); err != nil {
 					c.set.Logger.Error("failed to emit reconstructed coding-agent trace", zap.Error(err))
 				}
 				c.telemetry.recordEmitted(context.Background(), reasons[i], turn.truncated)
@@ -280,7 +286,7 @@ func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, rea
 		if turn == nil {
 			continue
 		}
-		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i])); err != nil {
+		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i], c.scopeVersion)); err != nil {
 			errs = errors.Join(errs, err)
 		}
 		c.telemetry.recordEmitted(ctx, reasons[i], turn.truncated)

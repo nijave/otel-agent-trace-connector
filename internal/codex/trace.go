@@ -16,7 +16,11 @@ import (
 
 const instrumentationScope = "github.com/nijave/otel-agent-trace-connector"
 
-func buildTrace(turn *turnState, reason string) ptrace.Traces {
+// defaultScopeVersion is used for the emitted instrumentation scope when the
+// Collector build info does not carry a version (for example in unit tests).
+const defaultScopeVersion = "0.1.0"
+
+func buildTrace(turn *turnState, reason, scopeVersion string) ptrace.Traces {
 	events := append([]agentEvent(nil), turn.events...)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
 	start, end := turnBounds(turn, events)
@@ -28,7 +32,7 @@ func buildTrace(turn *turnState, reason string) ptrace.Traces {
 	_ = rs.Resource().Attributes().FromRaw(turn.resource)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
-	ss.Scope().SetVersion("0.1.0")
+	ss.Scope().SetVersion(scopeVersion)
 
 	root := ss.Spans().AppendEmpty()
 	root.SetName("invoke_agent codex")

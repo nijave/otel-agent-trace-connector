@@ -25,7 +25,7 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 		},
 	}
 
-	traces := buildTrace(turn, "completed")
+	traces := buildTrace(turn, "completed", defaultScopeVersion)
 	require.Equal(t, 3, traces.SpanCount())
 	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	root := findSpan(t, spans, "invoke_agent codex")
@@ -53,8 +53,8 @@ func TestBuildTraceIDsAreDeterministic(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base, promptSeen: true,
 		events: []agentEvent{testEvent("codex.user_prompt", base, nil)}}
-	first := buildTrace(turn, "shutdown")
-	second := buildTrace(turn, "shutdown")
+	first := buildTrace(turn, "shutdown", defaultScopeVersion)
+	second := buildTrace(turn, "shutdown", defaultScopeVersion)
 	require.Equal(t, first.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID(), second.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID())
 }
 
@@ -62,7 +62,7 @@ func TestBuildTraceMarksTimeout(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base,
 		events: []agentEvent{testEvent("codex.api_request", base, nil)}}
-	root := buildTrace(turn, "timeout").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	root := buildTrace(turn, "timeout", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
 	require.False(t, attrBool(t, root, "coding_agent.turn.complete"))
 }
@@ -77,7 +77,7 @@ func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 7, "output_token_count": 3}),
 		},
 	}
-	root := buildTrace(turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	root := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, int64(12), attrInt(t, root, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(5), attrInt(t, root, "gen_ai.usage.output_tokens"))
 }
@@ -94,7 +94,7 @@ func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed"}),
 		},
 	}
-	spans := buildTrace(turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	spans := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	require.True(t, base.Add(1900*time.Millisecond).Equal(spans.At(1).StartTimestamp().AsTime()))
 	require.True(t, base.Equal(spans.At(2).StartTimestamp().AsTime()))
 }

@@ -213,6 +213,20 @@ func TestShutdownDrainContinuesAfterDownstreamError(t *testing.T) {
 	require.Len(t, sink.all(), 3)
 }
 
+func TestEmittedScopeVersionUsesBuildInfo(t *testing.T) {
+	set := connector.Settings{
+		TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()},
+		BuildInfo:         component.BuildInfo{Version: "1.2.3"},
+	}
+	sink := &traceSink{}
+	instance := newTestConnector(t, NewDefaultConfig(), set, sink)
+	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(testEvent("codex.user_prompt", time.Now(), nil))))
+	require.NoError(t, instance.Shutdown(context.Background()))
+	require.Len(t, sink.all(), 1)
+	scope := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Scope()
+	require.Equal(t, "1.2.3", scope.Version())
+}
+
 func newTestConnector(t *testing.T, cfg *Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
 	t.Helper()
 	instance, err := newConnector(cfg, set, next)
