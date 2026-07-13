@@ -25,6 +25,12 @@ it is adequately tested — before cleverness, flexibility, or feature breadth.
   preserving, wrapping, matching, or extending it. This codebase has previously
   accumulated over-engineering added by agents (e.g. a private-CA bundle apparatus
   nobody asked for); do not reintroduce that pattern.
+- **But removal always comes with analysis (Chesterton's Fence).** Understand why
+  something exists before deleting it; establish that it is unearned by
+  investigating history, callers, and tests — never assume. If you cannot explain
+  what it was for, do not remove it yet. (In this repo that analysis is why the
+  CA apparatus was deleted but the `uint64` overflow guard and string/int token
+  coercions were kept — they are load-bearing.)
 - **Prefer allowlists over denylists** — enumerate what is permitted, not what to
   exclude. Denylists silently fail open as the world changes. (The Compose
   `environment:` block, for example, is already an allowlist of what reaches a
