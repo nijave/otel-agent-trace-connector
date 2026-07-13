@@ -37,12 +37,21 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Check shell syntax
         run: |
-          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh
+          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh scripts/generate.sh
           sh -n e2e/codex/run.sh e2e/claude/run.sh
       - name: Lint shell scripts
-        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh e2e/codex/run.sh e2e/claude/run.sh
+        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh scripts/generate.sh e2e/codex/run.sh e2e/claude/run.sh
       - name: Check Python helper syntax
         run: python3 scripts/bedrock-token_test.py
+      - name: Check generated files are up to date
+        run: |
+          ./scripts/generate.sh
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::mdatagen output is stale; run ./scripts/generate.sh and commit the result"
+            git status --porcelain
+            git diff
+            exit 1
+          fi
       - name: Vet
         run: |
           go vet ./...
