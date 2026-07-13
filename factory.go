@@ -32,7 +32,7 @@ func createLogsToTraces(
 	cfg component.Config,
 	next consumer.Traces,
 ) (connector.Logs, error) {
-	return codex.New(cfg.(*Config), set, next), nil
+	return codex.New(cfg.(*Config), set, next)
 }
 
 func createTracesToTraces(

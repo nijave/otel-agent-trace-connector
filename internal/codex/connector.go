@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/metric"
+	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 )
 
@@ -47,18 +49,48 @@ type codingAgentConnector struct {
 	started   atomic.Bool
 	startOnce sync.Once
 	stopOnce  sync.Once
+
+	telemetry *telemetry
+	metricReg metric.Registration
 }
 
-func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
-	return &codingAgentConnector{
+func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*codingAgentConnector, error) {
+	meterProvider := set.MeterProvider
+	if meterProvider == nil {
+		meterProvider = noopmetric.NewMeterProvider()
+	}
+	meter := meterProvider.Meter(instrumentationScope)
+	tel, err := newTelemetry(meter)
+	if err != nil {
+		return nil, err
+	}
+	c := &codingAgentConnector{
 		config: cfg, set: set, next: next, turns: make(map[turnKey]*turnState),
 		stop: make(chan struct{}), done: make(chan struct{}),
+		telemetry: tel,
 	}
+	// Report active-turn count on demand so operators can watch state approach
+	// max_active_turns without the connector maintaining a hand-balanced counter.
+	reg, err := meter.RegisterCallback(func(_ context.Context, observer metric.Observer) error {
+		observer.ObserveInt64(tel.activeTurns, c.activeTurnCount())
+		return nil
+	}, tel.activeTurns)
+	if err != nil {
+		return nil, err
+	}
+	c.metricReg = reg
+	return c, nil
 }
 
 // New creates the stateful Codex logs-to-traces edge.
-func New(cfg *Config, set connector.Settings, next consumer.Traces) connector.Logs {
+func New(cfg *Config, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
 	return newConnector(cfg, set, next)
+}
+
+func (c *codingAgentConnector) activeTurnCount() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return int64(len(c.turns))
 }
 
 func (*codingAgentConnector) Capabilities() consumer.Capabilities {
@@ -74,6 +106,9 @@ func (c *codingAgentConnector) Start(context.Context, component.Host) error {
 }
 
 func (c *codingAgentConnector) Shutdown(ctx context.Context) error {
+	if c.metricReg != nil {
+		_ = c.metricReg.Unregister()
+	}
 	c.stopOnce.Do(func() { close(c.stop) })
 	// Only wait for the sweep loop if it was ever started; otherwise done never
 	// closes and Shutdown would block until the context deadline.
@@ -103,6 +138,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
 	var ready []*turnState
 	var reasons []string
+	var dropped int64
 	now := time.Now()
 	c.mu.Lock()
 	for _, event := range events {
@@ -111,6 +147,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		if turn != nil && turn.seenEvent(event) {
 			// Redelivered event: skip before the prompt check so a resent
 			// prompt does not falsely supersede its own turn.
+			dropped++
 			continue
 		}
 		if event.name == "codex.user_prompt" && turn != nil && turn.promptSeen {
@@ -130,6 +167,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		turn.add(event, now, c.config.MaxEvents)
 	}
 	c.mu.Unlock()
+	c.telemetry.recordDroppedEvents(ctx, dropped)
 	return c.emit(ctx, ready, reasons)
 }
 
@@ -193,6 +231,7 @@ func (c *codingAgentConnector) sweepLoop() {
 				if err := c.next.ConsumeTraces(context.Background(), buildTrace(turn, reasons[i])); err != nil {
 					c.set.Logger.Error("failed to emit reconstructed coding-agent trace", zap.Error(err))
 				}
+				c.telemetry.recordEmitted(context.Background(), reasons[i], turn.truncated)
 			}
 		case <-c.stop:
 			return
@@ -244,6 +283,7 @@ func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, rea
 		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i])); err != nil {
 			errs = errors.Join(errs, err)
 		}
+		c.telemetry.recordEmitted(ctx, reasons[i], turn.truncated)
 	}
 	return errs
 }

@@ -44,7 +44,7 @@ func TestConnectorCorrelatesOutOfOrderBatchAndFinalizes(t *testing.T) {
 	cfg.TurnTimeout = time.Second
 	sink := &traceSink{}
 	set := connector.Settings{ID: component.NewID(component.MustNewType("coding_agent")), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
-	instance := newConnector(cfg, set, sink)
+	instance := newTestConnector(t, cfg, set, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
 
@@ -62,7 +62,7 @@ func TestConnectorCorrelatesOutOfOrderBatchAndFinalizes(t *testing.T) {
 func TestConnectorSplitsConsecutivePrompts(t *testing.T) {
 	cfg := NewDefaultConfig()
 	sink := &traceSink{}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	base := time.Now()
 	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(
 		testEvent("codex.user_prompt", base, nil), testEvent("codex.user_prompt", base.Add(time.Second), nil),
@@ -74,7 +74,7 @@ func TestConnectorSplitsConsecutivePrompts(t *testing.T) {
 func TestConnectorDeduplicatesRedeliveredEvents(t *testing.T) {
 	cfg := NewDefaultConfig()
 	sink := &traceSink{}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))
 	base := time.Now()
 	batch := func() plog.Logs {
@@ -115,7 +115,7 @@ func TestConnectorBoundsStateAndEvents(t *testing.T) {
 	cfg.MaxActiveTurns = 1
 	cfg.MaxEvents = 1
 	sink := &traceSink{}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	first := testEvent("codex.user_prompt", time.Now(), nil)
 	first.conversationID = "first"
 	first.attrs["conversation.id"] = "first"
@@ -137,7 +137,7 @@ func TestZeroReorderWindowFinalizesPromptly(t *testing.T) {
 	cfg.ReorderWindow = 0
 	cfg.TurnTimeout = time.Second
 	sink := &traceSink{}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
 	base := time.Now()
@@ -150,7 +150,7 @@ func TestZeroReorderWindowFinalizesPromptly(t *testing.T) {
 
 func TestCompletedTurnWinsOverTimeoutThreshold(t *testing.T) {
 	cfg := NewDefaultConfig()
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, &traceSink{})
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, &traceSink{})
 	now := time.Now()
 	key := turnKey{provider: "codex", conversationID: "conversation-1"}
 	instance.turns[key] = &turnState{key: key, completeSeen: true, lastSeen: now.Add(-2 * cfg.TurnTimeout)}
@@ -174,7 +174,7 @@ func TestToolAfterCompletionRequiresAnotherCompletion(t *testing.T) {
 func TestShutdownFlushesIncompleteTurn(t *testing.T) {
 	cfg := NewDefaultConfig()
 	sink := &traceSink{}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))
 	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(testEvent("codex.user_prompt", time.Now(), nil))))
 	require.NoError(t, instance.Shutdown(context.Background()))
@@ -185,7 +185,7 @@ func TestShutdownFlushesIncompleteTurn(t *testing.T) {
 func TestShutdownWithoutStartDoesNotBlock(t *testing.T) {
 	cfg := NewDefaultConfig()
 	sink := &traceSink{}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(testEvent("codex.user_prompt", time.Now(), nil))))
 	// Shutdown without a prior Start must not wait on the sweep loop's done
 	// channel, which never closes because the loop never ran.
@@ -198,7 +198,7 @@ func TestShutdownWithoutStartDoesNotBlock(t *testing.T) {
 func TestShutdownDrainContinuesAfterDownstreamError(t *testing.T) {
 	cfg := NewDefaultConfig()
 	sink := &traceSink{err: errors.New("downstream unavailable")}
-	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
 	require.NoError(t, instance.Start(context.Background(), nil))
 	for i, id := range []string{"first", "second", "third"} {
 		event := testEvent("codex.user_prompt", time.Now().Add(time.Duration(i)*time.Millisecond), nil)
@@ -211,6 +211,13 @@ func TestShutdownDrainContinuesAfterDownstreamError(t *testing.T) {
 	err := instance.Shutdown(context.Background())
 	require.Error(t, err)
 	require.Len(t, sink.all(), 3)
+}
+
+func newTestConnector(t *testing.T, cfg *Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
+	t.Helper()
+	instance, err := newConnector(cfg, set, next)
+	require.NoError(t, err)
+	return instance
 }
 
 func makeLogs(events ...agentEvent) plog.Logs {
