@@ -182,6 +182,19 @@ func TestShutdownFlushesIncompleteTurn(t *testing.T) {
 	require.Equal(t, "shutdown", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
 }
 
+func TestShutdownWithoutStartDoesNotBlock(t *testing.T) {
+	cfg := NewDefaultConfig()
+	sink := &traceSink{}
+	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(testEvent("codex.user_prompt", time.Now(), nil))))
+	// Shutdown without a prior Start must not wait on the sweep loop's done
+	// channel, which never closes because the loop never ran.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	require.NoError(t, instance.Shutdown(ctx))
+	require.Len(t, sink.all(), 1)
+}
+
 func TestShutdownDrainContinuesAfterDownstreamError(t *testing.T) {
 	cfg := NewDefaultConfig()
 	sink := &traceSink{err: errors.New("downstream unavailable")}

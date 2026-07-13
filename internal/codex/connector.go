@@ -9,6 +9,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -43,6 +44,7 @@ type codingAgentConnector struct {
 	turns     map[turnKey]*turnState
 	stop      chan struct{}
 	done      chan struct{}
+	started   atomic.Bool
 	startOnce sync.Once
 	stopOnce  sync.Once
 }
@@ -64,16 +66,23 @@ func (*codingAgentConnector) Capabilities() consumer.Capabilities {
 }
 
 func (c *codingAgentConnector) Start(context.Context, component.Host) error {
-	c.startOnce.Do(func() { go c.sweepLoop() })
+	c.startOnce.Do(func() {
+		c.started.Store(true)
+		go c.sweepLoop()
+	})
 	return nil
 }
 
 func (c *codingAgentConnector) Shutdown(ctx context.Context) error {
 	c.stopOnce.Do(func() { close(c.stop) })
-	select {
-	case <-c.done:
-	case <-ctx.Done():
-		return ctx.Err()
+	// Only wait for the sweep loop if it was ever started; otherwise done never
+	// closes and Shutdown would block until the context deadline.
+	if c.started.Load() {
+		select {
+		case <-c.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return c.flushAll(ctx, "shutdown")
 }
