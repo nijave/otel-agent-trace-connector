@@ -11,8 +11,8 @@ import (
 func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 	base := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
 	turn := &turnState{
-		key:   turnKey{provider: "codex", conversationID: "conversation-1"},
-		first: base, last: base.Add(4 * time.Second), promptSeen: true, completeSeen: true,
+		conversationID: "conversation-1",
+		first:          base, last: base.Add(4 * time.Second), promptSeen: true, completeSeen: true,
 		resource: map[string]any{"service.name": "codex_cli_rs"},
 		events: []agentEvent{
 			testEvent("codex.user_prompt", base, map[string]any{"model": "gpt-test", "app.version": "1.2.3", "prompt": "secret"}),
@@ -51,7 +51,7 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 
 func TestBuildTraceIDsAreDeterministic(t *testing.T) {
 	base := time.Unix(100, 0)
-	turn := &turnState{key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base, promptSeen: true,
+	turn := &turnState{conversationID: "c", first: base, last: base, promptSeen: true,
 		events: []agentEvent{testEvent("codex.user_prompt", base, nil)}}
 	first := buildTrace(turn, "shutdown", defaultScopeVersion)
 	second := buildTrace(turn, "shutdown", defaultScopeVersion)
@@ -60,7 +60,7 @@ func TestBuildTraceIDsAreDeterministic(t *testing.T) {
 
 func TestBuildTraceMarksTimeout(t *testing.T) {
 	base := time.Unix(100, 0)
-	turn := &turnState{key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base,
+	turn := &turnState{conversationID: "c", first: base, last: base,
 		events: []agentEvent{testEvent("codex.api_request", base, nil)}}
 	root := buildTrace(turn, "timeout", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
@@ -70,7 +70,7 @@ func TestBuildTraceMarksTimeout(t *testing.T) {
 func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{
-		key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		conversationID: "c", first: base, last: base.Add(2 * time.Second), promptSeen: true,
 		events: []agentEvent{
 			testEvent("codex.user_prompt", base, nil),
 			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 5, "output_token_count": 2}),
@@ -85,7 +85,7 @@ func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
 func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{
-		key: turnKey{provider: "codex", conversationID: "c"}, first: base, last: base.Add(4 * time.Second), promptSeen: true,
+		conversationID: "c", first: base, last: base.Add(4 * time.Second), promptSeen: true,
 		events: []agentEvent{
 			testEvent("codex.user_prompt", base, nil),
 			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": 100}),
@@ -104,7 +104,7 @@ func testEvent(name string, timestamp time.Time, additional map[string]any) agen
 	for key, value := range additional {
 		attrs[key] = value
 	}
-	return agentEvent{name: name, provider: "codex", conversationID: "conversation-1", timestamp: timestamp, attrs: attrs}
+	return agentEvent{name: name, conversationID: "conversation-1", timestamp: timestamp, attrs: attrs}
 }
 
 func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {

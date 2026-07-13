@@ -89,7 +89,7 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 	attrs.PutStr("gen_ai.agent.name", "codex")
 	attrs.PutStr("gen_ai.provider.name", "openai")
-	attrs.PutStr("gen_ai.conversation.id", turn.key.conversationID)
+	attrs.PutStr("gen_ai.conversation.id", turn.conversationID)
 	attrs.PutStr("coding_agent.client.name", "codex")
 	sourceEvent := "codex.user_prompt"
 	if !turn.promptSeen && len(events) > 0 {
@@ -233,7 +233,7 @@ func deterministicTraceID(turn *turnState, events []agentEvent) pcommon.TraceID 
 			break
 		}
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{turn.key.provider, turn.key.conversationID, fmt.Sprint(anchor.UnixNano())}, "\x00")))
+	sum := sha256.Sum256([]byte(strings.Join([]string{turn.conversationID, fmt.Sprint(anchor.UnixNano())}, "\x00")))
 	var id pcommon.TraceID
 	copy(id[:], sum[:16])
 	return id

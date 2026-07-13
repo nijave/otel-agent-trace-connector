@@ -23,7 +23,6 @@ const (
 
 type agentEvent struct {
 	name           string
-	provider       string
 	conversationID string
 	timestamp      time.Time
 	attrs          map[string]any
@@ -68,7 +67,7 @@ func parseEvent(record plog.LogRecord, resource pcommon.Resource) (agentEvent, b
 		attrs["coding_agent.timestamp.inferred"] = true
 	}
 	return agentEvent{
-		name: name, provider: "codex", conversationID: conversationID,
+		name: name, conversationID: conversationID,
 		timestamp: ts, attrs: attrs, resource: resource.Attributes().AsRaw(),
 	}, true
 }

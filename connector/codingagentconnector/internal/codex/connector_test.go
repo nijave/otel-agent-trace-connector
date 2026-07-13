@@ -152,8 +152,8 @@ func TestCompletedTurnWinsOverTimeoutThreshold(t *testing.T) {
 	cfg := NewDefaultConfig()
 	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, &traceSink{})
 	now := time.Now()
-	key := turnKey{provider: "codex", conversationID: "conversation-1"}
-	instance.turns[key] = &turnState{key: key, completeSeen: true, lastSeen: now.Add(-2 * cfg.TurnTimeout)}
+	key := "conversation-1"
+	instance.turns[key] = &turnState{conversationID: key, completeSeen: true, lastSeen: now.Add(-2 * cfg.TurnTimeout)}
 	finalized := instance.collectReady(now)
 	require.Len(t, finalized, 1)
 	require.Equal(t, "completed", finalized[0].reason)

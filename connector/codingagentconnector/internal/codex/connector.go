@@ -23,8 +23,6 @@ import (
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
-type turnKey struct{ provider, conversationID string }
-
 // finalizedTurn pairs a turn removed from active state with the reason it was
 // finalized, so the emit path carries them together instead of as index-matched
 // parallel slices.
@@ -34,17 +32,17 @@ type finalizedTurn struct {
 }
 
 type turnState struct {
-	key          turnKey
-	events       []agentEvent
-	seen         map[[sha256.Size]byte]struct{}
-	resource     map[string]any
-	first        time.Time
-	last         time.Time
-	lastSeen     time.Time
-	completeSeen bool
-	completionAt time.Time
-	promptSeen   bool
-	truncated    bool
+	conversationID string
+	events         []agentEvent
+	seen           map[[sha256.Size]byte]struct{}
+	resource       map[string]any
+	first          time.Time
+	last           time.Time
+	lastSeen       time.Time
+	completeSeen   bool
+	completionAt   time.Time
+	promptSeen     bool
+	truncated      bool
 }
 
 type codingAgentConnector struct {
@@ -54,7 +52,7 @@ type codingAgentConnector struct {
 	scopeVersion string
 
 	mu        sync.Mutex
-	turns     map[turnKey]*turnState
+	turns     map[string]*turnState
 	stop      chan struct{}
 	done      chan struct{}
 	started   atomic.Bool
@@ -81,7 +79,7 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 	}
 	c := &codingAgentConnector{
 		config: cfg, set: set, next: next, scopeVersion: scopeVersion,
-		turns: make(map[turnKey]*turnState),
+		turns: make(map[string]*turnState),
 		stop:  make(chan struct{}), done: make(chan struct{}),
 		telemetry: &telemetry{builder: builder},
 	}
@@ -153,7 +151,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 	now := time.Now()
 	c.mu.Lock()
 	for _, event := range events {
-		key := turnKey{provider: event.provider, conversationID: event.conversationID}
+		key := event.conversationID
 		turn := c.turns[key]
 		if turn != nil && turn.seenEvent(event) {
 			// Redelivered event: skip before the prompt check so a resent
@@ -170,7 +168,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 			if len(c.turns) >= c.config.MaxActiveTurns {
 				finalized = append(finalized, finalizedTurn{turn: c.evictOldestLocked(), reason: "evicted"})
 			}
-			turn = &turnState{key: key, first: event.timestamp, last: event.timestamp, lastSeen: now, resource: event.resource}
+			turn = &turnState{conversationID: key, first: event.timestamp, last: event.timestamp, lastSeen: now, resource: event.resource}
 			c.turns[key] = turn
 		}
 		turn.add(event, now, c.config.MaxEvents)
@@ -264,7 +262,7 @@ func (c *codingAgentConnector) collectReady(now time.Time) []finalizedTurn {
 }
 
 func (c *codingAgentConnector) evictOldestLocked() *turnState {
-	var oldestKey turnKey
+	var oldestKey string
 	var oldest *turnState
 	for key, turn := range c.turns {
 		if oldest == nil || turn.lastSeen.Before(oldest.lastSeen) {
