@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 type traceSink struct {
 	mu     sync.Mutex
 	traces []ptrace.Traces
+	err    error
 }
 
 func (*traceSink) Capabilities() consumer.Capabilities { return consumer.Capabilities{} }
@@ -28,7 +30,7 @@ func (s *traceSink) ConsumeTraces(_ context.Context, traces ptrace.Traces) error
 	copied := ptrace.NewTraces()
 	traces.CopyTo(copied)
 	s.traces = append(s.traces, copied)
-	return nil
+	return s.err
 }
 func (s *traceSink) all() []ptrace.Traces {
 	s.mu.Lock()
@@ -178,6 +180,24 @@ func TestShutdownFlushesIncompleteTurn(t *testing.T) {
 	require.NoError(t, instance.Shutdown(context.Background()))
 	require.Len(t, sink.all(), 1)
 	require.Equal(t, "shutdown", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
+}
+
+func TestShutdownDrainContinuesAfterDownstreamError(t *testing.T) {
+	cfg := NewDefaultConfig()
+	sink := &traceSink{err: errors.New("downstream unavailable")}
+	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	require.NoError(t, instance.Start(context.Background(), nil))
+	for i, id := range []string{"first", "second", "third"} {
+		event := testEvent("codex.user_prompt", time.Now().Add(time.Duration(i)*time.Millisecond), nil)
+		event.conversationID = id
+		event.attrs["conversation.id"] = id
+		require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(event)))
+	}
+	// A single downstream error must not abandon the remaining turns: every
+	// active turn is still emitted and the failure is surfaced.
+	err := instance.Shutdown(context.Background())
+	require.Error(t, err)
+	require.Len(t, sink.all(), 3)
 }
 
 func makeLogs(events ...agentEvent) plog.Logs {

@@ -6,6 +6,7 @@ package codex
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -224,15 +225,18 @@ func (c *codingAgentConnector) evictOldestLocked() *turnState {
 }
 
 func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, reason string) error {
+	// Continue past a failing turn so one transient downstream error during a
+	// drain does not abandon the turns already removed from active state.
+	var errs error
 	for _, turn := range turns {
 		if turn == nil {
 			continue
 		}
 		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reason)); err != nil {
-			return err
+			errs = errors.Join(errs, err)
 		}
 	}
-	return nil
+	return errs
 }
 
 func (c *codingAgentConnector) emitFinalized(ctx context.Context, turns []*turnState, reasons []string) error {
