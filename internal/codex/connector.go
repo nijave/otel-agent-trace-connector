@@ -130,7 +130,7 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 		turn.add(event, now, c.config.MaxEvents)
 	}
 	c.mu.Unlock()
-	return c.emitFinalized(ctx, ready, reasons)
+	return c.emit(ctx, ready, reasons)
 }
 
 func (t *turnState) seenEvent(event agentEvent) bool {
@@ -233,42 +233,32 @@ func (c *codingAgentConnector) evictOldestLocked() *turnState {
 	return oldest
 }
 
-func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, reason string) error {
+func (c *codingAgentConnector) emit(ctx context.Context, turns []*turnState, reasons []string) error {
 	// Continue past a failing turn so one transient downstream error during a
 	// drain does not abandon the turns already removed from active state.
 	var errs error
-	for _, turn := range turns {
+	for i, turn := range turns {
 		if turn == nil {
 			continue
 		}
-		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reason)); err != nil {
+		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i])); err != nil {
 			errs = errors.Join(errs, err)
 		}
 	}
 	return errs
 }
 
-func (c *codingAgentConnector) emitFinalized(ctx context.Context, turns []*turnState, reasons []string) error {
-	for i, turn := range turns {
-		if turn == nil {
-			continue
-		}
-		if err := c.next.ConsumeTraces(ctx, buildTrace(turn, reasons[i])); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (c *codingAgentConnector) flushAll(ctx context.Context, reason string) error {
 	c.mu.Lock()
 	turns := make([]*turnState, 0, len(c.turns))
+	reasons := make([]string, 0, len(c.turns))
 	for key, turn := range c.turns {
 		turns = append(turns, turn)
+		reasons = append(reasons, reason)
 		delete(c.turns, key)
 	}
 	c.mu.Unlock()
-	return c.emit(ctx, turns, reason)
+	return c.emit(ctx, turns, reasons)
 }
 
 var _ connector.Logs = (*codingAgentConnector)(nil)

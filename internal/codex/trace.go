@@ -5,7 +5,6 @@ package codex
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"sort"
 	"strings"
@@ -233,7 +232,7 @@ func deterministicSpanID(traceID pcommon.TraceID, discriminator string) pcommon.
 	_, _ = h.Write([]byte(discriminator))
 	sum := h.Sum(nil)
 	var id pcommon.SpanID
-	binary.BigEndian.PutUint64(id[:], binary.BigEndian.Uint64(sum[:8]))
+	copy(id[:], sum[:8])
 	return id
 }
 
