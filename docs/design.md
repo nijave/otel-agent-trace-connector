@@ -310,6 +310,13 @@ make stale-output detection ineffective.
   shared state.
 - The connector intentionally ignores coding-agent logs without a conversation ID.
 - Only Codex log synthesis and Claude Code native-span normalization are implemented.
+- Add Cursor support: a provider edge that normalizes Cursor's telemetry into the
+  canonical `invoke_agent`/`chat`/`execute_tool` vocabulary, plus a live E2E that
+  exercises a real Cursor session and validates the exported OTLP. Blocked on
+  confirming Cursor's telemetry format (logs vs. native traces, IDs, token/usage
+  fields).
+- Add GitHub Copilot support: the same provider edge + live E2E for Copilot,
+  likewise pending confirmation of its telemetry format.
 - Provider schemas are not stable APIs; fixtures and E2E should be rerun before
   upgrading pinned client or Collector versions.
 - Upstream semantic-convention changes may replace some `coding_agent.*` fields.
