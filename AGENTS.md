@@ -16,12 +16,19 @@ it is adequately tested — before cleverness, flexibility, or feature breadth.
   performance requirement). If you believe some complexity is warranted, that is
   a human judgement: state the trade-off explicitly and let a maintainer decide.
   Do not add it unilaterally.
-- **Delete unearned complexity when you find it.** Prefer removing speculative or
-  over-engineered code over preserving, matching, or extending it. This codebase
-  has previously accumulated over-engineering added by agents (e.g. a private-CA
-  bundle apparatus nobody asked for); do not reintroduce that pattern.
+- **Abstraction hides complexity; it never removes it.** An abstraction is added
+  complexity that conceals or relocates other complexity — it lowers *perceived*
+  complexity, never *net* complexity. "Simplify by abstraction" is a
+  contradiction. The only real simplification is removal.
+- **Delete unearned complexity when you find it.** Remove speculative or
+  over-engineered code (features, config, overlays, code paths) rather than
+  preserving, wrapping, matching, or extending it. This codebase has previously
+  accumulated over-engineering added by agents (e.g. a private-CA bundle apparatus
+  nobody asked for); do not reintroduce that pattern.
 - **Prefer allowlists over denylists** — enumerate what is permitted, not what to
-  exclude. Denylists silently fail open as the world changes.
+  exclude. Denylists silently fail open as the world changes. (The Compose
+  `environment:` block, for example, is already an allowlist of what reaches a
+  container; host variables are not forwarded.)
 
 ## Workflow
 
@@ -42,5 +49,13 @@ it is adequately tested — before cleverness, flexibility, or feature breadth.
   `connector/codingagentconnector/`; the e2e validator is the repo-root module.
   There is intentionally no `go.work` — build each module independently.
 - `connector/codingagentconnector/metadata.yaml` drives mdatagen; regenerate with
-  `./scripts/generate.sh` (CI fails if the generated files are stale).
+  `./scripts/generate.sh` (CI fails if the generated files are stale). mdatagen is
+  pinned via `internal/tools` (a `tool` directive), not `go run tool@version`
+  (which fails on that module's replace directives).
+- The e2e stacks share `compose.base.yaml` via `include`. Do not override an
+  included service (some Compose versions reject it — `conflicts with imported
+  resource`); parameterize by env instead (the validator keys off `E2E_AGENT`).
+- Local Docker/Compose versions differ from CI's — validate compose/Docker
+  changes with the commands CI runs, and don't trust a green local `docker
+  compose config` alone.
 - The live e2e tests are paid and opt-in; see the README.
