@@ -52,10 +52,6 @@ func main() {
 	fail(fmt.Sprintf("E2E traces did not become valid: %v", lastErr))
 }
 
-func validateFile(path, runID string) error {
-	return validateCanonicalFile(path, runID, "codex")
-}
-
 func validateCanonicalFile(path, runID, agent string) error {
 	return validateTraceFile(path, runID, func(traces ptrace.Traces, runID string) error {
 		return validateCanonicalTraces(traces, runID, agent)
@@ -88,10 +84,6 @@ func validateTraceFile(path, runID string, validate func(ptrace.Traces, string) 
 		return err
 	}
 	return errors.New("no matching complete trace found")
-}
-
-func validateTraces(traces ptrace.Traces, runID string) error {
-	return validateCanonicalTraces(traces, runID, "codex")
 }
 
 func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {

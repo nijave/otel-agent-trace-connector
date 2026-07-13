@@ -64,6 +64,14 @@ func TestValidateClaudeTracesRejectsContentEventOnGrandchild(t *testing.T) {
 	require.ErrorContains(t, validateClaudeRawTraces(traces, "run-claude"), "span event")
 }
 
+func validateFile(path, runID string) error {
+	return validateCanonicalFile(path, runID, "codex")
+}
+
+func validateTraces(traces ptrace.Traces, runID string) error {
+	return validateCanonicalTraces(traces, runID, "codex")
+}
+
 func validTraces(runID string) ptrace.Traces {
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
