@@ -5,6 +5,7 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
 	"sort"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ type turnKey struct{ provider, conversationID string }
 type turnState struct {
 	key          turnKey
 	events       []agentEvent
+	seen         map[[sha256.Size]byte]struct{}
 	resource     map[string]any
 	first        time.Time
 	last         time.Time
@@ -96,6 +98,11 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 	for _, event := range events {
 		key := turnKey{provider: event.provider, conversationID: event.conversationID}
 		turn := c.turns[key]
+		if turn != nil && turn.seenEvent(event) {
+			// Redelivered event: skip before the prompt check so a resent
+			// prompt does not falsely supersede its own turn.
+			continue
+		}
 		if event.name == "codex.user_prompt" && turn != nil && turn.promptSeen {
 			delete(c.turns, key)
 			ready = append(ready, turn)
@@ -116,7 +123,16 @@ func (c *codingAgentConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) 
 	return c.emitFinalized(ctx, ready, reasons)
 }
 
+func (t *turnState) seenEvent(event agentEvent) bool {
+	_, ok := t.seen[event.fingerprint()]
+	return ok
+}
+
 func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
+	fingerprint := event.fingerprint()
+	if _, duplicate := t.seen[fingerprint]; duplicate {
+		return
+	}
 	if event.timestamp.Before(t.first) {
 		t.first = event.timestamp
 	}
@@ -137,6 +153,10 @@ func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
 	}
 	if len(t.events) < maxEvents {
 		t.events = append(t.events, event)
+		if t.seen == nil {
+			t.seen = make(map[[sha256.Size]byte]struct{})
+		}
+		t.seen[fingerprint] = struct{}{}
 	} else {
 		t.truncated = true
 	}

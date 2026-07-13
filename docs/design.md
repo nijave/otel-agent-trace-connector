@@ -154,6 +154,12 @@ the same complete event set idempotent. It does not deduplicate exports by
 itself, and an orphan turn without a prompt may derive a different ID if its
 earliest observed event changes across replay boundaries.
 
+Within a live turn, redelivered events are deduplicated by a content
+fingerprint (event name, timestamp, and retained attributes). OTLP delivery is
+at-least-once, so without this a resent batch would double-count token usage,
+duplicate `chat`/`execute_tool` spans, and let a redelivered prompt falsely
+supersede its own turn. The fingerprint set is bounded by `max_events_per_turn`.
+
 ### Bounds
 
 `max_active_turns` bounds concurrent correlation state. The least recently

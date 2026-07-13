@@ -4,7 +4,9 @@
 package codex
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +70,30 @@ func parseEvent(record plog.LogRecord, resource pcommon.Resource) (agentEvent, b
 		name: name, provider: "codex", conversationID: conversationID,
 		timestamp: ts, attrs: attrs, resource: resource.Attributes().AsRaw(),
 	}, true
+}
+
+// fingerprint returns a stable content hash used to deduplicate redelivered
+// events within a live turn. OTLP delivery is at-least-once, so without it a
+// resent batch would double-count token usage and duplicate spans.
+func (e agentEvent) fingerprint() [sha256.Size]byte {
+	keys := make([]string, 0, len(e.attrs))
+	for key := range e.attrs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	_, _ = h.Write([]byte(e.name))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(strconv.FormatInt(e.timestamp.UnixNano(), 10)))
+	for _, key := range keys {
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(key))
+		_, _ = h.Write([]byte{'='})
+		_, _ = h.Write([]byte(stringValue(e.attrs[key])))
+	}
+	var sum [sha256.Size]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
 }
 
 func stripContent(attrs map[string]any) {

@@ -69,6 +69,45 @@ func TestConnectorSplitsConsecutivePrompts(t *testing.T) {
 	require.Equal(t, "superseded", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
 }
 
+func TestConnectorDeduplicatesRedeliveredEvents(t *testing.T) {
+	cfg := NewDefaultConfig()
+	sink := &traceSink{}
+	instance := newConnector(cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	require.NoError(t, instance.Start(context.Background(), nil))
+	base := time.Now()
+	batch := func() plog.Logs {
+		return makeLogs(
+			testEvent("codex.user_prompt", base, map[string]any{"model": "gpt-test"}),
+			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": int64(100)}),
+			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": int64(5), "output_token_count": int64(2)}),
+			testEvent("codex.tool_result", base.Add(3*time.Second), map[string]any{"tool_name": "shell", "call_id": "call-1", "success": true}),
+		)
+	}
+	// At-least-once OTLP delivery can resend the same batch before the turn is
+	// finalized. Redelivery must not split the turn or double-count usage.
+	require.NoError(t, instance.ConsumeLogs(context.Background(), batch()))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), batch()))
+	require.Len(t, instance.turns, 1)
+	require.NoError(t, instance.Shutdown(context.Background()))
+
+	require.Len(t, sink.all(), 1)
+	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	root := findSpan(t, spans, "invoke_agent codex")
+	require.Equal(t, int64(5), attrInt(t, root, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(2), attrInt(t, root, "gen_ai.usage.output_tokens"))
+	chatCount, toolCount := 0, 0
+	for i := 0; i < spans.Len(); i++ {
+		switch attrString(t, spans.At(i), "gen_ai.operation.name") {
+		case "chat":
+			chatCount++
+		case "execute_tool":
+			toolCount++
+		}
+	}
+	require.Equal(t, 1, chatCount)
+	require.Equal(t, 1, toolCount)
+}
+
 func TestConnectorBoundsStateAndEvents(t *testing.T) {
 	cfg := NewDefaultConfig()
 	cfg.MaxActiveTurns = 1
