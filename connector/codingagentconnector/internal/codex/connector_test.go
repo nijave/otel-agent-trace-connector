@@ -1,8 +1,10 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -225,6 +227,68 @@ func TestEmittedScopeVersionUsesBuildInfo(t *testing.T) {
 	require.Len(t, sink.all(), 1)
 	scope := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Scope()
 	require.Equal(t, "1.2.3", scope.Version())
+}
+
+// TestConnectorAgainstRealCodexCapture pins the connector to real Codex 0.144.1
+// telemetry captured by the e2e harness (GLM-4.7 via the responses-proxy). It
+// guards against Codex log-schema drift and, specifically, the timing-only
+// duplicate response.completed that must not become a usage-less chat span. The
+// same shape is emitted by real OpenAI Codex, so this also covers that path.
+func TestConnectorAgainstRealCodexCapture(t *testing.T) {
+	data, err := os.ReadFile("testdata/codex-native-logs.json")
+	require.NoError(t, err)
+
+	cfg := NewDefaultConfig()
+	cfg.ReorderWindow = 5 * time.Millisecond
+	cfg.TurnTimeout = time.Second
+	sink := &traceSink{}
+	set := connector.Settings{ID: component.NewID(component.MustNewType("coding_agent")), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
+	instance := newTestConnector(t, cfg, set, sink)
+	require.NoError(t, instance.Start(context.Background(), nil))
+	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
+
+	unmarshaler := &plog.JSONUnmarshaler{}
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		logs, err := unmarshaler.UnmarshalLogs(line)
+		require.NoError(t, err)
+		require.NoError(t, instance.ConsumeLogs(context.Background(), logs))
+	}
+	require.Eventually(t, func() bool { return len(sink.all()) == 1 }, 2*time.Second, 5*time.Millisecond)
+
+	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	root := findSpan(t, spans, "invoke_agent codex")
+	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID())
+	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
+	require.True(t, attrBool(t, root, "coding_agent.turn.complete"), "real capture must finalize as a completed turn")
+	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
+	require.Greater(t, attrInt(t, root, "gen_ai.usage.input_tokens"), int64(0))
+
+	// Every chat span must carry usage: the timing-only duplicate completions
+	// (no token counts) must not produce usage-less chat spans.
+	chatSpans := 0
+	for i := 0; i < spans.Len(); i++ {
+		span := spans.At(i)
+		if attrString(t, span, "gen_ai.operation.name") == "chat" {
+			chatSpans++
+			require.Greater(t, attrInt(t, span, "gen_ai.usage.input_tokens"), int64(0), "chat span %q lacks usage", span.Name())
+		}
+	}
+	require.Positive(t, chatSpans)
+
+	tool := findSpan(t, spans, "execute_tool exec_command")
+	require.Equal(t, "exec_command", attrString(t, tool, "gen_ai.tool.name"))
+
+	// Content Codex logs on the raw events must be stripped from every span.
+	for i := 0; i < spans.Len(); i++ {
+		span := spans.At(i)
+		for _, key := range []string{"prompt", "arguments", "output"} {
+			_, ok := span.Attributes().Get(key)
+			require.False(t, ok, "span %q leaked sensitive attribute %q", span.Name(), key)
+		}
+	}
 }
 
 func newTestConnector(t *testing.T, cfg *Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
