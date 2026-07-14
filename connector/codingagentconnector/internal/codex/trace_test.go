@@ -90,13 +90,33 @@ func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
 			testEvent("codex.user_prompt", base, nil),
 			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": 100}),
 			testEvent("codex.api_request", base.Add(2*time.Second), map[string]any{"duration_ms": 100}),
-			testEvent("codex.sse_event", base.Add(3*time.Second), map[string]any{"event.kind": "response.completed"}),
-			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed"}),
+			testEvent("codex.sse_event", base.Add(3*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 1}),
+			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 1}),
 		},
 	}
 	spans := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	require.True(t, base.Add(1900*time.Millisecond).Equal(spans.At(1).StartTimestamp().AsTime()))
 	require.True(t, base.Equal(spans.At(2).StartTimestamp().AsTime()))
+}
+
+// TestBuildTraceSkipsTimingOnlyCompletion covers Codex emitting response.completed
+// twice per model call: a timing-only record (duration_ms, no token counts) and
+// the usage-bearing one. Only the usage-bearing completion should become a chat
+// span, so the timing-only duplicate does not create a usage-less span.
+func TestBuildTraceSkipsTimingOnlyCompletion(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 38}),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "input_token_count": 10, "output_token_count": 4}),
+		},
+	}
+	traces := buildTrace(turn, "completed", defaultScopeVersion)
+	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
+	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat gpt-test")
+	require.Equal(t, int64(10), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 }
 
 func testEvent(name string, timestamp time.Time, additional map[string]any) agentEvent {

@@ -121,6 +121,12 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
 			continue
 		}
+		// Codex logs response.completed twice per model call: a timing-only record
+		// (duration_ms, no token counts) and the usage-bearing one. Skip the
+		// timing-only duplicate so each call yields a single chat span with usage.
+		if !hasTokenUsage(event.attrs) {
+			continue
+		}
 		start := turnStart
 		if len(apiRequests) > 0 {
 			request := apiRequests[len(apiRequests)-1]
@@ -285,6 +291,18 @@ func putAggregateUsage(attrs pcommon.Map, events []agentEvent) {
 			attrs.PutInt(m.dest, totals[m.source])
 		}
 	}
+}
+
+// hasTokenUsage reports whether an event carries any completion token count.
+// Codex's usage-bearing response.completed always sets these; its timing-only
+// duplicate does not.
+func hasTokenUsage(attrs map[string]any) bool {
+	for _, m := range tokenUsageAttrs {
+		if _, ok := int64Value(attrs[m.source]); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func copyIntAttr(dst pcommon.Map, src map[string]any, from, to string) {
