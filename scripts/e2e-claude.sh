@@ -17,4 +17,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "${script_dir}/lib-e2e.sh"
 
 compose_files=(-f compose.e2e-claude.yaml)
+# The Claude stack only needs the shared collector; Claude Code talks to z.ai's
+# Anthropic-compatible endpoint directly, so no proxy is required.
+support_services=(collector)
 e2e_run claude

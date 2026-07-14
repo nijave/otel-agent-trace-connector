@@ -1,10 +1,23 @@
-# Codex e2e stack. The shared collector comes from compose.e2e-base.yaml; only the
-# Codex agent is defined here, so this stack never requires Claude/AWS credentials.
-# Exported traces are validated on the host by go test (see scripts/lib-e2e.sh).
+# Codex e2e stack. The shared collector comes from compose.e2e-base.yaml. Codex
+# 0.144.1 requires the Responses API, which z.ai does not serve, so a responses-proxy
+# sits between Codex and z.ai to translate Responses <-> Chat Completions. This stack
+# never requires Claude/AWS credentials. Exported traces are validated on the host by
+# go test (see scripts/lib-e2e.sh).
 include:
   - compose.e2e-base.yaml
 
 services:
+  # Responses<->Chat-Completions translator so a real Codex CLI can drive z.ai's
+  # chat-only GLM endpoint. Only used here; not part of the connector/production
+  # path. This is the only container that receives the z.ai key.
+  responses-proxy:
+    build:
+      context: e2e/responses-proxy
+    environment:
+      # scripts/e2e.sh checks the credential before Compose runs, so it is optional
+      # here; a required (:?) guard would only fire later and less clearly.
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+
   agent:
     build:
       context: e2e/codex
@@ -13,14 +26,17 @@ services:
     environment:
       CODEX_HOME: /codex-home
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
-      # z.ai GLM model served over its OpenAI-compatible endpoint (see
-      # e2e/codex/config.toml).
+      # z.ai GLM model, reached through the responses-proxy (see e2e/codex/config.toml).
+      # Must be listed in e2e/responses-proxy/config.yaml.
       E2E_CODEX_MODEL: "${E2E_CODEX_MODEL:-glm-4.7}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e.sh}"
-      # Holds the z.ai API key (config.toml reads it as env_key). scripts/e2e.sh
-      # checks it before Compose runs, so it is optional here; a required (:?) guard
-      # would only fire later and less clearly.
-      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      # Deliberately a placeholder, not the real key. Codex refuses to start when the
+      # `env_key` variable is unset, but it only forwards this value to the proxy as a
+      # bearer token, and the proxy accepts any token (`auth.keys: []`). Keeping the
+      # real key out of this container limits it to responses-proxy above.
+      OPENAI_API_KEY: "unused-by-responses-proxy"
     depends_on:
       collector:
+        condition: service_healthy
+      responses-proxy:
         condition: service_healthy

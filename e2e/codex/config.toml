@@ -1,28 +1,27 @@
 approval_policy = "never"
-sandbox_mode = "read-only"
+# The container is the isolation boundary; Codex's inner bubblewrap sandbox cannot
+# nest a user namespace here, so it is disabled (run.sh passes the matching flag).
+sandbox_mode = "danger-full-access"
 
-# Route Codex at z.ai's OpenAI-compatible coding endpoint instead of OpenAI. The
-# key is read from the env var named by `env_key` (compose.yaml puts the z.ai key
-# in OPENAI_API_KEY). z.ai's coding endpoint speaks chat-completions, so wire_api
-# must be "chat" rather than Codex's default "responses". The model is supplied at
-# runtime via --model (E2E_CODEX_MODEL, e.g. glm-4.6).
-model_provider = "zai"
+# Codex 0.144.1 requires wire_api="responses" (the Responses API); z.ai's coding
+# endpoint only speaks chat-completions. The responses-proxy service (see
+# e2e/responses-proxy/ and compose.yaml) translates between the two, so Codex talks
+# to the proxy rather than to z.ai directly. The z.ai key still travels here via
+# OPENAI_API_KEY (env_key), but the proxy ignores it and uses its own
+# OPENAI_API_KEY for the downstream z.ai call. The model is supplied at runtime via
+# --model (E2E_CODEX_MODEL, e.g. glm-4.7) and must be listed in the proxy config.
+model_provider = "zai-proxy"
 
-[model_providers.zai]
-name = "z.ai"
-base_url = "https://api.z.ai/api/coding/paas/v4"
+[model_providers.zai-proxy]
+name = "z.ai via responses-proxy"
+base_url = "http://responses-proxy:3000/v1"
 env_key = "OPENAI_API_KEY"
-wire_api = "chat"
+wire_api = "responses"
 
-# OpenRouter equivalent — swap the provider block and point env_key/base_url there
-# (keep the key in OPENAI_API_KEY, or rename env_key to OPENROUTER_API_KEY and pass
-# that instead), then set E2E_CODEX_MODEL to an OpenRouter slug like z-ai/glm-4.6:
-#   model_provider = "openrouter"
-#   [model_providers.openrouter]
-#   name = "openrouter"
-#   base_url = "https://openrouter.ai/api/v1"
-#   env_key = "OPENAI_API_KEY"
-#   wire_api = "chat"
+# OpenRouter equivalent — its OpenAI-compatible API is chat-completions too, so it
+# runs through the same responses-proxy: change the proxy's base_url (see
+# e2e/responses-proxy/config.yaml) to https://openrouter.ai/api/v1 and set
+# E2E_CODEX_MODEL to a slug like z-ai/glm-4.6. This provider block is unchanged.
 
 [otel]
 environment = "e2e"
