@@ -1,7 +1,9 @@
 package claude
 
 import (
+	"bytes"
 	"context"
+	"os"
 	"sync"
 	"testing"
 
@@ -76,6 +78,63 @@ func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.
 	require.Equal(t, "claude_code.interaction", input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Name())
 }
 
+// TestClaudeTraceNormalizerAgainstRealCapture pins the normalizer to a real
+// Claude Code 2.1.207 run (GLM-4.7) captured by the e2e harness. Unlike the
+// hand-built input above, this guards against upstream schema drift: if a future
+// Claude Code release renames its native spans or attributes, this test fails and
+// tells us to update the normalizer. The capture is split across several OTLP
+// batches (one per span flush, interaction root last), so feeding each batch
+// separately also exercises the stateless, order-independent path.
+func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
+	data, err := os.ReadFile("testdata/claude-native-traces.json")
+	require.NoError(t, err)
+	unmarshaler := &ptrace.JSONUnmarshaler{}
+	sink := &traceSink{}
+	normalizer := New(sink)
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		batch, err := unmarshaler.UnmarshalTraces(line)
+		require.NoError(t, err)
+		require.NoError(t, normalizer.ConsumeTraces(context.Background(), batch))
+	}
+
+	// Reassemble every emitted span the way a trace backend would.
+	var all []ptrace.Span
+	for _, traces := range sink.all() {
+		for i := 0; i < traces.ResourceSpans().Len(); i++ {
+			rs := traces.ResourceSpans().At(i)
+			for j := 0; j < rs.ScopeSpans().Len(); j++ {
+				spans := rs.ScopeSpans().At(j).Spans()
+				for k := 0; k < spans.Len(); k++ {
+					all = append(all, spans.At(k))
+				}
+			}
+		}
+	}
+
+	root := findSpanIn(t, all, "invoke_agent claude_code")
+	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "interaction root must stay a root")
+	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
+	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
+	require.Equal(t, "anthropic", attrString(t, root, "gen_ai.provider.name"))
+	require.Equal(t, "native", attrString(t, root, "telemetry.source"))
+	require.Equal(t, "2.1.207", attrString(t, root, "coding_agent.client.version"))
+	// The prompt is redacted at the source and must stay redacted after normalization.
+	require.Equal(t, "<REDACTED>", attrString(t, root, "user_prompt"))
+
+	chat := findSpanIn(t, all, "chat glm-4.7")
+	require.Equal(t, root.SpanID(), chat.ParentSpanID())
+	require.Equal(t, "chat", attrString(t, chat, "gen_ai.operation.name"))
+	require.Equal(t, "glm-4.7", attrString(t, chat, "gen_ai.request.model"))
+
+	tool := findSpanIn(t, all, "execute_tool Bash")
+	require.Equal(t, root.SpanID(), tool.ParentSpanID())
+	require.Equal(t, "execute_tool", attrString(t, tool, "gen_ai.operation.name"))
+	require.Equal(t, "Bash", attrString(t, tool, "gen_ai.tool.name"))
+}
+
 func TestClaudeTraceNormalizerFiltersOtherProviders(t *testing.T) {
 	input := ptrace.NewTraces()
 	input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("codex.internal")
@@ -89,6 +148,17 @@ func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
 	for i := 0; i < spans.Len(); i++ {
 		if spans.At(i).Name() == name {
 			return spans.At(i)
+		}
+	}
+	require.FailNow(t, "span not found", name)
+	return ptrace.Span{}
+}
+
+func findSpanIn(t *testing.T, spans []ptrace.Span, name string) ptrace.Span {
+	t.Helper()
+	for _, span := range spans {
+		if span.Name() == name {
+			return span
 		}
 	}
 	require.FailNow(t, "span not found", name)
