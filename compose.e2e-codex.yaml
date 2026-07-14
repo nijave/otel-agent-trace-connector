@@ -13,10 +13,13 @@ services:
     environment:
       CODEX_HOME: /codex-home
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
-      E2E_CODEX_MODEL: "${E2E_CODEX_MODEL:-gpt-5.1-codex-mini}"
+      # z.ai GLM model served over its OpenAI-compatible endpoint (see
+      # e2e/codex/config.toml).
+      E2E_CODEX_MODEL: "${E2E_CODEX_MODEL:-glm-4.7}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e.sh}"
-      # scripts/e2e.sh checks the credential before Compose runs, so it is optional
-      # here; a required (:?) guard would only fire later and less clearly.
+      # Holds the z.ai API key (config.toml reads it as env_key). scripts/e2e.sh
+      # checks it before Compose runs, so it is optional here; a required (:?) guard
+      # would only fire later and less clearly.
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     depends_on:
       collector:

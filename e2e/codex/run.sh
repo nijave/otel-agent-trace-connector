@@ -2,13 +2,12 @@
 set -eu
 
 if [ -z "${OPENAI_API_KEY:-}" ]; then
-  echo "OPENAI_API_KEY is required" >&2
+  echo "OPENAI_API_KEY is required (holds the z.ai API key; see config.toml env_key)" >&2
   exit 2
 fi
 
-# The pinned CLI requires its explicit noninteractive login flow before it will
-# attach an API key. CODEX_HOME and this credential store are container-local.
-printf '%s' "${OPENAI_API_KEY}" | codex login --with-api-key >/dev/null
+# No `codex login` step: the z.ai model provider in config.toml reads the key
+# directly from OPENAI_API_KEY (env_key), so the OpenAI OAuth flow is not used.
 
 if [ -n "${E2E_CODEX_MODEL:-}" ]; then
   exec timeout --signal=TERM "${E2E_AGENT_TIMEOUT:-10m}" \

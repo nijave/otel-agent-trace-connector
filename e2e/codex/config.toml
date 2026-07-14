@@ -1,6 +1,29 @@
 approval_policy = "never"
 sandbox_mode = "read-only"
 
+# Route Codex at z.ai's OpenAI-compatible coding endpoint instead of OpenAI. The
+# key is read from the env var named by `env_key` (compose.yaml puts the z.ai key
+# in OPENAI_API_KEY). z.ai's coding endpoint speaks chat-completions, so wire_api
+# must be "chat" rather than Codex's default "responses". The model is supplied at
+# runtime via --model (E2E_CODEX_MODEL, e.g. glm-4.6).
+model_provider = "zai"
+
+[model_providers.zai]
+name = "z.ai"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+env_key = "OPENAI_API_KEY"
+wire_api = "chat"
+
+# OpenRouter equivalent — swap the provider block and point env_key/base_url there
+# (keep the key in OPENAI_API_KEY, or rename env_key to OPENROUTER_API_KEY and pass
+# that instead), then set E2E_CODEX_MODEL to an OpenRouter slug like z-ai/glm-4.6:
+#   model_provider = "openrouter"
+#   [model_providers.openrouter]
+#   name = "openrouter"
+#   base_url = "https://openrouter.ai/api/v1"
+#   env_key = "OPENAI_API_KEY"
+#   wire_api = "chat"
+
 [otel]
 environment = "e2e"
 log_user_prompt = false

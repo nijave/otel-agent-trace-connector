@@ -1,18 +1,14 @@
 #!/bin/sh
 set -eu
 
-if [ "${CLAUDE_CODE_USE_BEDROCK:-}" != "1" ]; then
-  echo "CLAUDE_CODE_USE_BEDROCK=1 is required" >&2
-  exit 2
-fi
-if [ -z "${AWS_REGION:-}" ]; then
-  echo "AWS_REGION is required" >&2
+if [ -z "${ANTHROPIC_BASE_URL:-}" ] || [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+  echo "ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN are required (z.ai endpoint + key)" >&2
   exit 2
 fi
 
 exec timeout --signal=TERM "${E2E_AGENT_TIMEOUT:-10m}" \
   claude --bare -p \
-    --model "${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}" \
+    --model "${E2E_CLAUDE_MODEL:-glm-4.7}" \
     --tools Bash \
     --allowedTools "Bash(printf claude-otel-e2e)" \
     --strict-mcp-config \

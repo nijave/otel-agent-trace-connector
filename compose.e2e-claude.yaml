@@ -1,11 +1,9 @@
-# Claude Code (Bedrock) e2e stack. The shared collector comes from
+# Claude Code (z.ai) e2e stack. The shared collector comes from
 # compose.e2e-base.yaml; only the Claude agent is defined here, so this stack never
 # requires the Codex OPENAI_API_KEY.
 #
-# Credentials: a single ephemeral Bedrock API key (AWS_BEARER_TOKEN_BEDROCK) is
-# the only credential passed into the container. All host AWS credential
-# resolution stays outside the container -- see scripts/e2e-claude-bedrock.sh.
-# https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html
+# Credentials: Claude Code is pointed at z.ai's Anthropic-compatible endpoint with
+# a single API key (ANTHROPIC_AUTH_TOKEN). https://docs.z.ai/devpack/tool/claude
 include:
   - compose.e2e-base.yaml
 
@@ -16,19 +14,21 @@ services:
       args:
         CLAUDE_CODE_VERSION: "${CLAUDE_CODE_VERSION:-2.1.207}"
     environment:
-      CLAUDE_CODE_USE_BEDROCK: "1"
-      # scripts/e2e-claude.sh checks these credentials before Compose runs, so they
-      # are optional here; a required (:?) guard would only fire later and less clearly.
-      AWS_REGION: "${AWS_REGION:-}"
-      AWS_BEARER_TOKEN_BEDROCK: "${AWS_BEARER_TOKEN_BEDROCK:-}"
+      # Route Claude Code at z.ai's Anthropic-compatible endpoint instead of Bedrock.
+      ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic"
+      # scripts/e2e-claude.sh checks this credential before Compose runs, so it is
+      # optional here; a required (:?) guard would only fire later and less clearly.
+      ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN:-}"
       CLAUDE_CODE_ENABLE_TELEMETRY: "1"
       CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
       E2E_CLAUDE_MAX_BUDGET_USD: "${E2E_CLAUDE_MAX_BUDGET_USD:-0.25}"
       E2E_CLAUDE_MAX_TURNS: "${E2E_CLAUDE_MAX_TURNS:-3}"
-      E2E_CLAUDE_MODEL: &claude_model "${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
+      # z.ai GLM models mapped onto Claude Code's model tiers.
+      E2E_CLAUDE_MODEL: &claude_model "${E2E_CLAUDE_MODEL:-glm-4.7}"
       ANTHROPIC_MODEL: *claude_model
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: *claude_model
+      ANTHROPIC_DEFAULT_SONNET_MODEL: *claude_model
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "${E2E_CLAUDE_HAIKU_MODEL:-glm-4.5-air}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-claude.sh}"
       OTEL_LOGS_EXPORTER: none
       OTEL_METRICS_EXPORTER: none

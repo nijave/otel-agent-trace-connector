@@ -90,14 +90,13 @@ jobs:
           ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
       - name: Validate Compose configurations
         env:
-          AWS_BEARER_TOKEN_BEDROCK: validation-only
-          AWS_REGION: us-east-1
+          ANTHROPIC_AUTH_TOKEN: validation-only
           E2E_RUN_ID: ci-validation
           OPENAI_API_KEY: validation-only
         run: |
           docker compose -f compose.e2e-codex.yaml config --quiet
           docker compose -f compose.e2e-claude.yaml config --format json \
-            | jq -e '.services.agent.environment.CLAUDE_CODE_USE_BEDROCK == "1" and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
+            | jq -e '.services.agent.environment.ANTHROPIC_BASE_URL == "https://api.z.ai/api/anthropic" and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
       - name: Build container images
         run: |
           docker build --tag otelcol-coding-agents:ci .
