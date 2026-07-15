@@ -42,10 +42,9 @@ be upstreamed with minimal changes.
 
 ## Status
 
-The component is at development stability. It uses Collector v0.156.0 and Go
-1.25. Codex reconstruction state is in memory and does not survive Collector
-restarts. See [the design document](docs/design.md) for decisions, assumptions,
-and operational limits.
+The component is at development stability. Codex reconstruction state is in memory
+and does not survive Collector restarts. See [the design document](docs/design.md)
+for decisions, assumptions, and operational limits.
 
 ## Build
 
@@ -62,7 +61,7 @@ Build the custom Collector container:
 docker build -t otelcol-coding-agents:dev .
 ```
 
-Or install OCB v0.156.0 and generate the distribution directly:
+Or install OCB and generate the distribution directly:
 
 ```bash
 builder --config builder-config.yaml
@@ -183,5 +182,5 @@ git push origin v0.1.0
 - [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage)
 - [Claude Code on Amazon Bedrock](https://code.claude.com/docs/en/amazon-bedrock)
 - [Amazon Bedrock API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)
-- [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.156.0/exporter/awss3exporter)
-- [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.156.0/extension/storage/filestorage)
+- [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/awss3exporter)
+- [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/storage/filestorage)
