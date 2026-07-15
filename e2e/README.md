@@ -5,8 +5,8 @@ container, and validate the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
 they are opt-in and never run in CI.
 
-Both stacks share `compose.base.yaml` (the collector); each defines only its own
-`agent` service. Output is written under `.e2e-output/`.
+Both stacks share `compose.e2e-base.yaml` (the collector); each defines only its
+own `agent` service. Output is written under `.e2e-output/`.
 
 ## Live Codex E2E
 
@@ -47,10 +47,10 @@ can flush while the validation polls):
 ```bash
 export E2E_RUN_ID="manual-$(date +%s)"
 export OPENAI_API_KEY=...
-docker compose up --detach --wait collector
-docker compose run --rm --no-deps agent
+docker compose -f compose.e2e-codex.yaml up --detach --wait collector
+docker compose -f compose.e2e-codex.yaml run --rm --no-deps agent
 TRACE_FILE="$PWD/.e2e-output/canonical-traces.json" go test -tags=e2e ./e2e/validator/
-docker compose down
+docker compose -f compose.e2e-codex.yaml down
 ```
 
 ## Live Claude Code E2E

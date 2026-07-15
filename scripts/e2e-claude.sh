@@ -14,12 +14,12 @@ if [[ -z "${AWS_BEARER_TOKEN_BEDROCK:-}" ]]; then
 fi
 
 export E2E_CLAUDE_MODEL="${E2E_CLAUDE_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
-# Selects the Claude validation path in the shared validator (see compose.base.yaml).
+# Selects the Claude validation path in the shared validator (see compose.e2e-base.yaml).
 export E2E_AGENT=claude_code
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib-e2e.sh
 . "${script_dir}/lib-e2e.sh"
 
-compose_files=(-f compose.claude.yaml)
+compose_files=(-f compose.e2e-claude.yaml)
 e2e_run claude

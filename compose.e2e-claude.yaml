@@ -1,5 +1,5 @@
 # Claude Code (Bedrock) e2e stack. The shared collector comes from
-# compose.base.yaml; only the Claude agent is defined here, so this stack never
+# compose.e2e-base.yaml; only the Claude agent is defined here, so this stack never
 # requires the Codex OPENAI_API_KEY.
 #
 # Credentials: a single ephemeral Bedrock API key (AWS_BEARER_TOKEN_BEDROCK) is
@@ -7,7 +7,7 @@
 # resolution stays outside the container -- see scripts/e2e-claude-bedrock.sh.
 # https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html
 include:
-  - compose.base.yaml
+  - compose.e2e-base.yaml
 
 services:
   agent:

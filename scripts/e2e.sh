@@ -12,5 +12,5 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib-e2e.sh
 . "${script_dir}/lib-e2e.sh"
 
-compose_files=(-f compose.yaml)
+compose_files=(-f compose.e2e-codex.yaml)
 e2e_run codex

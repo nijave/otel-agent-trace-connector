@@ -58,7 +58,7 @@ it is adequately tested — before cleverness, flexibility, or feature breadth.
   `./scripts/generate.sh` (CI fails if the generated files are stale). mdatagen is
   pinned via `internal/tools` (a `tool` directive), not `go run tool@version`
   (which fails on that module's replace directives).
-- The e2e stacks share `compose.base.yaml` via `include`. Do not override an
+- The e2e stacks share `compose.e2e-base.yaml` via `include`. Do not override an
   included service (some Compose versions reject it — `conflicts with imported
   resource`); parameterize by env instead (the validator keys off `E2E_AGENT`).
 - Local Docker/Compose versions differ from CI's — validate compose/Docker

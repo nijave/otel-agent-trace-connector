@@ -23,7 +23,7 @@ if [[ "${AWS_BEARER_TOKEN_BEDROCK}" != bedrock-api-key-* ]]; then
 fi
 
 # The container only ever receives the variables allowlisted in
-# compose.claude.yaml's `environment:` block (this token plus AWS_REGION). Docker
+# compose.e2e-claude.yaml's `environment:` block (this token plus AWS_REGION). Docker
 # Compose does not forward other host variables, so host AWS credentials never
 # reach the container -- there is no denylist to maintain here.
 exec "${script_dir}/e2e-claude.sh"

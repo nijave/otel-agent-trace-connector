@@ -32,7 +32,7 @@ Repository layout:
 ├── e2e/                             # real agent runners and OTLP JSON validator
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
-├── compose.base.yaml                # shared collector for both e2e stacks
+├── compose.e2e-base.yaml            # shared collector for both e2e stacks
 └── collector-config.yaml            # raw and canonical pipelines
 ```
 

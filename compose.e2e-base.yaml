@@ -1,5 +1,5 @@
-# Shared collector for both e2e stacks. Included by compose.yaml (Codex) and
-# compose.claude.yaml (Claude); each of those defines only its own `agent`
+# Shared collector for both e2e stacks. Included by compose.e2e-codex.yaml (Codex)
+# and compose.e2e-claude.yaml (Claude); each of those defines only its own `agent`
 # service, which keeps the required-credential env isolated per stack. The
 # exported traces are validated on the host by `go test -tags=e2e ./e2e/validator`
 # (see scripts/lib-e2e.sh), not by a container.

@@ -1,8 +1,8 @@
-# Codex e2e stack. The shared collector comes from compose.base.yaml; only the
+# Codex e2e stack. The shared collector comes from compose.e2e-base.yaml; only the
 # Codex agent is defined here, so this stack never requires Claude/AWS credentials.
 # Exported traces are validated on the host by go test (see scripts/lib-e2e.sh).
 include:
-  - compose.base.yaml
+  - compose.e2e-base.yaml
 
 services:
   agent:

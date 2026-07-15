@@ -276,7 +276,7 @@ credential store is discarded with the runner container.
 The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.
 
-The Claude Code E2E uses its own Compose file (`compose.claude.yaml`) that
+The Claude Code E2E uses its own Compose file (`compose.e2e-claude.yaml`) that
 defines only the Claude agent, so it cannot accidentally require or consume the
 Codex credential. It routes exclusively through the Bedrock Invoke API using an
 explicit region and pinned inference profile; direct Anthropic credentials are
