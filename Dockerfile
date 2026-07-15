@@ -13,5 +13,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /src/dist/otelcol-coding-agents /usr/local/bin/otelcol-coding-agents
 COPY collector-config.yaml /etc/otelcol-coding-agents/config.yaml
+# Ports the bundled collector-config.yaml listens on: OTLP gRPC, OTLP HTTP, and
+# the health_check extension.
+EXPOSE 4317 4318 13133
 ENTRYPOINT ["/usr/local/bin/otelcol-coding-agents"]
 CMD ["--config=/etc/otelcol-coding-agents/config.yaml"]
