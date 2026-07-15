@@ -17,8 +17,10 @@ services:
         CLAUDE_CODE_VERSION: "${CLAUDE_CODE_VERSION:-2.1.207}"
     environment:
       CLAUDE_CODE_USE_BEDROCK: "1"
-      AWS_REGION: "${AWS_REGION:?AWS_REGION is required for the live Claude Bedrock E2E test}"
-      AWS_BEARER_TOKEN_BEDROCK: "${AWS_BEARER_TOKEN_BEDROCK:?AWS_BEARER_TOKEN_BEDROCK is required; generate one with scripts/e2e-claude-bedrock.sh}"
+      # scripts/e2e-claude.sh checks these credentials before Compose runs, so they
+      # are optional here; a required (:?) guard would only fire later and less clearly.
+      AWS_REGION: "${AWS_REGION:-}"
+      AWS_BEARER_TOKEN_BEDROCK: "${AWS_BEARER_TOKEN_BEDROCK:-}"
       CLAUDE_CODE_ENABLE_TELEMETRY: "1"
       CLAUDE_CODE_ENHANCED_TELEMETRY_BETA: "1"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"

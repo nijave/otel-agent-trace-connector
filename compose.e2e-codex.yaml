@@ -15,7 +15,9 @@ services:
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
       E2E_CODEX_MODEL: "${E2E_CODEX_MODEL:-gpt-5.1-codex-mini}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e.sh}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY:?OPENAI_API_KEY is required for the live E2E test}"
+      # scripts/e2e.sh checks the credential before Compose runs, so it is optional
+      # here; a required (:?) guard would only fire later and less clearly.
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     depends_on:
       collector:
         condition: service_healthy
