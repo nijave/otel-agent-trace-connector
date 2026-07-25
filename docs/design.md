@@ -116,10 +116,26 @@ Common attributes include:
 - `coding_agent.client.name`
 - `coding_agent.client.version`
 - `coding_agent.source.event`
+- `coding_agent.model_provider`
 - `telemetry.source`
 
 Custom attributes remain under `coding_agent.*` so they can be migrated as the
 semantic conventions evolve.
+
+`gen_ai.provider.name` describes the API the agent speaks, not the operator that
+served the request: it is `openai` for Codex and `anthropic` for Claude Code even
+when either is pointed at a third-party endpoint. Neither agent logs the upstream
+host, so a proxied setup is not distinguishable from a direct one.
+
+What Codex does report is `provider_name` on `codex.conversation_starts`, copied to
+`coding_agent.model_provider`. Two limits are worth knowing before relying on it.
+It is a display label authored by whoever wrote the provider block in
+`config.toml` — Codex's own default reads `OpenAI` — so it is not an identifier and
+deliberately does not overwrite `gen_ai.provider.name`, whose consumers expect a
+known value. And Codex emits `conversation_starts` once per session, so only a
+session's first turn carries it; later turns omit the attribute rather than
+inheriting a value, which would require per-conversation state the connector does
+not keep.
 
 ## Codex correlation model
 

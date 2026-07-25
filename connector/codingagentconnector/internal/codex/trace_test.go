@@ -141,6 +141,40 @@ func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
 	require.False(t, ok, "no usage was reported, so none should be invented")
 }
 
+// TestBuildTraceRecordsConfiguredModelProvider covers the provider label Codex
+// reports on codex.conversation_starts. It stays in a coding_agent.* attribute
+// rather than gen_ai.provider.name because the value is the operator-authored
+// provider name from config.toml, not a known provider identifier.
+func TestBuildTraceRecordsConfiguredModelProvider(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.conversation_starts", base, map[string]any{"provider_name": "z.ai via responses-proxy"}),
+			testEvent("codex.user_prompt", base.Add(time.Millisecond), nil),
+		},
+	}
+	root := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "z.ai via responses-proxy", attrString(t, root, "coding_agent.model_provider"))
+	// The wire protocol Codex speaks is still OpenAI's, and that is what this means.
+	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))
+}
+
+// TestBuildTraceOmitsModelProviderWithoutConversationStart pins the known limit of
+// the above: Codex emits codex.conversation_starts once per session, so a later turn
+// in the same session has no provider label and must omit the attribute rather than
+// invent or inherit one.
+func TestBuildTraceOmitsModelProviderWithoutConversationStart(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{testEvent("codex.user_prompt", base, nil)},
+	}
+	root := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	_, ok := root.Attributes().Get("coding_agent.model_provider")
+	require.False(t, ok, "a turn with no conversation_starts must not claim a provider")
+}
+
 func testEvent(name string, timestamp time.Time, additional map[string]any) agentEvent {
 	attrs := map[string]any{"event.name": name, "conversation.id": "conversation-1"}
 	for key, value := range additional {

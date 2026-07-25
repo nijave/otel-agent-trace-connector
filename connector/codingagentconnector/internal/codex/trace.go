@@ -107,6 +107,17 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	if version := lastStringAttr(events, "app.version"); version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
 	}
+	// Codex reports the configured model provider only on codex.conversation_starts,
+	// which it emits once per session -- so only a session's first turn carries it,
+	// and later turns simply omit the attribute. The value is the operator-authored
+	// `name` from the provider block in config.toml (Codex's own default reads
+	// "OpenAI"), so it is a display label, not an identifier: it is deliberately kept
+	// out of gen_ai.provider.name, whose consumers expect a known value. Nothing in
+	// the logs reports the upstream host, so a proxied setup is indistinguishable
+	// from a direct one except by this label.
+	if provider := lastStringAttr(events, "provider_name"); provider != "" {
+		attrs.PutStr("coding_agent.model_provider", provider)
+	}
 	putAggregateUsage(attrs, events)
 }
 
