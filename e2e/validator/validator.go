@@ -31,8 +31,9 @@ func validateTraceFile(path, runID string, validate func(ptrace.Traces, string) 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	unmarshaler := &ptrace.JSONUnmarshaler{}
-	// The collector's batch processor can split one logical trace across several
-	// OTLP batches (each written as its own line), so merge every batch before
+	// One logical trace arrives as several OTLP exports, each written as its own
+	// line: agents flush spans as they end, so the interaction root lands in a
+	// later export than the children it parents. Merge every batch before
 	// validating rather than expecting a complete trace within a single line.
 	merged := ptrace.NewTraces()
 	for scanner.Scan() {
@@ -70,21 +71,47 @@ func collectRunSpans(traces ptrace.Traces, runID string) []ptrace.Span {
 	return spans
 }
 
+// firstValidRoot walks every span named rootName and returns nil as soon as one
+// satisfies validateRoot. A run legitimately contains more than one candidate: the
+// Codex connector emits a root per turn, and a turn finalized by inactivity
+// timeout, eviction or supersession is incomplete by design, so hard-failing on
+// whichever candidate happens to come first would reject a run that did produce a
+// good trace. When none validates, the last candidate's error is the useful
+// diagnostic; notFound covers the case where there were no candidates at all.
+func firstValidRoot(spans []ptrace.Span, rootName string, notFound string, validateRoot func(ptrace.Span) error) error {
+	var lastErr error
+	for _, root := range spans {
+		if root.Name() != rootName {
+			continue
+		}
+		if err := validateRoot(root); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return errors.New(notFound)
+}
+
 func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
-	rootName := "invoke_agent " + agent
 	spans := collectRunSpans(traces, runID)
 	if len(spans) == 0 {
 		return errors.New("run id was not found")
+	}
+	// Checked across every span in the run rather than only the root and its direct
+	// children, so a leak on a deeper span cannot slip through.
+	if err := rejectSensitiveAttrs(spans); err != nil {
+		return err
 	}
 	if agent == "claude_code" {
 		if err := rejectClaudeTraceContent(spans); err != nil {
 			return err
 		}
 	}
-	for _, root := range spans {
-		if root.Name() != rootName {
-			continue
-		}
+	return firstValidRoot(spans, "invoke_agent "+agent, "root span was not found", func(root ptrace.Span) error {
 		if root.ParentSpanID() != [8]byte{} {
 			return errors.New("root span unexpectedly has a parent")
 		}
@@ -108,11 +135,6 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 				return errors.New("claude telemetry source is not native")
 			}
 		}
-		for _, sensitive := range []string{"prompt", "arguments", "output"} {
-			if _, exists := root.Attributes().Get(sensitive); exists {
-				return fmt.Errorf("sensitive root attribute %q was copied", sensitive)
-			}
-		}
 		chat, tool := false, false
 		for _, child := range spans {
 			if child.ParentSpanID() != root.SpanID() || child.TraceID() != root.TraceID() {
@@ -134,11 +156,6 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 					return errors.New("claude Bash tool span is missing")
 				}
 			}
-			for _, sensitive := range []string{"prompt", "arguments", "output"} {
-				if _, exists := child.Attributes().Get(sensitive); exists {
-					return fmt.Errorf("sensitive attribute %q was copied", sensitive)
-				}
-			}
 		}
 		if !chat {
 			return errors.New("chat child span is missing")
@@ -147,8 +164,7 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 			return errors.New("execute_tool child span is missing")
 		}
 		return nil
-	}
-	return errors.New("root span was not found")
+	})
 }
 
 func validateClaudeRawTraces(traces ptrace.Traces, runID string) error {
@@ -159,10 +175,7 @@ func validateClaudeRawTraces(traces ptrace.Traces, runID string) error {
 	if err := rejectClaudeTraceContent(spans); err != nil {
 		return err
 	}
-	for _, root := range spans {
-		if root.Name() != "claude_code.interaction" {
-			continue
-		}
+	return firstValidRoot(spans, "claude_code.interaction", "raw Claude interaction root was not found", func(root ptrace.Span) error {
 		if root.ParentSpanID() != [8]byte{} {
 			return errors.New("raw Claude root unexpectedly has a parent")
 		}
@@ -188,8 +201,20 @@ func validateClaudeRawTraces(traces ptrace.Traces, runID string) error {
 			return errors.New("raw Claude LLM or tool child is missing")
 		}
 		return nil
+	})
+}
+
+// rejectSensitiveAttrs fails if any span carries vendor content that normalization
+// must never copy onto a canonical span.
+func rejectSensitiveAttrs(spans []ptrace.Span) error {
+	for _, span := range spans {
+		for _, key := range []string{"prompt", "arguments", "output"} {
+			if _, exists := span.Attributes().Get(key); exists {
+				return fmt.Errorf("sensitive attribute %q was copied to span %q", key, span.Name())
+			}
+		}
 	}
-	return errors.New("raw Claude interaction root was not found")
+	return nil
 }
 
 func rejectClaudeTraceContent(spans []ptrace.Span) error {
