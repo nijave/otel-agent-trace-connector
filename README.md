@@ -30,6 +30,7 @@ Repository layout:
 │   ├── internal/codex/              #   stateful log correlation and trace building
 │   └── internal/claude/             #   stateless native-span normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
+│   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
 ├── compose.e2e-base.yaml            # shared collector for both e2e stacks
@@ -180,7 +181,7 @@ git push origin v0.1.0
 - [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - [Codex observability and telemetry](https://developers.openai.com/codex/config-advanced#observability-and-telemetry)
 - [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage)
-- [Claude Code on Amazon Bedrock](https://code.claude.com/docs/en/amazon-bedrock)
-- [Amazon Bedrock API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)
+- [Claude Code third-party endpoints](https://code.claude.com/docs/en/llm-gateway)
+- [z.ai coding-agent setup](https://docs.z.ai/devpack/tool/claude)
 - [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/awss3exporter)
 - [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/storage/filestorage)
