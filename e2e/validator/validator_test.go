@@ -27,7 +27,51 @@ func TestValidateTracesRejectsMissingToolAndSensitiveData(t *testing.T) {
 
 	traces = validTraces("run-1")
 	traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes().PutStr("prompt", "must not leak")
-	require.ErrorContains(t, validateTraces(traces, "run-1"), "sensitive root")
+	require.ErrorContains(t, validateTraces(traces, "run-1"), "sensitive attribute")
+}
+
+// TestValidateTracesRejectsSensitiveAttrOnGrandchild guards the whole span set, not
+// just the root and its direct children: a leak deeper in the tree must still fail.
+func TestValidateTracesRejectsSensitiveAttrOnGrandchild(t *testing.T) {
+	traces := validTraces("run-1")
+	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	grandchild := spans.AppendEmpty()
+	grandchild.SetName("execute_tool inner")
+	grandchild.SetTraceID(spans.At(0).TraceID())
+	grandchild.SetSpanID(pcommon.SpanID{9})
+	grandchild.SetParentSpanID(spans.At(2).SpanID())
+	grandchild.Attributes().PutStr("arguments", "must not leak")
+	require.ErrorContains(t, validateTraces(traces, "run-1"), "sensitive attribute")
+}
+
+// TestValidateTracesAcceptsRunWithAnIncompleteTurn covers a run that contains more
+// than one root: the Codex connector emits a root per turn, and a turn finalized by
+// inactivity timeout is incomplete by design. Validation must keep looking rather
+// than failing on whichever candidate comes first.
+func TestValidateTracesAcceptsRunWithAnIncompleteTurn(t *testing.T) {
+	// The timed-out turn is emitted first, so it is the first candidate the root
+	// scan encounters -- exactly the ordering that made this fail before.
+	incompleteOnly := ptrace.NewTraces()
+	rs := incompleteOnly.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	incomplete := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	incomplete.SetName("invoke_agent codex")
+	incomplete.SetTraceID(pcommon.TraceID{7})
+	incomplete.SetSpanID(pcommon.SpanID{8})
+	incomplete.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	incomplete.Attributes().PutStr("gen_ai.conversation.id", "conversation-1")
+	incomplete.Attributes().PutBool("coding_agent.turn.complete", false)
+
+	// A run holding only the incomplete turn still fails, and says why.
+	require.ErrorContains(t, validateTraces(incompleteOnly, "run-1"), "incomplete")
+
+	// Append the complete turn after it: the incomplete root must not veto the run.
+	traces := ptrace.NewTraces()
+	incompleteOnly.ResourceSpans().CopyTo(traces.ResourceSpans())
+	validTraces("run-1").ResourceSpans().MoveAndAppendTo(traces.ResourceSpans())
+	spans := collectRunSpans(traces, "run-1")
+	require.False(t, boolAttr(spans[0], "coding_agent.turn.complete"), "incomplete root must be first")
+	require.NoError(t, validateTraces(traces, "run-1"))
 }
 
 func TestValidateClaudeRawAndCanonicalTraces(t *testing.T) {

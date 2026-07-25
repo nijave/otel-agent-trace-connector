@@ -121,10 +121,7 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
 			continue
 		}
-		// Codex logs response.completed twice per model call: a timing-only record
-		// (duration_ms, no token counts) and the usage-bearing one. Skip the
-		// timing-only duplicate so each call yields a single chat span with usage.
-		if !hasTokenUsage(event.attrs) {
+		if isTimingOnlyCompletion(event.attrs) {
 			continue
 		}
 		start := turnStart
@@ -293,9 +290,24 @@ func putAggregateUsage(attrs pcommon.Map, events []agentEvent) {
 	}
 }
 
+// isTimingOnlyCompletion reports whether a response.completed record is Codex's
+// duplicate rather than the one describing the model call.
+//
+// Codex logs response.completed twice per call from two different emission sites:
+// the SSE frame handler reports only how long the frame took (duration_ms), while
+// turn completion reports time-to-first-token plus whatever token counts the
+// provider returned. Both timing fields are measured by Codex itself, so ttft_ms
+// identifies the turn-completion record even when the provider reported no usage
+// at all -- keying on token counts alone would drop every chat span for providers
+// that omit usage from the stream.
+func isTimingOnlyCompletion(attrs map[string]any) bool {
+	if _, ok := int64Value(attrs["ttft_ms"]); ok {
+		return false
+	}
+	return !hasTokenUsage(attrs)
+}
+
 // hasTokenUsage reports whether an event carries any completion token count.
-// Codex's usage-bearing response.completed always sets these; its timing-only
-// duplicate does not.
 func hasTokenUsage(attrs map[string]any) bool {
 	for _, m := range tokenUsageAttrs {
 		if _, ok := int64Value(attrs[m.source]); ok {

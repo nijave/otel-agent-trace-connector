@@ -1,5 +1,23 @@
 approval_policy = "never"
-sandbox_mode = "read-only"
+# The container is the isolation boundary; Codex's inner bubblewrap sandbox cannot
+# nest a user namespace here, so it is disabled (run.sh passes the matching flag).
+sandbox_mode = "danger-full-access"
+
+# Codex 0.144.1 requires wire_api="responses" (the Responses API); z.ai's coding
+# endpoint only speaks chat-completions. The responses-proxy service (see
+# e2e/responses-proxy/ and compose.e2e-codex.yaml) translates between the two, so
+# Codex talks to the proxy rather than to z.ai directly. env_key must name a
+# variable that is set, but the value only becomes a bearer token the proxy ignores
+# (its auth.keys is empty), so the container holds a placeholder rather than the real
+# z.ai key. The model comes from --model (E2E_CODEX_MODEL) and must be listed in the
+# proxy config.
+model_provider = "zai-proxy"
+
+[model_providers.zai-proxy]
+name = "z.ai via responses-proxy"
+base_url = "http://responses-proxy:3000/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
 
 [otel]
 environment = "e2e"

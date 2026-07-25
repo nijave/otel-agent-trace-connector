@@ -1,0 +1,40 @@
+# responses-proxy config for the Codex e2e stack (schema is v0.2.0; see the
+# pinned commit in the Dockerfile). Codex speaks the Responses API to this proxy,
+# which converts each request to Chat Completions and forwards it to z.ai's coding
+# endpoint (the proxy appends /chat/completions to base-url). The z.ai key is read
+# from OPENAI_API_KEY, the same variable the rest of the Codex stack uses.
+# Proxy-side auth is disabled, so the bearer token Codex sends is ignored; only the
+# downstream api-key matters.
+#
+# The model map keys must match whatever E2E_CODEX_MODEL is set to (Codex routes by
+# model name), so overriding it also means adding an entry here.
+#
+# The zai-usage rewrite injects stream_options.include_usage into the outbound chat
+# request. Without it z.ai omits token usage from the stream, so the connector's
+# usage attributes would be absent (the chat spans themselves survive either way).
+# The rewrite matches any model value and only adds the field, so the same profile is
+# reused by every model.
+server:
+  listen: "0.0.0.0:3000"
+  timeout: 600
+  log-level: info
+  auth:
+    keys: []
+
+rewrites:
+  zai-usage:
+    at: chat-out
+    replace:
+      model:
+        - if: ".*"
+          with:
+            stream_options:
+              include_usage: true
+
+models:
+  glm-4.7:
+    model: glm-4.7
+    rewrite: zai-usage
+    provider:
+      base-url: https://api.z.ai/api/coding/paas/v4
+      api-key: $OPENAI_API_KEY

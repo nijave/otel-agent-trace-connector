@@ -26,7 +26,11 @@ Research was refreshed on 2026-07-11 against primary documentation and source.
 Codex officially exports structured OTLP logs for conversation start, API,
 SSE/WebSocket, user prompt, tool-decision, and tool-result activity. Shared
 metadata includes `conversation.id`, model, client version, and timestamps.
-`codex.sse_event` with `event.kind=response.completed` contains token counts.
+`codex.sse_event` with `event.kind=response.completed` is logged twice per model
+call, from two emission sites: the SSE frame handler reports only `duration_ms`,
+while turn completion reports `ttft_ms` plus whatever token counts the provider
+returned. Both timing fields are measured by Codex, so `ttft_ms` distinguishes the
+two records even for providers that report no usage at all.
 The source also confirms tool correlation through `call_id` and durations in
 milliseconds. User prompts, tool arguments, and outputs are content-bearing and
 are deliberately excluded from generated spans.
@@ -153,7 +157,9 @@ batched; source timestamps are still used for span timing.
 ### Span construction
 
 - Root start/end cover all observed event timestamps and duration-derived starts.
-- Each `response.completed` becomes a `chat` span.
+- Each model call becomes one `chat` span, built from the turn-completion
+  `response.completed` record; the timing-only duplicate is skipped. A call whose
+  provider reported no usage still gets its span, just without `gen_ai.usage.*`.
 - The most recent preceding API request supplies the model-call start when present.
 - Each `codex.tool_result` becomes an `execute_tool` span.
 - Matching `codex.tool_decision` records become events on the tool span.
@@ -267,34 +273,54 @@ request. It:
 The agent process has a configurable ten-minute default timeout so retries or
 transport stalls cannot leave an unbounded paid session running.
 
-The runner pins `gpt-5.1-codex-mini` by default to minimize live-test cost. Its
-image installs Debian's standard `ca-certificates` package so public TLS works
-without host paths. Before execution, the ephemeral runner uses Codex's
-noninteractive API-key login so the pinned CLI attaches the supplied key; the
-credential store is discarded with the runner container.
+Both E2Es run against z.ai's GLM models, so one z.ai API key covers both stacks.
+Nothing in the connector is provider-specific; z.ai is simply what these tests are
+wired to. The Codex runner pins `glm-4.7`, the model the connector's pinned
+regression captures were recorded against. Its image installs Debian's standard
+`ca-certificates` package so public TLS works without host paths. There is no
+`codex login` step: the model provider reads its key from `env_key` directly.
+
+Codex 0.144.1 speaks only the Responses API, which z.ai does not serve, so a third
+Compose service (`responses-proxy`) translates Responses to Chat Completions and
+injects `stream_options.include_usage` so token usage survives the stream. It is
+built from a pinned fork commit, exists only for this test, and is not part of the
+connector or any production path. It is the only container that receives the real
+z.ai key; Codex itself gets a placeholder, because its `env_key` variable must be
+set but the value only becomes a bearer token the proxy ignores. Codex's inner
+bubblewrap sandbox cannot create a user namespace inside an unprivileged
+container, so it is disabled and the container is the isolation boundary: no host
+mount, no real credential. Model-issued commands do get writes and egress inside
+that container.
 
 The E2E is prepared and compiled by normal verification, but is not invoked by
 the automated test command.
 
 The Claude Code E2E uses its own Compose file (`compose.e2e-claude.yaml`) that
 defines only the Claude agent, so it cannot accidentally require or consume the
-Codex credential. It routes exclusively through the Bedrock Invoke API using an
-explicit region and pinned inference profile; direct Anthropic credentials are
-not accepted. The container receives exactly one credential: an ephemeral Bedrock
-API key (`AWS_BEARER_TOKEN_BEDROCK`). All host AWS credential resolution stays
-outside the container; the preferred host wrapper converts the normal AWS
-credential chain into a short-lived, region-bound token and passes only that
-token in, allowlisted by the Compose `environment:` block. It runs the current
-pinned Claude Code release in bare print mode with only Bash exposed, explicit
-tool approval, bounded turns, a hard dollar ceiling, and no session persistence.
-Claude exports only beta traces; content-bearing telemetry gates remain disabled.
-Validation requires both the untouched native hierarchy and its normalized
-counterpart, including the interaction, LLM request, and Bash tool spans. The
-live Claude test is prepared but intentionally unrun.
+Codex credential. It reaches z.ai's Anthropic-compatible endpoint via
+`ANTHROPIC_BASE_URL`, and the container receives exactly one credential:
+`ANTHROPIC_AUTH_TOKEN`. `ANTHROPIC_API_KEY` is never set, so it cannot shadow the
+auth token, and the Compose `environment:` block remains an allowlist of what
+reaches the container. GLM models are mapped onto Claude Code's model tiers. It
+runs the current pinned Claude Code release in bare print mode with only Bash
+exposed, explicit tool approval, bounded turns, a hard dollar ceiling, and no
+session persistence. Claude exports only beta traces; content-bearing telemetry
+gates remain disabled. Validation requires both the untouched native hierarchy and
+its normalized counterpart, including the interaction, LLM request, and Bash tool
+spans.
+
+Because one logical trace arrives as several OTLP exports — an agent flushes each
+span as it ends, so the interaction root lands after the children it parents — the
+validator merges every batch in the output file before asserting, and reassembles
+spans the way a trace backend would. A run can also contain more than one span
+named like the root, since the Codex connector emits a root per turn and a turn
+finalized by timeout, eviction or supersession is incomplete by design; validation
+therefore tries every candidate root and fails only when none of them validates.
 
 CI never runs either paid E2E. It compiles their runners and validator, builds
-all images, validates both Compose graphs and Collector configurations, and
-runs normal plus race-enabled tests. Tags are released by GoReleaser after OCB
+every image including the responses-proxy, validates both Compose graphs and
+Collector configurations, asserts the credential split described above, and runs
+normal plus race-enabled tests. Tags are released by GoReleaser after OCB
 generates the custom Collector main package; release output is kept separate
 from OCB's generated `dist` source tree.
 
