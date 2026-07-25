@@ -5,11 +5,12 @@ sandbox_mode = "danger-full-access"
 
 # Codex 0.144.1 requires wire_api="responses" (the Responses API); z.ai's coding
 # endpoint only speaks chat-completions. The responses-proxy service (see
-# e2e/responses-proxy/ and compose.yaml) translates between the two, so Codex talks
-# to the proxy rather than to z.ai directly. The z.ai key still travels here via
-# OPENAI_API_KEY (env_key), but the proxy ignores it and uses its own
-# OPENAI_API_KEY for the downstream z.ai call. The model is supplied at runtime via
-# --model (E2E_CODEX_MODEL, e.g. glm-4.7) and must be listed in the proxy config.
+# e2e/responses-proxy/ and compose.e2e-codex.yaml) translates between the two, so
+# Codex talks to the proxy rather than to z.ai directly. env_key must name a
+# variable that is set, but the value only becomes a bearer token the proxy ignores
+# (its auth.keys is empty), so the container holds a placeholder rather than the real
+# z.ai key. The model comes from --model (E2E_CODEX_MODEL) and must be listed in the
+# proxy config.
 model_provider = "zai-proxy"
 
 [model_providers.zai-proxy]
@@ -17,11 +18,6 @@ name = "z.ai via responses-proxy"
 base_url = "http://responses-proxy:3000/v1"
 env_key = "OPENAI_API_KEY"
 wire_api = "responses"
-
-# OpenRouter equivalent — its OpenAI-compatible API is chat-completions too, so it
-# runs through the same responses-proxy: change the proxy's base_url (see
-# e2e/responses-proxy/config.yaml) to https://openrouter.ai/api/v1 and set
-# E2E_CODEX_MODEL to a slug like z-ai/glm-4.6. This provider block is unchanged.
 
 [otel]
 environment = "e2e"

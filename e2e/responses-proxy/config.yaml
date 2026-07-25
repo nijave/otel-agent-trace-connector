@@ -7,17 +7,13 @@
 # downstream api-key matters.
 #
 # The model map keys must match whatever E2E_CODEX_MODEL is set to (Codex routes by
-# model name); both current defaults are listed below.
+# model name), so overriding it also means adding an entry here.
 #
 # The zai-usage rewrite injects stream_options.include_usage into the outbound chat
-# request. Without it z.ai omits token usage from the stream, so the Codex
-# turn-completion telemetry (and thus the connector's usage attributes) would be
-# empty. The rewrite matches any model value and only adds the field, so the same
-# profile is reused by every model.
-#
-# OpenRouter equivalent — its OpenAI-compatible API is chat-completions too, so it
-# runs through this same proxy: change base-url to https://openrouter.ai/api/v1 and
-# use a slug like z-ai/glm-4.6 as the map key / model.
+# request. Without it z.ai omits token usage from the stream, so the connector's
+# usage attributes would be absent (the chat spans themselves survive either way).
+# The rewrite matches any model value and only adds the field, so the same profile is
+# reused by every model.
 server:
   listen: "0.0.0.0:3000"
   timeout: 600
@@ -38,12 +34,6 @@ rewrites:
 models:
   glm-4.7:
     model: glm-4.7
-    rewrite: zai-usage
-    provider:
-      base-url: https://api.z.ai/api/coding/paas/v4
-      api-key: $OPENAI_API_KEY
-  glm-4.6:
-    model: glm-4.6
     rewrite: zai-usage
     provider:
       base-url: https://api.z.ai/api/coding/paas/v4
