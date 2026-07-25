@@ -100,21 +100,8 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 		require.NoError(t, normalizer.ConsumeTraces(context.Background(), batch))
 	}
 
-	// Reassemble every emitted span the way a trace backend would.
-	var all []ptrace.Span
-	for _, traces := range sink.all() {
-		for i := 0; i < traces.ResourceSpans().Len(); i++ {
-			rs := traces.ResourceSpans().At(i)
-			for j := 0; j < rs.ScopeSpans().Len(); j++ {
-				spans := rs.ScopeSpans().At(j).Spans()
-				for k := 0; k < spans.Len(); k++ {
-					all = append(all, spans.At(k))
-				}
-			}
-		}
-	}
-
-	root := findSpanIn(t, all, "invoke_agent claude_code")
+	all := reassemble(sink)
+	root := findSpan(t, all, "invoke_agent claude_code")
 	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "interaction root must stay a root")
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
@@ -124,15 +111,35 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	// The prompt is redacted at the source and must stay redacted after normalization.
 	require.Equal(t, "<REDACTED>", attrString(t, root, "user_prompt"))
 
-	chat := findSpanIn(t, all, "chat glm-4.7")
+	chat := findSpan(t, all, "chat glm-4.7")
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
 	require.Equal(t, "chat", attrString(t, chat, "gen_ai.operation.name"))
 	require.Equal(t, "glm-4.7", attrString(t, chat, "gen_ai.request.model"))
 
-	tool := findSpanIn(t, all, "execute_tool Bash")
+	tool := findSpan(t, all, "execute_tool Bash")
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())
 	require.Equal(t, "execute_tool", attrString(t, tool, "gen_ai.operation.name"))
 	require.Equal(t, "Bash", attrString(t, tool, "gen_ai.tool.name"))
+}
+
+// TestClaudeTraceNormalizerKeepsSubToolOnlyBatch covers an export carrying only tool
+// sub-spans. Claude Code exports a span when it ends, so a child can land in a batch
+// holding none of its ancestors; recognizing just the three renamed span types
+// dropped that whole batch and silently deleted those spans from the trace.
+func TestClaudeTraceNormalizerKeepsSubToolOnlyBatch(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	execution := spans.AppendEmpty()
+	execution.SetName("claude_code.tool.execution")
+	execution.SetParentSpanID(pcommon.SpanID{4})
+	spans.AppendEmpty().SetName("claude_code.tool.blocked_on_user")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	require.Equal(t, 2, all.Len(), "sub-tool spans must survive a batch of their own")
+	// Sub-spans pass through unchanged; only the three canonical types are renamed.
+	require.Equal(t, pcommon.SpanID{4}, findSpan(t, all, "claude_code.tool.execution").ParentSpanID())
 }
 
 func TestClaudeTraceNormalizerFiltersOtherProviders(t *testing.T) {
@@ -154,15 +161,22 @@ func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
 	return ptrace.Span{}
 }
 
-func findSpanIn(t *testing.T, spans []ptrace.Span, name string) ptrace.Span {
-	t.Helper()
-	for _, span := range spans {
-		if span.Name() == name {
-			return span
+// reassemble flattens every span the sink received into one slice, the way a trace
+// backend stitches a trace back together from separate exports.
+func reassemble(sink *traceSink) ptrace.SpanSlice {
+	all := ptrace.NewSpanSlice()
+	for _, traces := range sink.all() {
+		for i := 0; i < traces.ResourceSpans().Len(); i++ {
+			rs := traces.ResourceSpans().At(i)
+			for j := 0; j < rs.ScopeSpans().Len(); j++ {
+				spans := rs.ScopeSpans().At(j).Spans()
+				for k := 0; k < spans.Len(); k++ {
+					spans.At(k).CopyTo(all.AppendEmpty())
+				}
+			}
 		}
 	}
-	require.FailNow(t, "span not found", name)
-	return ptrace.Span{}
+	return all
 }
 
 func attrString(t *testing.T, span ptrace.Span, key string) string {

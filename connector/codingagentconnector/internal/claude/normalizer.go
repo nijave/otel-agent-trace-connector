@@ -5,6 +5,7 @@ package claude
 
 import (
 	"context"
+	"strings"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
@@ -54,12 +55,18 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 	return n.next.ConsumeTraces(ctx, output)
 }
 
+// claudeSpanPrefix is the namespace Claude Code gives every span it emits. Matching
+// the namespace rather than the three renamed span types keeps batches that hold
+// only sub-spans such as claude_code.tool.execution: Claude Code exports a span when
+// it ends, so a child can land in an export that carries none of its ancestors, and
+// dropping that batch would delete those spans from the trace.
+const claudeSpanPrefix = "claude_code."
+
 func containsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
 		spans := resourceSpans.ScopeSpans().At(i).Spans()
 		for j := 0; j < spans.Len(); j++ {
-			switch spans.At(j).Name() {
-			case "claude_code.interaction", "claude_code.llm_request", "claude_code.tool":
+			if strings.HasPrefix(spans.At(j).Name(), claudeSpanPrefix) {
 				return true
 			}
 		}
