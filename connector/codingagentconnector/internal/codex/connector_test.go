@@ -239,7 +239,11 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := NewDefaultConfig()
-	cfg.ReorderWindow = 5 * time.Millisecond
+	// The capture is fed as four separate batches, and the turn looks finalizable
+	// after the second one. The window has to outlast the gaps between those calls or
+	// a scheduling stall on a loaded runner splits the capture into two turns, so it
+	// is generous rather than as short as the other tests here can afford.
+	cfg.ReorderWindow = 250 * time.Millisecond
 	cfg.TurnTimeout = time.Second
 	sink := &traceSink{}
 	set := connector.Settings{ID: component.NewID(component.MustNewType("coding_agent")), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
