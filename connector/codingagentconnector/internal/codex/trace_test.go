@@ -90,8 +90,8 @@ func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
 			testEvent("codex.user_prompt", base, nil),
 			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": 100}),
 			testEvent("codex.api_request", base.Add(2*time.Second), map[string]any{"duration_ms": 100}),
-			testEvent("codex.sse_event", base.Add(3*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 1}),
-			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 1}),
+			testEvent("codex.sse_event", base.Add(3*time.Second), map[string]any{"event.kind": "response.completed", "ttft_ms": 10}),
+			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "ttft_ms": 10}),
 		},
 	}
 	spans := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
@@ -110,13 +110,35 @@ func TestBuildTraceSkipsTimingOnlyCompletion(t *testing.T) {
 		events: []agentEvent{
 			testEvent("codex.user_prompt", base, nil),
 			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 38}),
-			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "input_token_count": 10, "output_token_count": 4}),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "ttft_ms": 30, "input_token_count": 10, "output_token_count": 4}),
 		},
 	}
 	traces := buildTrace(turn, "completed", defaultScopeVersion)
 	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat gpt-test")
 	require.Equal(t, int64(10), attrInt(t, chat, "gen_ai.usage.input_tokens"))
+}
+
+// TestBuildTraceKeepsCompletionWithoutUsage covers a provider that omits token usage
+// from the stream (a chat-completions endpoint without stream_options.include_usage,
+// for example). Codex still logs both response.completed records, so the duplicate
+// must still be skipped -- but the surviving call has to keep its chat span rather
+// than disappearing from the trace just because no token counts arrived.
+func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "glm-test", "duration_ms": 38}),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "glm-test", "ttft_ms": 30}),
+		},
+	}
+	traces := buildTrace(turn, "completed", defaultScopeVersion)
+	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
+	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat glm-test")
+	_, ok := chat.Attributes().Get("gen_ai.usage.input_tokens")
+	require.False(t, ok, "no usage was reported, so none should be invented")
 }
 
 func testEvent(name string, timestamp time.Time, additional map[string]any) agentEvent {
