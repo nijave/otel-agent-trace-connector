@@ -269,6 +269,11 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	require.True(t, attrBool(t, root, "coding_agent.turn.complete"), "real capture must finalize as a completed turn")
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
 	require.Greater(t, attrInt(t, root, "gen_ai.usage.input_tokens"), int64(0))
+	// The capture was recorded through the responses-proxy, so it pins the provider
+	// label Codex reports for a custom provider -- and that gen_ai.provider.name is
+	// left describing the wire protocol rather than being overwritten with it.
+	require.Equal(t, "z.ai via responses-proxy", attrString(t, root, "coding_agent.model_provider"))
+	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))
 
 	// Every chat span must carry usage: the timing-only duplicate completions
 	// (no token counts) must not produce usage-less chat spans.
