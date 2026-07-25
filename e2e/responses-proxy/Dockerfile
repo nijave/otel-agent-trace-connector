@@ -20,9 +20,13 @@ RUN apt-get update \
         git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ARG RESPONSES_PROXY_REF=d2b5d0456ec00d30dbd718c0b6c95804c0aba5cc
+# --locked builds against the committed Cargo.lock, so the pinned rev pins the whole
+# dependency graph; without it a new semver-compatible crate release can break this
+# build with no change on our side.
 RUN cargo install responses-proxy \
         --git https://github.com/nijave/responses-proxy.git \
         --rev "${RESPONSES_PROXY_REF}" \
+        --locked \
         --root /out
 
 FROM debian:bookworm-slim

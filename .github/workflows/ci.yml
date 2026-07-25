@@ -37,12 +37,10 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Check shell syntax
         run: |
-          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh scripts/generate.sh scripts/lib-e2e.sh
+          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/generate.sh scripts/lib-e2e.sh
           sh -n e2e/codex/run.sh e2e/claude/run.sh
       - name: Lint shell scripts
-        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-claude-bedrock.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh
-      - name: Check Python helper syntax
-        run: python3 scripts/bedrock-token_test.py
+        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh
       - name: Check generated files are up to date
         run: |
           ./scripts/generate.sh
@@ -90,11 +88,17 @@ jobs:
           ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
       - name: Validate Compose configurations
         env:
-          ANTHROPIC_AUTH_TOKEN: validation-only
           E2E_RUN_ID: ci-validation
           OPENAI_API_KEY: validation-only
         run: |
           docker compose -f compose.e2e-codex.yaml config --quiet
+          # The real key reaches responses-proxy only; the Codex agent gets a
+          # placeholder, because config.toml's env_key just needs a value the proxy
+          # will ignore.
+          docker compose -f compose.e2e-codex.yaml config --format json \
+            | jq -e '.services["responses-proxy"].environment.OPENAI_API_KEY == "validation-only"
+                     and .services.agent.environment.OPENAI_API_KEY != "validation-only"'
+          # ANTHROPIC_API_KEY must stay absent so it cannot shadow ANTHROPIC_AUTH_TOKEN.
           docker compose -f compose.e2e-claude.yaml config --format json \
             | jq -e '.services.agent.environment.ANTHROPIC_BASE_URL == "https://api.z.ai/api/anthropic" and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
       - name: Build container images
@@ -102,6 +106,11 @@ jobs:
           docker build --tag otelcol-coding-agents:ci .
           docker build --tag codex-e2e:ci e2e/codex
           docker build --tag claude-e2e:ci e2e/claude
+          # The Codex stack cannot run without this one, and it is the only image
+          # built from a git ref rather than an immutable registry artifact, so a
+          # vanished fork branch or a broken dependency must fail here rather than
+          # during someone's paid e2e run.
+          docker build --tag responses-proxy-e2e:ci e2e/responses-proxy
       - name: Verify GoReleaser configuration
         uses: goreleaser/goreleaser-action@v7
         with:
