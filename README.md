@@ -174,6 +174,18 @@ git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```
 
+The same tag also publishes a `linux/amd64` container image to
+`ghcr.io/nijave/otel-agent-trace-connector`, tagged exactly as the git tag
+reads:
+
+```bash
+docker pull ghcr.io/nijave/otel-agent-trace-connector:v0.1.0
+```
+
+The image is the repository `Dockerfile` and carries the bundled
+`collector-config.yaml` as its default `--config`; deployments that export
+elsewhere should mount their own config over it.
+
 ## References
 
 - [OpenTelemetry Collector Builder](https://opentelemetry.io/docs/collector/extend/ocb/)
