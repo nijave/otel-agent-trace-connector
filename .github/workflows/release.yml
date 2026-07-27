@@ -55,7 +55,7 @@ jobs:
           tags: type=semver,pattern=v{{version}}
       # linux/amd64 only: that is what the one consuming cluster runs. Add
       # platforms when something actually needs them.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: true
