@@ -35,7 +35,7 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputResourceSpans := input.ResourceSpans().At(i)
-		if !containsClaudeSpans(inputResourceSpans) {
+		if !ContainsClaudeSpans(inputResourceSpans) {
 			continue
 		}
 		rs := output.ResourceSpans().AppendEmpty()
@@ -62,7 +62,10 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 // dropping that batch would delete those spans from the trace.
 const claudeSpanPrefix = "claude_code."
 
-func containsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
+// ContainsClaudeSpans reports whether any span in the group carries Claude
+// Code's native span-name namespace. The GenAI edge also calls this to leave
+// Claude groups to the Claude normalizer.
+func ContainsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
 		spans := resourceSpans.ScopeSpans().At(i).Spans()
 		for j := 0; j < spans.Len(); j++ {
