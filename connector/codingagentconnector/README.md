@@ -51,12 +51,14 @@ generated Codex spans.
 
 ## Configuration
 
+<!-- vale off -->
 | Setting | Default | Description |
 | --- | --- | --- |
-| `turn_timeout` | `10m` | Close a turn with no completion after this idle period. |
-| `reorder_window` | `30s` | Quiet period after the last event before a completed turn finalizes; also the cross-batch late-arrival window. Must be less than `turn_timeout`. |
-| `max_active_turns` | `10000` | Bound on concurrently correlated turns; the least-recently-seen turn emits when the bound exceeds. |
+| `turn_timeout` | `10m` | Finalize a turn with no completion after this idle period. |
+| `reorder_window` | `30s` | Quiet period after the last event before a completed turn is finalized; also the cross-batch late-arrival window. Must be less than `turn_timeout`. |
+| `max_active_turns` | `10000` | Bound on concurrently correlated turns; the least-recently-seen turn is emitted when the bound is exceeded. |
 | `max_events_per_turn` | `1000` | Bound on retained events per turn; excess events set `coding_agent.turn.events_truncated=true`. |
+<!-- vale on -->
 
 Example (both edges bridging into a canonical traces pipeline):
 

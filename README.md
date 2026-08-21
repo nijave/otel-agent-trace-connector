@@ -124,7 +124,7 @@ Ad-hoc Python agents can export through
 [`opentelemetry-instrumentation-openai-v2`](https://pypi.org/project/opentelemetry-instrumentation-openai-v2/)
 or `opentelemetry-util-genai`; Strands Agents SDK exports its
 [built-in traces](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)
-directly. Both enter the same `traces` pipeline as Claude Code — the
+directly. All three enter the same `traces` pipeline as Claude Code — the
 connector detects each source by instrumentation scope.
 
 Strands captures prompt and completion content in span events by default and

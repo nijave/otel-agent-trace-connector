@@ -141,7 +141,7 @@ connectors generally keep behavior in one package and reserve `internal` for
 metadata or stores. This component has two intentionally different provider
 paths, so provider-focused internal packages give the same encapsulation without
 mixing stateful and stateless logic.
-Standard logs and traces edges The component registers, so the component uses
+The component registers standard logs and traces edges, so it uses
 `connector.NewFactory`; it does not depend directly on the profile-aware
 experimental `xconnector` factory.
 
@@ -391,9 +391,9 @@ edge, so stripping matters for Strands defaults and openai-v2 experimental
 
 ## Privacy and security
 
-Codex prompt content, tool arguments, and tool output the connector discards the
-connector's in-memory event copy and never copied into synthetic spans. Safe
-length/count/status fields stay. Raw telemetry is
+The connector discards Codex prompt content, tool arguments, and tool output
+from its in-memory event copy and never copies them into synthetic spans.
+Safe length/count/status fields stay. Raw telemetry is
 still exported by the example pipeline, so operators must apply their own
 retention, authorization, and redaction policies to that raw destination.
 
@@ -482,8 +482,8 @@ part of the connector or any production path. The proxy is the only container
 that receives the real z.ai key; Codex itself gets a placeholder, because its
 `env_key` variable needs setting but the value only becomes a bearer token the
 proxy ignores. Codex's inner bubblewrap sandbox cannot create a user namespace
-inside an unprivileged container, and disables and the container is the
-isolation boundary: no host mount, no real credential. Model-issued commands do
+inside an unprivileged container, so the container disables sandboxing and acts as
+the isolation boundary: no host mount, no real credential. Model-issued commands do
 get writes and egress inside that container.
 
 Normal verification prepares and compiles the E2E, but the automated test command
@@ -533,7 +533,7 @@ normal plus race-enabled tests. Tags release by GoReleaser after OCB
 generates the custom Collector main package; release output stays separate
 from OCB's generated `dist` source tree.
 
-The unique run marker The Collector resource processor adds by the Collector resource processor before
+The Collector resource processor adds the unique run marker before
 correlation. Codex constructs a fixed SDK resource and does not currently honor
 `OTEL_RESOURCE_ATTRIBUTES`, so relying on the agent container environment would
 make stale-output detection ineffective.
