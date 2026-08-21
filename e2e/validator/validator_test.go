@@ -177,6 +177,49 @@ func TestValidateStrandsCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	require.Error(t, validateCanonicalTraces(traces, "run-1", "strands"))
 }
 
+func TestValidateStrandsCanonicalSkipsFailedChatAttempts(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	traceID := pcommon.TraceID{1}
+	root := spans.AppendEmpty()
+	root.SetName("invoke_agent strands-e2e")
+	root.SetTraceID(traceID)
+	root.SetSpanID(pcommon.SpanID{2})
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
+	root.Attributes().PutStr("telemetry.source", "native")
+
+	tool := spans.AppendEmpty()
+	tool.SetName("execute_tool get_marker")
+	tool.SetTraceID(traceID)
+	tool.SetSpanID(pcommon.SpanID{4})
+	tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	tool.Attributes().PutStr("gen_ai.tool.name", "get_marker")
+
+	// A retried rate limit leaves a chat span without usage; alone it must fail.
+	failed := spans.AppendEmpty()
+	failed.SetName("chat glm-4.7")
+	failed.SetTraceID(traceID)
+	failed.SetSpanID(pcommon.SpanID{5})
+	failed.Attributes().PutStr("gen_ai.operation.name", "chat")
+	failed.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+	require.Error(t, validateCanonicalTraces(traces, "run-1", "strands"),
+		"a tree whose only chat attempt failed has no usage evidence")
+
+	// The successful retry after it satisfies the tree.
+	success := spans.AppendEmpty()
+	success.SetName("chat glm-4.7")
+	success.SetTraceID(traceID)
+	success.SetSpanID(pcommon.SpanID{6})
+	success.Attributes().PutStr("gen_ai.operation.name", "chat")
+	success.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+	success.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "strands"))
+}
+
 func TestValidateStrandsRawRequiresContentEvidence(t *testing.T) {
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()

@@ -363,11 +363,14 @@ func validateStrandsSpans(spans []ptrace.Span) error {
 			}
 			switch stringAttr(span, "gen_ai.operation.name") {
 			case "chat":
+				// A failed model attempt (for example a retried rate limit)
+				// ends its chat span with no usage; only a successful call
+				// proves the canonical usage mapping, so skip bare attempts.
+				if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+					continue
+				}
 				if stringAttr(span, "gen_ai.request.model") == "" {
 					return errors.New("strands chat model is missing")
-				}
-				if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
-					return errors.New("strands chat input token usage is missing")
 				}
 				chat = true
 			case "execute_tool":
@@ -377,7 +380,7 @@ func validateStrandsSpans(spans []ptrace.Span) error {
 			}
 		}
 		if !chat {
-			return errors.New("strands chat span is missing")
+			return errors.New("strands chat span with usage is missing")
 		}
 		if !tool {
 			return errors.New("strands get_marker tool span is missing")
