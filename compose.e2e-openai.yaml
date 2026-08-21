@@ -1,0 +1,23 @@
+# Ad-hoc OpenAI-SDK agent e2e stack. The shared collector comes from
+# compose.e2e-base.yaml. The agent is a small Python script instrumented by
+# opentelemetry-instrumentation-openai-v2, pointed at z.ai's OpenAI-compatible
+# chat-completions endpoint. It receives exactly one credential.
+include:
+  - compose.e2e-base.yaml
+
+services:
+  agent:
+    build:
+      context: e2e/openai-adhoc
+    environment:
+      # scripts/e2e-openai.sh checks this credential before Compose runs.
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4"
+      E2E_OPENAI_MODEL: "${E2E_OPENAI_MODEL:-glm-4.7}"
+      E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-openai.sh}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    depends_on:
+      collector:
+        condition: service_healthy
