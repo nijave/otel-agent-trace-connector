@@ -388,6 +388,10 @@ edge, so stripping matters for Strands defaults and openai-v2 experimental
   canonical output. Full fidelity remains in the parallel raw pipeline.
 - Strands sets `gen_ai.provider.name=strands-agents` (framework, not model
   provider); the connector preserves the value as emitted.
+- A resource group holding both a `claude_code.*` span and a GenAI-scope
+  span goes wholly to the Claude edge, whose behavior does not change, so
+  GenAI content keys on such a mixed group would not pass through the GenAI
+  content stripper. No known agent emits that combination.
 
 ## Privacy and security
 
@@ -441,7 +445,7 @@ must own a durable volume, and replacing a replica without its volume abandons
 that replica's queue. AWS credentials resolve externally through the SDK
 credential chain; static secrets do not belong in the Collector configuration.
 Persistent exporter queues do not change the connector state contract above:
-an active Codex turn that can still lose in a crash.
+a crash can still lose an active Codex turn.
 
 ## Testing strategy
 
