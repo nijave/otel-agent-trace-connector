@@ -232,6 +232,23 @@ func TestValidateStrandsRawRequiresContentEvidence(t *testing.T) {
 	require.NoError(t, validateStrandsRawTraces(traces, "run-1"))
 }
 
+// The live caller sits behind the e2e build tag, which the linter does not
+// build with; this untagged exercise of the file wrapper keeps it used.
+func TestValidateStrandsRawFileParsesActualOTLPJSON(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-strands")
+	span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("chat")
+	span.Events().AppendEmpty().SetName("gen_ai.user.message")
+	encoded, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
+	require.NoError(t, err)
+	path := t.TempDir() + "/raw.json"
+	require.NoError(t, os.WriteFile(path, append(encoded, '\n'), 0o600))
+	require.NoError(t, validateStrandsRawFile(path, "run-strands"))
+	require.Error(t, validateStrandsRawFile(path, "different-run"))
+}
+
 func validateFile(path, runID string) error {
 	return validateCanonicalFile(path, runID, "codex")
 }
