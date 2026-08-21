@@ -106,6 +106,18 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 	if err := rejectSensitiveAttrs(spans); err != nil {
 		return err
 	}
+	switch agent {
+	case "openai_adhoc":
+		if err := rejectGenAIContent(spans); err != nil {
+			return err
+		}
+		return validateOpenAIAdhocSpans(spans)
+	case "strands":
+		if err := rejectGenAIContent(spans); err != nil {
+			return err
+		}
+		return validateStrandsSpans(spans)
+	}
 	if agent == "claude_code" {
 		if err := rejectClaudeTraceContent(spans); err != nil {
 			return err
@@ -252,6 +264,149 @@ func stringAttr(span ptrace.Span, key string) string {
 	}
 	return value.Str()
 }
+// genAIContentAttributeKeys and genAIContentEventNames mirror the stripping
+// contract in internal/genai; canonical output must never carry them.
+var genAIContentAttributeKeys = []string{
+	"gen_ai.input.messages", "gen_ai.output.messages",
+	"gen_ai.system_instructions", "system_prompt",
+	"gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
+	"gen_ai.user.message", "gen_ai.assistant.message", "gen_ai.choice",
+	"gen_ai.system",
+}
+
+var genAIContentEventNames = []string{
+	"gen_ai.client.inference.operation.details",
+	"gen_ai.user.message", "gen_ai.assistant.message",
+	"gen_ai.system.message", "gen_ai.tool.message", "gen_ai.choice",
+}
+
+func rejectGenAIContent(spans []ptrace.Span) error {
+	for _, span := range spans {
+		for _, key := range genAIContentAttributeKeys {
+			if _, ok := span.Attributes().Get(key); ok {
+				return fmt.Errorf("attribute %q survived normalization on span %q", key, span.Name())
+			}
+		}
+		for i := 0; i < span.Events().Len(); i++ {
+			name := span.Events().At(i).Name()
+			for _, banned := range genAIContentEventNames {
+				if name == banned {
+					return fmt.Errorf("content event %q survived normalization on span %q", name, span.Name())
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// validateOpenAIAdhocSpans requires one normalized chat span per semconv
+// mode; run.sh runs the agent twice under these two service names.
+func validateOpenAIAdhocSpans(spans []ptrace.Span) error {
+	for _, service := range []string{"openai-adhoc-legacy", "openai-adhoc-latest"} {
+		if err := validateAdhocChat(spans, service); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAdhocChat(spans []ptrace.Span, service string) error {
+	var lastErr error
+	for _, span := range spans {
+		if stringAttr(span, "coding_agent.client.name") != service ||
+			stringAttr(span, "gen_ai.operation.name") != "chat" {
+			continue
+		}
+		if stringAttr(span, "gen_ai.provider.name") != "openai" {
+			lastErr = fmt.Errorf("%s: chat provider is not openai", service)
+			continue
+		}
+		if stringAttr(span, "telemetry.source") != "native" {
+			lastErr = fmt.Errorf("%s: telemetry source is not native", service)
+			continue
+		}
+		if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+			lastErr = fmt.Errorf("%s: chat input token usage is missing", service)
+			continue
+		}
+		if _, ok := span.Attributes().Get("gen_ai.usage.output_tokens"); !ok {
+			lastErr = fmt.Errorf("%s: chat output token usage is missing", service)
+			continue
+		}
+		return nil
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("no normalized chat span for service %q", service)
+}
+
+// validateStrandsSpans checks names within the root's trace rather than
+// direct parentage: Strands nests chat and tool spans under
+// execute_event_loop_cycle, so the canonical children are descendants.
+func validateStrandsSpans(spans []ptrace.Span) error {
+	return firstValidRoot(spans, "invoke_agent strands-e2e", "strands root span was not found", func(root ptrace.Span) error {
+		if root.ParentSpanID() != [8]byte{} {
+			return errors.New("strands root unexpectedly has a parent")
+		}
+		if stringAttr(root, "gen_ai.provider.name") != "strands-agents" {
+			return errors.New("strands provider is not strands-agents")
+		}
+		if stringAttr(root, "telemetry.source") != "native" {
+			return errors.New("strands telemetry source is not native")
+		}
+		chat, tool := false, false
+		for _, span := range spans {
+			if span.TraceID() != root.TraceID() {
+				continue
+			}
+			switch stringAttr(span, "gen_ai.operation.name") {
+			case "chat":
+				if stringAttr(span, "gen_ai.request.model") == "" {
+					return errors.New("strands chat model is missing")
+				}
+				if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+					return errors.New("strands chat input token usage is missing")
+				}
+				chat = true
+			case "execute_tool":
+				if stringAttr(span, "gen_ai.tool.name") == "get_marker" {
+					tool = true
+				}
+			}
+		}
+		if !chat {
+			return errors.New("strands chat span is missing")
+		}
+		if !tool {
+			return errors.New("strands get_marker tool span is missing")
+		}
+		return nil
+	})
+}
+
+// validateStrandsRawFile proves the stripping assertion is not vacuous: the
+// raw export must still hold at least one content event.
+func validateStrandsRawFile(path, runID string) error {
+	return validateTraceFile(path, runID, validateStrandsRawTraces)
+}
+
+func validateStrandsRawTraces(traces ptrace.Traces, runID string) error {
+	spans := collectRunSpans(traces, runID)
+	if len(spans) == 0 {
+		return errors.New("strands run id was not found in raw output")
+	}
+	for _, span := range spans {
+		for i := 0; i < span.Events().Len(); i++ {
+			switch span.Events().At(i).Name() {
+			case "gen_ai.user.message", "gen_ai.choice", "gen_ai.client.inference.operation.details":
+				return nil
+			}
+		}
+	}
+	return errors.New("raw strands output holds no content events")
+}
+
 func boolAttr(span ptrace.Span, key string) bool {
 	value, ok := span.Attributes().Get(key)
 	return ok && value.Bool()

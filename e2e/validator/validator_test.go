@@ -118,6 +118,77 @@ func TestValidateClaudeRawFileParsesActualOTLPJSON(t *testing.T) {
 	require.Error(t, validateClaudeRawFile(path, "different-run"))
 }
 
+func TestValidateOpenAIAdhocCanonical(t *testing.T) {
+	traces := ptrace.NewTraces()
+	for _, service := range []string{"openai-adhoc-legacy", "openai-adhoc-latest"} {
+		rs := traces.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetName("chat glm-4.7")
+		span.Attributes().PutStr("gen_ai.operation.name", "chat")
+		span.Attributes().PutStr("gen_ai.provider.name", "openai")
+		span.Attributes().PutStr("telemetry.source", "native")
+		span.Attributes().PutStr("coding_agent.client.name", service)
+		span.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
+		span.Attributes().PutInt("gen_ai.usage.output_tokens", 6)
+	}
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "openai_adhoc"))
+
+	// A surviving legacy gen_ai.system must fail validation.
+	traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).
+		Attributes().PutStr("gen_ai.system", "openai")
+	require.Error(t, validateCanonicalTraces(traces, "run-1", "openai_adhoc"))
+}
+
+func TestValidateStrandsCanonicalRequiresTreeWithoutContent(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	traceID := pcommon.TraceID{1}
+	root := spans.AppendEmpty()
+	root.SetName("invoke_agent strands-e2e")
+	root.SetTraceID(traceID)
+	root.SetSpanID(pcommon.SpanID{2})
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
+	root.Attributes().PutStr("telemetry.source", "native")
+
+	chat := spans.AppendEmpty()
+	chat.SetName("chat glm-4.7")
+	chat.SetTraceID(traceID)
+	chat.SetSpanID(pcommon.SpanID{3})
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+	chat.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
+
+	tool := spans.AppendEmpty()
+	tool.SetName("execute_tool get_marker")
+	tool.SetTraceID(traceID)
+	tool.SetSpanID(pcommon.SpanID{4})
+	tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	tool.Attributes().PutStr("gen_ai.tool.name", "get_marker")
+
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "strands"))
+
+	// Content events must fail canonical validation.
+	chat.Events().AppendEmpty().SetName("gen_ai.user.message")
+	require.Error(t, validateCanonicalTraces(traces, "run-1", "strands"))
+}
+
+func TestValidateStrandsRawRequiresContentEvidence(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("chat")
+	require.Error(t, validateStrandsRawTraces(traces, "run-1"),
+		"raw output without content events makes the stripping assertion vacuous")
+	span.Events().AppendEmpty().SetName("gen_ai.user.message")
+	require.NoError(t, validateStrandsRawTraces(traces, "run-1"))
+}
+
 func validateFile(path, runID string) error {
 	return validateCanonicalFile(path, runID, "codex")
 }
