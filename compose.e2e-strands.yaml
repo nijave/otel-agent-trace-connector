@@ -14,7 +14,9 @@ services:
     environment:
       # scripts/e2e-strands.sh checks this credential before Compose runs.
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
-      OPENAI_BASE_URL: "https://api.z.ai/api/coding/paas/v4"
+      # Override to point the agent at any OpenAI-compatible endpoint
+      # (for example an opencode.ai subscription); z.ai is the default.
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.z.ai/api/coding/paas/v4}"
       E2E_STRANDS_MODEL: "${E2E_STRANDS_MODEL:-glm-4.7}"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-strands.sh}"
