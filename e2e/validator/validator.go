@@ -264,6 +264,7 @@ func stringAttr(span ptrace.Span, key string) string {
 	}
 	return value.Str()
 }
+
 // genAIContentAttributeKeys and genAIContentEventNames mirror the stripping
 // contract in internal/genai; canonical output must never carry them.
 var genAIContentAttributeKeys = []string{
