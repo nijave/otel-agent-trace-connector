@@ -31,6 +31,12 @@ trace vocabulary. It exposes two edges under a single component type,
 - **Claude Code (traces → traces):** preserves Claude Code's native span
   hierarchy and normalizes the interaction, LLM, and tool span names and
   attributes into the same vocabulary.
+- **GenAI semconv (traces → traces):** claims resource groups whose
+  instrumentation scope starts with `opentelemetry.instrumentation.openai_v2`,
+  `opentelemetry.util.genai`, `opentelemetry.instrumentation.genai`, or
+  `strands.telemetry`; normalizes `chat`/`invoke_agent`/`execute_tool` spans
+  into the canonical vocabulary and strips content-bearing attributes and
+  events. Claude Code groups keep priority, so a group is never emitted twice.
 
 The canonical tree is:
 
@@ -47,9 +53,9 @@ generated Codex spans.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `turn_timeout` | `10m` | Finalize a turn with no completion after this idle period. |
-| `reorder_window` | `30s` | Quiet period after the last event before a completed turn is finalized; also the cross-batch late-arrival window. Must be less than `turn_timeout`. |
-| `max_active_turns` | `10000` | Bound on concurrently correlated turns; the least-recently-seen turn is emitted when the bound is exceeded. |
+| `turn_timeout` | `10m` | Close a turn with no completion after this idle period. |
+| `reorder_window` | `30s` | Quiet period after the last event before a completed turn finalizes; also the cross-batch late-arrival window. Must be less than `turn_timeout`. |
+| `max_active_turns` | `10000` | Bound on concurrently correlated turns; the least-recently-seen turn emits when the bound exceeds. |
 | `max_events_per_turn` | `1000` | Bound on retained events per turn; excess events set `coding_agent.turn.events_truncated=true`. |
 
 Example (both edges bridging into a canonical traces pipeline):
@@ -75,6 +81,9 @@ service:
       receivers: [coding_agent, coding_agent/claude]
       exporters: [debug]
 ```
+
+`coding_agent/claude` also handles the GenAI sources listed above; the
+instance name is historical.
 
 ## Self-observability
 
