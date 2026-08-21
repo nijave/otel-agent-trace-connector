@@ -92,3 +92,149 @@ func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
 	// The input is not mutated because Collector fan-out may send it elsewhere.
 	require.Equal(t, "run", input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Name())
 }
+
+func TestGenAINormalizerNormalizesOpenAIV2LegacyChat(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "adhoc-agent")
+	rs.Resource().Attributes().PutStr("service.version", "0.1.0")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	span := ss.Spans().AppendEmpty()
+	span.SetName("chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutStr("gen_ai.system", "openai")
+	span.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+	span.Attributes().PutInt("gen_ai.usage.input_tokens", 12)
+	span.Attributes().PutInt("gen_ai.usage.output_tokens", 34)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "chat glm-4.7", out.Name())
+	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
+	_, hasSystem := out.Attributes().Get("gen_ai.system")
+	require.False(t, hasSystem, "legacy gen_ai.system must not survive")
+	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "opentelemetry.instrumentation.openai_v2",
+		attrString(t, out, "coding_agent.source.scope"))
+	require.Equal(t, "adhoc-agent", attrString(t, out, "coding_agent.client.name"))
+	require.Equal(t, "0.1.0", attrString(t, out, "coding_agent.client.version"))
+}
+
+func TestGenAINormalizerKeepsExperimentalProviderName(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "opentelemetry.util.genai.handler", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutStr("gen_ai.provider.name", "openai")
+	span.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
+}
+
+func TestGenAINormalizerNormalizesStrandsTree(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("strands.telemetry.tracer")
+
+	agent := ss.Spans().AppendEmpty()
+	agent.SetName("invoke_agent strands-e2e")
+	agent.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	agent.Attributes().PutStr("gen_ai.system", "strands-agents")
+	agent.Attributes().PutStr("gen_ai.agent.name", "strands-e2e")
+
+	cycle := ss.Spans().AppendEmpty()
+	cycle.SetName("execute_event_loop_cycle")
+	cycle.Attributes().PutStr("gen_ai.operation.name", "execute_event_loop_cycle")
+	cycle.Attributes().PutStr("gen_ai.system", "strands-agents")
+
+	chat := ss.Spans().AppendEmpty()
+	chat.SetName("chat")
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutStr("gen_ai.system", "strands-agents")
+	chat.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+	chat.Attributes().PutInt("gen_ai.usage.prompt_tokens", 10)
+	chat.Attributes().PutInt("gen_ai.usage.completion_tokens", 20)
+	chat.Attributes().PutInt("gen_ai.usage.input_tokens", 10)
+	chat.Attributes().PutInt("gen_ai.usage.output_tokens", 20)
+	chat.Attributes().PutInt("gen_ai.usage.total_tokens", 30)
+
+	tool := ss.Spans().AppendEmpty()
+	tool.SetName("execute_tool get_marker")
+	tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	tool.Attributes().PutStr("gen_ai.system", "strands-agents")
+	tool.Attributes().PutStr("gen_ai.tool.name", "get_marker")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+
+	require.Equal(t, "invoke_agent strands-e2e", out.At(0).Name())
+	require.Equal(t, "strands-agents", attrString(t, out.At(0), "gen_ai.provider.name"))
+	// Non-canonical operations keep their emitted names.
+	require.Equal(t, "execute_event_loop_cycle", out.At(1).Name())
+	// Bare Strands chat gains the model suffix.
+	require.Equal(t, "chat glm-4.7", out.At(2).Name())
+	// Legacy token keys are mapped/removed; current keys and totals survive.
+	_, hasPrompt := out.At(2).Attributes().Get("gen_ai.usage.prompt_tokens")
+	require.False(t, hasPrompt)
+	_, hasCompletion := out.At(2).Attributes().Get("gen_ai.usage.completion_tokens")
+	require.False(t, hasCompletion)
+	require.Equal(t, int64(10), attrInt(t, out.At(2), "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(20), attrInt(t, out.At(2), "gen_ai.usage.output_tokens"))
+	require.Equal(t, int64(30), attrInt(t, out.At(2), "gen_ai.usage.total_tokens"))
+	require.Equal(t, "execute_tool get_marker", out.At(3).Name())
+}
+
+func TestGenAINormalizerMapsLegacyTokensWhenCurrentAbsent(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("gen_ai.usage.prompt_tokens", 7)
+	span.Attributes().PutInt("gen_ai.usage.completion_tokens", 9)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, int64(7), attrInt(t, out, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(9), attrInt(t, out, "gen_ai.usage.output_tokens"))
+	// Model attribute is absent, so the emitted name stays.
+	require.Equal(t, "chat", out.Name())
+}
+
+func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	appScope := rs.ScopeSpans().AppendEmpty()
+	appScope.Scope().SetName("my-agent")
+	appSpan := appScope.Spans().AppendEmpty()
+	appSpan.SetName("run")
+	genaiScope := rs.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "run", outApp.Name())
+	_, tagged := outApp.Attributes().Get("telemetry.source")
+	require.False(t, tagged, "spans outside matched scopes stay untouched")
+}
+
+func attrString(t *testing.T, span ptrace.Span, key string) string {
+	t.Helper()
+	value, ok := span.Attributes().Get(key)
+	require.True(t, ok, "attribute %q missing on span %q", key, span.Name())
+	return value.Str()
+}
+
+func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
+	t.Helper()
+	value, ok := span.Attributes().Get(key)
+	require.True(t, ok, "attribute %q missing on span %q", key, span.Name())
+	return value.Int()
+}

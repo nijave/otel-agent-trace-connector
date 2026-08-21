@@ -63,6 +63,19 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		}
 		rs := output.ResourceSpans().AppendEmpty()
 		inputResourceSpans.CopyTo(rs)
+		serviceName := resourceString(rs.Resource(), "service.name")
+		serviceVersion := resourceString(rs.Resource(), "service.version")
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			ss := rs.ScopeSpans().At(j)
+			matched := matchesGenAIScope(ss.Scope().Name())
+			if !matched {
+				continue
+			}
+			spans := ss.Spans()
+			for k := 0; k < spans.Len(); k++ {
+				normalizeSpan(spans.At(k), ss.Scope().Name(), serviceName, serviceVersion)
+			}
+		}
 	}
 	if output.SpanCount() == 0 {
 		return nil
@@ -86,6 +99,62 @@ func matchesGenAIScope(name string) bool {
 		}
 	}
 	return false
+}
+
+// nameSubjectByOperation maps canonical operations to the attribute that
+// supplies the span-name subject ({operation} {subject}).
+var nameSubjectByOperation = map[string]string{
+	"chat":         "gen_ai.request.model",
+	"invoke_agent": "gen_ai.agent.name",
+	"execute_tool": "gen_ai.tool.name",
+}
+
+func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion string) {
+	attrs := span.Attributes()
+	operationValue, ok := attrs.Get("gen_ai.operation.name")
+	if !ok {
+		return
+	}
+	operation := operationValue.Str()
+	if subjectKey, canonical := nameSubjectByOperation[operation]; canonical {
+		if subjectValue, ok := attrs.Get(subjectKey); ok && subjectValue.Str() != "" {
+			span.SetName(operation + " " + subjectValue.Str())
+		}
+	}
+	if _, ok := attrs.Get("gen_ai.provider.name"); !ok {
+		if systemValue, ok := attrs.Get("gen_ai.system"); ok {
+			// Extract before Put: a map write may invalidate held values.
+			provider := systemValue.Str()
+			if provider != "" {
+				attrs.PutStr("gen_ai.provider.name", provider)
+			}
+		}
+	}
+	attrs.Remove("gen_ai.system")
+	mapLegacyTokens(attrs, "gen_ai.usage.prompt_tokens", "gen_ai.usage.input_tokens")
+	mapLegacyTokens(attrs, "gen_ai.usage.completion_tokens", "gen_ai.usage.output_tokens")
+	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source.scope", scopeName)
+	if serviceName != "" {
+		attrs.PutStr("coding_agent.client.name", serviceName)
+	}
+	if serviceVersion != "" {
+		attrs.PutStr("coding_agent.client.version", serviceVersion)
+	}
+}
+
+// mapLegacyTokens copies a legacy usage attribute onto the current key when
+// the current key is absent, then drops the legacy key from canonical output.
+func mapLegacyTokens(attrs pcommon.Map, legacyKey, currentKey string) {
+	legacyValue, ok := attrs.Get(legacyKey)
+	if !ok {
+		return
+	}
+	if _, exists := attrs.Get(currentKey); !exists && legacyValue.Type() == pcommon.ValueTypeInt {
+		count := legacyValue.Int()
+		attrs.PutInt(currentKey, count)
+	}
+	attrs.Remove(legacyKey)
 }
 
 func resourceString(resource pcommon.Resource, key string) string {
