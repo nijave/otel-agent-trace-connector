@@ -4,7 +4,10 @@
 package genai
 
 import (
+	"bufio"
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -316,4 +319,144 @@ func TestGenAINormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testi
 	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	_, exists := outApp.Attributes().Get("gen_ai.input.messages")
 	require.False(t, exists, "content must not ride along on unmatched scopes")
+}
+
+// loadFixtureLines reads a testdata file captured from a live e2e run. The
+// collector's file exporter writes one OTLP JSON export per line; merge the
+// batches the way a trace backend would.
+func loadFixtureLines(t *testing.T, path string) ptrace.Traces {
+	t.Helper()
+	file, err := os.Open(path)
+	require.NoError(t, err)
+	defer func() { _ = file.Close() }()
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	unmarshaler := &ptrace.JSONUnmarshaler{}
+	merged := ptrace.NewTraces()
+	for scanner.Scan() {
+		batch, err := unmarshaler.UnmarshalTraces(scanner.Bytes())
+		require.NoError(t, err)
+		batch.ResourceSpans().MoveAndAppendTo(merged.ResourceSpans())
+	}
+	require.NoError(t, scanner.Err())
+	return merged
+}
+
+func eachFixtureSpan(t *testing.T, traces ptrace.Traces, visit func(ptrace.Span)) {
+	t.Helper()
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		rs := traces.ResourceSpans().At(i)
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			spans := rs.ScopeSpans().At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				visit(spans.At(k))
+			}
+		}
+	}
+}
+
+// fixtureSpansWithContentEvidence reports whether any span holds a content
+// event, proving a raw capture is a real stripping input rather than an
+// already-clean batch.
+func fixtureSpansWithContentEvidence(traces ptrace.Traces) bool {
+	found := false
+	for i := 0; i < traces.ResourceSpans().Len() && !found; i++ {
+		spansList := traces.ResourceSpans().At(i).ScopeSpans()
+		for j := 0; j < spansList.Len() && !found; j++ {
+			spans := spansList.At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				events := spans.At(k).Events()
+				for e := 0; e < events.Len(); e++ {
+					if contentEventNames[events.At(e).Name()] {
+						found = true
+						break
+					}
+				}
+			}
+		}
+	}
+	return found
+}
+
+// TestGenAINormalizerProcessesCapturedRawFixtures runs the normalizer over
+// sanitized OTLP captures from the live openai-adhoc and strands e2e stacks,
+// guarding the handcrafted fixtures against schema drift in the real emitters.
+func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
+	for _, fixture := range []struct {
+		name string
+		// Strands exports prompt/completion content as span events by
+		// default; openai-v2 default mode sends content to log events, which
+		// never enter this edge.
+		expectContentEvidence bool
+	}{
+		{name: "openai-adhoc"},
+		{name: "strands", expectContentEvidence: true},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			input := loadFixtureLines(t, filepath.Join("testdata", fixture.name+"-raw.otlp.json"))
+			require.NotZero(t, input.SpanCount())
+			require.Equal(t, fixture.expectContentEvidence, fixtureSpansWithContentEvidence(input),
+				"raw capture content evidence must match the emitter's default behavior")
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+			outputs := sink.all()
+			require.NotEmpty(t, outputs, "the fixture's scopes must be claimed")
+
+			normalizedChat := 0
+			for _, output := range outputs {
+				eachFixtureSpan(t, output, func(span ptrace.Span) {
+					for _, key := range contentAttributeKeys {
+						_, exists := span.Attributes().Get(key)
+						require.False(t, exists, "content attribute %q survived", key)
+					}
+					for e := 0; e < span.Events().Len(); e++ {
+						require.False(t, contentEventNames[span.Events().At(e).Name()],
+							"content event %q survived", span.Events().At(e).Name())
+					}
+					if value, ok := span.Attributes().Get("telemetry.source"); ok && value.Str() == "native" {
+						_, hasScope := span.Attributes().Get("coding_agent.source.scope")
+						require.True(t, hasScope, "provenance scope missing on %q", span.Name())
+					}
+				})
+				eachFixtureSpan(t, output, func(span ptrace.Span) {
+					if value, ok := span.Attributes().Get("gen_ai.operation.name"); ok && value.Str() == "chat" {
+						if usage, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); ok && usage.Int() > 0 {
+							normalizedChat++
+						}
+					}
+				})
+			}
+			require.Positive(t, normalizedChat, "no normalized chat span with token usage")
+
+			// The input keeps its content events: the copy handed downstream
+			// never mutates the captured batch.
+			require.Equal(t, fixture.expectContentEvidence, fixtureSpansWithContentEvidence(input))
+		})
+	}
+}
+
+// TestCapturedCanonicalFixturesHoldNoContent checks the canonical captures
+// from the same live runs: the stripping contract held end to end in production
+// wiring, not only under the unit fixtures.
+func TestCapturedCanonicalFixturesHoldNoContent(t *testing.T) {
+	for _, fixture := range []struct{ name string }{
+		{name: "openai-adhoc"},
+		{name: "strands"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			traces := loadFixtureLines(t, filepath.Join("testdata", fixture.name+"-canonical.otlp.json"))
+			require.NotZero(t, traces.SpanCount())
+			eachFixtureSpan(t, traces, func(span ptrace.Span) {
+				for _, key := range contentAttributeKeys {
+					_, exists := span.Attributes().Get(key)
+					require.False(t, exists, "content attribute %q in canonical capture", key)
+				}
+				for e := 0; e < span.Events().Len(); e++ {
+					require.False(t, contentEventNames[span.Events().At(e).Name()],
+						"content event %q in canonical capture", span.Events().At(e).Name())
+				}
+			})
+		})
+	}
 }
