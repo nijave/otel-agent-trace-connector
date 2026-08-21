@@ -188,6 +188,20 @@ race tests, custom Collector builds, Collector/Compose validation, container
 builds, and GoReleaser configuration checks. Live agent E2Es remain manual and
 never receive credentials in CI.
 
+Run the same unpaid checks locally before pushing:
+
+```bash
+./scripts/check.sh
+```
+
+The script needs `go`, `golangci-lint` v2.11.4 (the version CI pins; install
+with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4`),
+`shellcheck`, `jq`, `docker`, and `goreleaser`. It covers gofmt, shell syntax
+and shellcheck, golangci-lint on both modules, mdatagen freshness, vet, tests
+and race tests in both modules, Collector build and config validation, Compose
+validation including the credential-split assertions, container image builds,
+and `goreleaser check` — the full unpaid CI surface.
+
 Pushing a semantic version tag such as `v0.1.0` runs GoReleaser and creates a
 GitHub release containing cross-platform custom Collector archives and SHA-256
 checksums:
