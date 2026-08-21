@@ -37,10 +37,10 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Check shell syntax
         run: |
-          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/generate.sh scripts/lib-e2e.sh
-          sh -n e2e/codex/run.sh e2e/claude/run.sh
+          bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/generate.sh scripts/lib-e2e.sh
+          sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh
       - name: Lint shell scripts
-        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh
+        run: shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh
       - name: Check generated files are up to date
         run: |
           ./scripts/generate.sh
@@ -101,6 +101,16 @@ jobs:
           # ANTHROPIC_API_KEY must stay absent so it cannot shadow ANTHROPIC_AUTH_TOKEN.
           docker compose -f compose.e2e-claude.yaml config --format json \
             | jq -e '.services.agent.environment.ANTHROPIC_BASE_URL == "https://api.z.ai/api/anthropic" and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
+          # Each new stack receives exactly one credential: the z.ai key as
+          # OPENAI_API_KEY. No Anthropic credential may leak in.
+          docker compose -f compose.e2e-openai.yaml config --quiet
+          docker compose -f compose.e2e-openai.yaml config --format json \
+            | jq -e '.services.agent.environment.OPENAI_API_KEY == "validation-only"
+                     and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
+          docker compose -f compose.e2e-strands.yaml config --quiet
+          docker compose -f compose.e2e-strands.yaml config --format json \
+            | jq -e '.services.agent.environment.OPENAI_API_KEY == "validation-only"
+                     and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
       - name: Build container images
         run: |
           docker build --tag otelcol-coding-agents:ci .
@@ -111,6 +121,8 @@ jobs:
           # vanished fork branch or a broken dependency must fail here rather than
           # during someone's paid e2e run.
           docker build --tag responses-proxy-e2e:ci e2e/responses-proxy
+          docker build --tag openai-adhoc-e2e:ci e2e/openai-adhoc
+          docker build --tag strands-e2e:ci e2e/strands
       - name: Verify GoReleaser configuration
         uses: goreleaser/goreleaser-action@v7
         with:
