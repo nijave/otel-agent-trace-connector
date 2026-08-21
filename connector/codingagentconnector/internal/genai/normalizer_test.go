@@ -120,6 +120,9 @@ func TestGenAINormalizerNormalizesOpenAIV2LegacyChat(t *testing.T) {
 		attrString(t, out, "coding_agent.source.scope"))
 	require.Equal(t, "adhoc-agent", attrString(t, out, "coding_agent.client.name"))
 	require.Equal(t, "0.1.0", attrString(t, out, "coding_agent.client.version"))
+	// The input batch was not mutated by the provider mapping.
+	inSpan := input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "openai", attrString(t, inSpan, "gen_ai.system"))
 }
 
 func TestGenAINormalizerKeepsExperimentalProviderName(t *testing.T) {
@@ -223,6 +226,20 @@ func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	require.Equal(t, "run", outApp.Name())
 	_, tagged := outApp.Attributes().Get("telemetry.source")
 	require.False(t, tagged, "spans outside matched scopes stay untouched")
+}
+
+func TestGenAINormalizerPassesThroughInvokeWorkflow(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "opentelemetry.util.genai.handler", "invoke_workflow my-flow")
+	span.Attributes().PutStr("gen_ai.operation.name", "invoke_workflow")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "invoke_workflow my-flow", out.Name(), "non-canonical operations keep their emitted names")
+	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "opentelemetry.util.genai.handler",
+		attrString(t, out, "coding_agent.source.scope"))
 }
 
 func attrString(t *testing.T, span ptrace.Span, key string) string {
