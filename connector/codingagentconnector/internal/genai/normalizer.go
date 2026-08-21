@@ -68,12 +68,13 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			ss := rs.ScopeSpans().At(j)
 			matched := matchesGenAIScope(ss.Scope().Name())
-			if !matched {
-				continue
-			}
 			spans := ss.Spans()
 			for k := 0; k < spans.Len(); k++ {
-				normalizeSpan(spans.At(k), ss.Scope().Name(), serviceName, serviceVersion)
+				span := spans.At(k)
+				if matched {
+					normalizeSpan(span, ss.Scope().Name(), serviceName, serviceVersion)
+				}
+				stripContent(span)
 			}
 		}
 	}
@@ -155,6 +156,51 @@ func mapLegacyTokens(attrs pcommon.Map, legacyKey, currentKey string) {
 		attrs.PutInt(currentKey, count)
 	}
 	attrs.Remove(legacyKey)
+}
+
+// contentAttributeKeys are content-bearing span attributes that never reach
+// canonical output. They cover current emitters (openai-v2 experimental
+// capture modes, Strands latest conventions) plus older Strands layouts and
+// the gen_ai_span_attributes_only mode.
+var contentAttributeKeys = []string{
+	"gen_ai.input.messages",
+	"gen_ai.output.messages",
+	"gen_ai.input.messages.ref",
+	"gen_ai.output.messages.ref",
+	"gen_ai.system_instructions",
+	"system_prompt",
+	"gen_ai.tool.call.arguments",
+	"gen_ai.tool.call.result",
+	"gen_ai.tool.definitions",
+	"gen_ai.agent.tools",
+	"gen_ai.user.message",
+	"gen_ai.assistant.message",
+	"gen_ai.system.message",
+	"gen_ai.tool.message",
+	"gen_ai.choice",
+	"gen_ai.choice.message",
+	"gen_ai.choice.tool.result",
+}
+
+// contentEventNames are span events removed entirely, attributes included.
+var contentEventNames = map[string]bool{
+	"gen_ai.client.inference.operation.details": true,
+	"gen_ai.user.message":                       true,
+	"gen_ai.assistant.message":                  true,
+	"gen_ai.system.message":                     true,
+	"gen_ai.tool.message":                       true,
+	"gen_ai.choice":                             true,
+	"memory.query":                              true,
+	"memory.content":                            true,
+}
+
+func stripContent(span ptrace.Span) {
+	for _, key := range contentAttributeKeys {
+		span.Attributes().Remove(key)
+	}
+	span.Events().RemoveIf(func(event ptrace.SpanEvent) bool {
+		return contentEventNames[event.Name()]
+	})
 }
 
 func resourceString(resource pcommon.Resource, key string) string {

@@ -238,3 +238,65 @@ func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
 	require.True(t, ok, "attribute %q missing on span %q", key, span.Name())
 	return value.Int()
 }
+
+func TestGenAINormalizerStripsContentAttributesAndEvents(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "execute_tool get_marker")
+	span.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	span.Attributes().PutStr("gen_ai.tool.name", "get_marker")
+	for _, key := range []string{
+		"gen_ai.input.messages", "gen_ai.output.messages",
+		"gen_ai.input.messages.ref", "gen_ai.output.messages.ref",
+		"gen_ai.system_instructions", "system_prompt",
+		"gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
+		"gen_ai.tool.definitions", "gen_ai.agent.tools",
+		"gen_ai.user.message", "gen_ai.assistant.message",
+		"gen_ai.system.message", "gen_ai.tool.message", "gen_ai.choice",
+		"gen_ai.choice.message", "gen_ai.choice.tool.result",
+	} {
+		span.Attributes().PutStr(key, "SENSITIVE")
+	}
+	for _, name := range []string{
+		"gen_ai.client.inference.operation.details",
+		"gen_ai.user.message", "gen_ai.assistant.message",
+		"gen_ai.system.message", "gen_ai.tool.message", "gen_ai.choice",
+		"memory.query", "memory.content",
+	} {
+		event := span.Events().AppendEmpty()
+		event.SetName(name)
+		event.Attributes().PutStr("content", "SENSITIVE")
+	}
+	safeEvent := span.Events().AppendEmpty()
+	safeEvent.SetName("gen_ai.tool.decision")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	for _, key := range contentAttributeKeys {
+		_, exists := out.Attributes().Get(key)
+		require.False(t, exists, "content attribute %q survived", key)
+	}
+	require.Equal(t, 1, out.Events().Len(), "only the non-content event survives")
+	require.Equal(t, "gen_ai.tool.decision", out.Events().At(0).Name())
+	// The input keeps its content: raw fidelity is the raw pipeline's job.
+	require.Equal(t, 9, input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().Len())
+}
+
+func TestGenAINormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	appScope := rs.ScopeSpans().AppendEmpty()
+	appScope.Scope().SetName("my-agent")
+	appSpan := appScope.Spans().AppendEmpty()
+	appSpan.SetName("run")
+	appSpan.Attributes().PutStr("gen_ai.input.messages", "SENSITIVE")
+	genaiScope := rs.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	_, exists := outApp.Attributes().Get("gen_ai.input.messages")
+	require.False(t, exists, "content must not ride along on unmatched scopes")
+}
