@@ -125,8 +125,8 @@ One Collector component type, `coding_agent`, exposes two edges:
 
 - logs to traces: stateful correlation behind a claiming router — Codex
   per-turn synthesis and Cursor burst synthesis;
-- traces to traces: stateless native-trace normalization (Claude Code and GenAI
-  semconv sources) behind a claiming router.
+- traces to traces: stateless native-trace normalization (Claude Code,
+  OpenCode, and GenAI semconv sources) behind a claiming router.
 
 Keeping these under one component makes the distribution and provider contract
 easy to discover while retaining signal-correct Collector behavior. The input
@@ -146,7 +146,8 @@ adapters, and the mdatagen inputs/outputs (`metadata.yaml`, `doc.go`, and the
 mdatagen-generated files). Stateful Codex logic lives in `internal/codex`;
 Cursor burst logic lives in `internal/cursor`; native
 Claude logic lives in `internal/claude`; GenAI normalizer logic lives in
-`internal/genai`; `internal/metadata` has mdatagen-generated code.
+`internal/genai`; OpenCode normalizer logic lives in `internal/opencode`;
+`internal/metadata` has mdatagen-generated code.
 This prevents provider schemas and correlation helpers from becoming accidental
 public API.
 
@@ -519,6 +520,47 @@ edge, so stripping matters for Strands defaults and openai-v2 experimental
   GenAI content keys on such a mixed group would not pass through the GenAI
   content stripper. No known agent emits that combination.
 
+## OpenCode normalization
+
+A third stateless package, `internal/opencode`, joins the traces edge. It
+claims a resource group iff any instrumentation scope is named exactly
+`opencode`. The match is exact rather than prefixed on purpose: `opencode.*`
+scopes belong to plugins and `com.opencode` to the Kilo fork — separate
+surfaces this edge must not claim — and exact naming keeps its claims disjoint
+from the Claude and GenAI rules by construction.
+
+Inside a claimed group, three Vercel AI SDK span names rewrite in place and
+everything else — the internal Effect instrumentation making up most of the
+wire — is dropped from canonical output. `ai.streamText`, one per model step,
+becomes `invoke_agent opencode`, carrying `gen_ai.conversation.id` mapped from
+`session.id` on the span (falling back to the resource) and the step's usage
+totals: `ai.usage.inputTokens`/`outputTokens` map onto
+`gen_ai.usage.input_tokens`/`output_tokens`, and `ai.usage.cachedInputTokens`
+maps onto `gen_ai.usage.cache_read.input_tokens`; reasoning and token-detail
+counters have no established canonical key and stay out. Each
+`ai.streamText.doStream` child becomes `chat <model>` from its own
+`gen_ai.request.model` (bare `chat` when absent), and each `ai.toolCall` child
+becomes `execute_tool <tool>` from `ai.toolCall.name`. Renamed spans are
+rebuilt with only these attributes plus the common marker set used by the
+other edges (`telemetry.source=native`, `coding_agent.client.name`,
+`coding_agent.client.version`, and `coding_agent.source.event` holding the
+original wire name), so content such as `ai.response.text` and
+`ai.toolCall.args`/`result` has no path into canonical output — removal is
+structural allowlisting, not a denylist that fails open as the wire evolves.
+The root carries no `gen_ai.provider.name`: the wire's `gen_ai.system` holds
+the SDK name, not a provider.
+
+Granularity is per step: every `ai.streamText` span becomes its own canonical
+root inside one long-lived per-session trace — the wire keeps one TraceId per
+session — so a session of N model steps yields N `invoke_agent opencode`
+roots downstream. Canonical roots are also re-rooted, their parent span ID
+cleared, because the wire nests each step under internal Effect spans
+(`SessionProcessor.process` → `LLM.run`) that never reach canonical output;
+keeping such a parent would leave it dangling in every backend. Like the
+Claude edge, the normalizer stays stateless and rewrites whatever each export
+contains: OpenCode fragments its output, children can land without their
+ancestors, and backends reassemble by the preserved IDs.
+
 ## Privacy and security
 
 The connector discards Codex prompt content, tool arguments, and tool output
@@ -679,6 +721,7 @@ make stale-output detection ineffective.
   - Cursor log synthesis.
   - Claude Code native-span normalization.
   - GenAI semconv normalization (openai-v2, util-genai, Strands).
+  - OpenCode native-span normalization (Vercel AI SDK spans).
 - Opt-in root synthesis for rootless ad-hoc traces (explicitly deferred; a
   config flag behind which the connector synthesizes `invoke_agent` parents is
   future work if rootless traces prove common).

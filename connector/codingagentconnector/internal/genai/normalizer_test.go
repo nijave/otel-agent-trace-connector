@@ -77,6 +77,24 @@ func TestGenAINormalizerSkipsUnknownScopesAndClaudeGroups(t *testing.T) {
 	require.Empty(t, sink.all(), "no group may be claimed")
 }
 
+func TestGenAINormalizerSkipsOpenCodeGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	// OpenCode group: the OpenCode normalizer owns it even when a GenAI scope
+	// is present; claiming here would emit the group twice and leak raw ai.*
+	// attributes into canonical output.
+	opencodeGroup := input.ResourceSpans().AppendEmpty()
+	opencodeScope := opencodeGroup.ScopeSpans().AppendEmpty()
+	opencodeScope.Scope().SetName("opencode")
+	opencodeScope.Spans().AppendEmpty().SetName("ai.streamText")
+	genaiScope := opencodeGroup.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("opentelemetry.util.genai.handler")
+	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Empty(t, sink.all(), "the OpenCode normalizer owns this group")
+}
+
 func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

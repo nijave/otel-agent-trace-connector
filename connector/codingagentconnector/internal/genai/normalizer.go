@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
 )
 
 // scopePrefixes lists the instrumentation-scope names this edge claims.
@@ -56,6 +57,11 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		// Claude groups belong to the Claude normalizer even when they also
 		// carry GenAI scopes; claiming here would emit the group twice.
 		if claude.ContainsClaudeSpans(inputResourceSpans) {
+			continue
+		}
+		// OpenCode groups belong to the OpenCode normalizer for the same
+		// reason: its raw ai.* attributes would survive stripContent.
+		if opencode.ContainsOpenCodeSpans(inputResourceSpans) {
 			continue
 		}
 		if !containsGenAIScopes(inputResourceSpans) {
