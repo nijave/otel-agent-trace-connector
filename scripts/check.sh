@@ -18,11 +18,11 @@ if [ -n "$unformatted" ]; then
 fi
 
 step "shell syntax"
-bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/generate.sh scripts/lib-e2e.sh
-sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh
+bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/generate.sh scripts/lib-e2e.sh
+sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh
 
 step "shellcheck"
-shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh
+shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh
 
 step "golangci-lint (v2.11.4, the version CI pins)"
 golangci-lint run --timeout=5m
@@ -65,7 +65,7 @@ OTEL_S3_BUCKET=validation-only \
   ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
 
 step "compose configurations"
-export E2E_RUN_ID=ci-validation OPENAI_API_KEY=validation-only
+export E2E_RUN_ID=ci-validation OPENAI_API_KEY=validation-only OPENCODE_API_KEY=validation-only
 docker compose -f compose.e2e-codex.yaml config --quiet
 # The real key reaches responses-proxy only; the Codex agent gets a placeholder,
 # because config.toml's env_key just needs a value the proxy will ignore.
@@ -83,6 +83,13 @@ for stack in openai strands; do
     | jq -e '.services.agent.environment.OPENAI_API_KEY == "validation-only"
              and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
 done
+# The OpenCode e2e stack receives exactly one credential: an OpenCode Go key
+# as OPENCODE_API_KEY. No Anthropic or z.ai credential may leak in.
+docker compose -f compose.e2e-opencode.yaml config --quiet
+docker compose -f compose.e2e-opencode.yaml config --format json \
+  | jq -e '.services.agent.environment.OPENCODE_API_KEY == "validation-only"
+           and (.services.agent.environment | has("OPENAI_API_KEY") | not)
+           and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
 
 step "container images"
 docker build --tag otelcol-coding-agents:check .
@@ -95,6 +102,7 @@ docker build --tag claude-e2e:check e2e/claude
 docker build --tag responses-proxy-e2e:check e2e/responses-proxy
 docker build --tag openai-adhoc-e2e:check e2e/openai-adhoc
 docker build --tag strands-e2e:check e2e/strands
+docker build --tag opencode-e2e:check e2e/opencode
 
 step "goreleaser"
 goreleaser check
