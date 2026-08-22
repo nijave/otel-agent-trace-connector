@@ -53,7 +53,7 @@ func makeCursorLogs(records ...testRecord) plog.Logs {
 		record := sl.LogRecords().AppendEmpty()
 		record.Body().SetStr(rec.body)
 		record.SetTimestamp(pcommon.NewTimestampFromTime(rec.ts))
-		record.Attributes().FromRaw(attrs)
+		requireNoError(record.Attributes().FromRaw(attrs))
 	}
 	return logs
 }

@@ -41,8 +41,16 @@ func apiRequestRecord(ts time.Time, attrs map[string]any) plog.LogRecord {
 	for k, v := range attrs {
 		merged[k] = v
 	}
-	record.Attributes().FromRaw(merged)
+	requireNoError(record.Attributes().FromRaw(merged))
 	return record
+}
+
+// requireNoError panics on a failed pdata bulk setter, mirroring the codex
+// package's test helper for the same errcheck rule.
+func requireNoError(err error) {
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestParseRecordClaimsCursorScope(t *testing.T) {
