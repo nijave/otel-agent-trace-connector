@@ -88,10 +88,30 @@ Upstream is renaming the package to
 `opentelemetry-instrumentation-genai-openai` in the new
 `opentelemetry-python-genai` repository, which will change its scope name.
 
+Research reflects the Cursor wire reference as of 2026-08-21.
+
+Cursor (Anysphere) exports native OTel as an Enterprise-plan beta configured
+server-side in Team Settings: OTLP/HTTP to `<base>/v1/metrics` and
+`<base>/v1/logs`, instrumentation scope `cursor.telemetry`/`0.1.0`,
+metrics and logs only — no distributed traces. Log records carry the
+correlation state: `cursor.event.id` (always; the dedupe key, deterministic
+across retries and Kafka replay), optional `cursor.conversation.id`
+(composer UUID or `bc-...` cloud-agent id), and optional
+`cursor.usage_event.id` (request-grain join key). Event bodies carry no
+prefix (`api_request`, `api_error`, `api_correction_<kind>`,
+`skill_activated`, `hook_execution_complete`, `plugin_installed`,
+`cloud_agent_*`). Delivery is at-least-once with no ordering guarantee, so
+corrections can arrive after the requests they amend. No prompt, completion,
+or tool content exists anywhere on this wire; tool calls appear only as
+metric datapoints without correlation IDs. See the
+[Cursor OpenTelemetry Export wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire).
+
 Relevant primary sources:
 
 - [Codex advanced configuration](https://developers.openai.com/codex/config-advanced#observability-and-telemetry)
 - [OpenAI Codex telemetry source](https://github.com/openai/codex/tree/main/codex-rs/otel)
+- [Cursor OpenTelemetry Export](https://cursor.com/docs/enterprise/opentelemetry-export)
+- [Cursor OpenTelemetry Export wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire)
 - [Claude Code monitoring and native span hierarchy](https://code.claude.com/docs/en/monitoring-usage#traces-beta)
 - [Collector Builder](https://opentelemetry.io/docs/collector/extend/ocb/)
 - [opentelemetry-instrumentation-openai-v2](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2)
@@ -103,7 +123,8 @@ Relevant primary sources:
 
 One Collector component type, `coding_agent`, exposes two edges:
 
-- logs to traces: stateful Codex correlation;
+- logs to traces: stateful correlation behind a claiming router — Codex
+  per-turn synthesis and Cursor burst synthesis;
 - traces to traces: stateless native-trace normalization (Claude Code and GenAI
   semconv sources) behind a claiming router.
 
@@ -122,7 +143,8 @@ isolation, as in Contrib.
 
 The component module root contains `Config`, `NewFactory`, the factory edge
 adapters, and the mdatagen inputs/outputs (`metadata.yaml`, `doc.go`, and the
-mdatagen-generated files). Stateful Codex logic lives in `internal/codex`; native
+mdatagen-generated files). Stateful Codex logic lives in `internal/codex`;
+Cursor burst logic lives in `internal/cursor`; native
 Claude logic lives in `internal/claude`; GenAI normalizer logic lives in
 `internal/genai`; `internal/metadata` has mdatagen-generated code.
 This prevents provider schemas and correlation helpers from becoming accidental
@@ -253,6 +275,110 @@ observed turn emits before admitting a new one. `max_events_per_turn`
 limits individual turn memory; excess events set
 `coding_agent.turn.events_truncated=true`. These controls are intentionally
 configuration-driven.
+
+## Cursor correlation model
+
+### Key and burst boundary
+
+State keys on `cursor.conversation.id` alone (composer UUIDs on IDE/CLI,
+`bc-...` ids for cloud agents; unique in practice). The wire has no
+user-prompt or turn-boundary event, so no closer approximation of a user turn
+exists: a "turn" is an activity burst. Each record for a conversation with no
+active burst opens one, and a conversation resumed after finalization opens a
+new burst that emits a new trace segment carrying the same
+`gen_ai.conversation.id`.
+
+Finalization reasons:
+
+- `quiet` — no new record for `reorder_window`. The normal close; unlike
+  Codex, quiet closes unconditionally because the wire has no completion
+  event to require first.
+- `timeout` — the burst has been open longer than `turn_timeout`, measured
+  from its first event. A burst that keeps receiving records never goes
+  quiet, so this is the only cap on burst growth; error status, mirroring
+  Codex timeouts.
+- `shutdown` — Collector drain.
+- `evicted` — LRU eviction past `max_active_turns`.
+
+### Dedupe and replay
+
+Within a live burst, redelivered records dedupe exactly on `cursor.event.id`,
+the wire's own dedupe key — simpler and stronger than the Codex content
+fingerprint. The id set bounds at `max_events_per_turn` with the rest of the
+burst state.
+
+Trace IDs derive from SHA-256 of the provider marker `cursor`, the
+conversation id, and the burst's first `cursor.event.id`; span IDs add a
+stable role/event discriminator. Because `cursor.event.id` is deterministic
+across retries and Kafka replay, a full replay of the same burst derives
+identical IDs and merges idempotently downstream. It does not deduplicate
+exports by itself: a partial replay arriving after finalization can still
+emit a fragment trace with a different ID, the same documented Codex
+limitation. Cross-burst dedupe state stays out of scope; consumers needing
+replay-proof reads dedupe on trace ID.
+
+### Timestamps and ordering
+
+Records sort by record timestamp before feeding state (the wire guarantees no
+ordering). Timestamp resolution: record timestamp, else observed timestamp,
+else wall clock with `coding_agent.timestamp.inferred=true`, matching Codex.
+
+### Bounds
+
+`max_active_turns` bounds concurrent bursts with LRU eviction;
+`max_events_per_turn` bounds per-burst memory and sets
+`coding_agent.turn.events_truncated=true` past the cap. Identical to Codex.
+
+### Span construction
+
+Emitted tree per burst:
+
+```text
+invoke_agent cursor
+├── chat <model>        (one point span per cursor.api_request)
+└── [no execute_tool — the native wire cannot express them]
+```
+
+Root `invoke_agent cursor`: start = first event timestamp, end = last event
+timestamp. It carries `gen_ai.operation.name=invoke_agent`,
+`gen_ai.agent.name=cursor`, `gen_ai.conversation.id`,
+`coding_agent.client.name=cursor`, `coding_agent.client.version` from
+resource `service.version`, `telemetry.source=normalized`, and resource-side
+`coding_agent.cursor.*` surface, entrypoint, team, and user attributes.
+Usage rollup sums the burst's `api_request` records into `gen_ai.usage.*`,
+with cache sums under `gen_ai.usage.cache_read.input_tokens` and
+`gen_ai.usage.cache_creation.input_tokens`.
+
+The root never sets `gen_ai.provider.name`: the wire never names the upstream
+model provider and the connector does not guess one. It never sets
+`coding_agent.turn.complete`: quiet closing cannot distinguish a finished
+model turn from an abandoned one. `timeout` sets error status; shutdown and
+evicted leave status unset, mirroring Codex.
+
+Each `api_request` record becomes one chat span named `chat <model>` (bare
+`chat` when the model attribute is absent). Point spans: the wire reports
+tokens at request grain with no timing, and the connector does not invent
+durations. Chat spans carry `gen_ai.request.model`, the four token counts,
+and `coding_agent.cursor.billable` when present.
+
+In-burst `cursor.usage_event.id` joins: an `api_error` sharing a request's
+usage-event id sets that chat span's status to Error; an `api_correction`
+attaching to the same id becomes an event on that span. When the counterpart
+arrived in an earlier, already-finalized burst — expected, since corrections
+trail their requests — the event lands on the root with the usage-event id
+preserved for downstream reconciliation.
+
+Root span events hold every non-chat record the chat spans did not consume:
+unjoined `api_error` and `api_correction` records, `skill_activated`,
+`hook_execution_complete`, `cloud_agent_*` lifecycle records, and unknown
+event bodies as generic events holding only the common id attributes.
+
+Attribute policy is an allowlist: the builder copies only the fields named
+above from records into spans; everything else stays in the raw pipeline.
+This keeps canonical output content-free even if Cursor later adds fields,
+per the repo's allowlist-over-denylist rule. Skill and hook names —
+customer-authored labels — stay in canonical output, the same treatment
+Codex tool names get.
 
 ## Claude Code normalization
 
@@ -550,6 +676,7 @@ make stale-output detection ineffective.
 - The connector intentionally ignores coding-agent logs without a conversation ID.
 - Implemented sources:
   - Codex log synthesis.
+  - Cursor log synthesis.
   - Claude Code native-span normalization.
   - GenAI semconv normalization (openai-v2, util-genai, Strands).
 - Opt-in root synthesis for rootless ad-hoc traces (explicitly deferred; a
@@ -559,11 +686,11 @@ make stale-output detection ineffective.
 - Upstream scope names are pre-1.0 and will change with the announced package
   rename; prefix matching mitigates, and rerun fixtures and E2Es before
   bumping pins.
-- Add Cursor support: a provider edge that normalizes Cursor's telemetry into the
-  canonical `invoke_agent`/`chat`/`execute_tool` vocabulary, plus a live E2E that
-  exercises a real Cursor session and validates the exported OTLP. Blocked on
-  confirming Cursor's telemetry format (logs vs. native traces, IDs, token/usage
-  fields).
+- Cursor: implemented as native-log synthesis with fixture-based validation.
+  A live Cursor E2E stays blocked on Enterprise-only server-side configuration
+  (no Enterprise access available); tool-call children would need Cursor to
+  log tool calls with a conversation id — today they are metrics without
+  correlation IDs.
 - Add GitHub Copilot support: the same provider edge + live E2E for Copilot,
   likewise pending confirmation of its telemetry format.
 - Generate committed OTLP fixtures from real Codex, Claude, and GenAI runs
