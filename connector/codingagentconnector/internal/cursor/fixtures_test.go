@@ -5,9 +5,11 @@ package cursor
 
 import (
 	"context"
+	"encoding/json"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -17,6 +19,58 @@ import (
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 )
+
+// requireTraceJSONEqual compares two marshaled OTLP/JSON trace documents for
+// semantic equality. Attribute arrays cannot be compared byte-wise: pdata
+// stores them in Go map iteration order, which differs between runs even for
+// identical inputs, while their set of key/value pairs is what the wire means.
+func requireTraceJSONEqual(t *testing.T, expectedJSON, actualJSON []byte) {
+	t.Helper()
+	var expected, actual any
+	require.NoError(t, json.Unmarshal(expectedJSON, &expected))
+	require.NoError(t, json.Unmarshal(actualJSON, &actual))
+	require.Equal(t, normalizeAttributeOrder(expected), normalizeAttributeOrder(actual))
+}
+
+func normalizeAttributeOrder(v any) any {
+	switch value := v.(type) {
+	case []any:
+		out := make([]any, len(value))
+		for i, item := range value {
+			out[i] = normalizeAttributeOrder(item)
+		}
+		// OTLP attribute entries are exactly {"key","value"} objects; sort
+		// those arrays by key. Span, scope, and event arrays keep their order.
+		if isAttributeArray(out) {
+			sort.SliceStable(out, func(i, j int) bool {
+				left := out[i].(map[string]any)["key"].(string)
+				right := out[j].(map[string]any)["key"].(string)
+				return left < right
+			})
+		}
+		return out
+	case map[string]any:
+		for key, item := range value {
+			value[key] = normalizeAttributeOrder(item)
+		}
+		return value
+	default:
+		return v
+	}
+}
+
+func isAttributeArray(items []any) bool {
+	if len(items) == 0 {
+		return false
+	}
+	entry, ok := items[0].(map[string]any)
+	if !ok || len(entry) != 2 {
+		return false
+	}
+	_, hasKey := entry["key"]
+	_, hasValue := entry["value"]
+	return hasKey && hasValue
+}
 
 func loadFixtureLogs(t *testing.T) plog.Logs {
 	t.Helper()
@@ -109,7 +163,7 @@ func TestFixtureReplayMatchesCanonicalFixture(t *testing.T) {
 	require.NoError(t, err)
 	expected, err := os.ReadFile(filepath.Join("testdata", "cursor-canonical.otlp.json"))
 	require.NoError(t, err)
-	require.JSONEq(t, string(expected), string(actual))
+	requireTraceJSONEqual(t, expected, actual)
 }
 
 func TestFixtureReplayShuffleStable(t *testing.T) {
@@ -122,5 +176,5 @@ func TestFixtureReplayShuffleStable(t *testing.T) {
 	require.NoError(t, err)
 	b, err := marshaler.MarshalTraces(shuffled[0])
 	require.NoError(t, err)
-	require.JSONEq(t, string(a), string(b))
+	requireTraceJSONEqual(t, a, b)
 }
