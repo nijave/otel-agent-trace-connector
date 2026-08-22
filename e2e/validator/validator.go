@@ -118,6 +118,13 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 			return err
 		}
 		return validateStrandsSpans(spans)
+	case "opencode":
+		if err := rejectGenAIContent(spans); err != nil {
+			return err
+		}
+		if err := rejectOpenCodeContent(spans); err != nil {
+			return err
+		}
 	}
 	if agent == "claude_code" {
 		if err := rejectClaudeTraceContent(spans); err != nil {
@@ -136,6 +143,14 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		}
 		if stringAttr(root, "gen_ai.conversation.id") == "" {
 			return errors.New("conversation id is missing")
+		}
+		if agent == "opencode" {
+			if _, ok := root.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+				return errors.New("opencode root usage is missing")
+			}
+			if stringAttr(root, "coding_agent.client.name") != "opencode" {
+				return errors.New("opencode client name is missing")
+			}
 		}
 		if agent == "claude_code" {
 			if stringAttr(root, "gen_ai.provider.name") != "anthropic" {
@@ -161,12 +176,15 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 						return errors.New("chat input token usage is missing")
 					}
 				} else if stringAttr(child, "gen_ai.request.model") == "" {
-					return errors.New("claude chat model is missing")
+					return errors.New("chat child span is missing its request model")
 				}
 			case "execute_tool":
 				tool = true
 				if agent == "claude_code" && stringAttr(child, "gen_ai.tool.name") != "Bash" {
 					return errors.New("claude Bash tool span is missing")
+				}
+				if agent == "opencode" && stringAttr(child, "gen_ai.tool.name") != "bash" {
+					return errors.New("opencode bash tool span is missing")
 				}
 			}
 		}
@@ -410,6 +428,45 @@ func validateStrandsRawTraces(traces ptrace.Traces, runID string) error {
 		}
 	}
 	return errors.New("raw strands output holds no content events")
+}
+
+func validateOpenCodeRawFile(path, runID string) error {
+	return validateTraceFile(path, runID, validateOpenCodeRawTraces)
+}
+
+func validateOpenCodeRawTraces(traces ptrace.Traces, runID string) error {
+	spans := collectRunSpans(traces, runID)
+	if len(spans) == 0 {
+		return errors.New("opencode run id was not found")
+	}
+	var llm, tool bool
+	for _, span := range spans {
+		switch span.Name() {
+		case "ai.streamText":
+			llm = true
+		case "ai.toolCall":
+			if stringAttr(span, "ai.toolCall.name") == "bash" {
+				tool = true
+			}
+		}
+	}
+	if !llm || !tool {
+		return errors.New("raw OpenCode LLM or bash tool span is missing")
+	}
+	return nil
+}
+
+// rejectOpenCodeContent fails if any AI-SDK content attribute reached a
+// canonical span. The raw destination is allowed — and expected — to carry it.
+func rejectOpenCodeContent(spans []ptrace.Span) error {
+	for _, span := range spans {
+		for _, key := range []string{"ai.response.text", "ai.toolCall.args", "ai.toolCall.result"} {
+			if _, ok := span.Attributes().Get(key); ok {
+				return fmt.Errorf("sensitive OpenCode attribute %q was captured on %q", key, span.Name())
+			}
+		}
+	}
+	return nil
 }
 
 func boolAttr(span ptrace.Span, key string) bool {

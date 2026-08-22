@@ -334,3 +334,53 @@ func TestCursorCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "cursor", "testdata", "cursor-canonical.otlp.json")
 	require.NoError(t, validateCursorCanonicalFile(path))
 }
+
+func TestRejectOpenCodeContent(t *testing.T) {
+	leaky := ptrace.NewTraces()
+	span := leaky.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("invoke_agent opencode")
+	span.Attributes().PutStr("ai.response.text", "leak")
+	err := rejectOpenCodeContent(allSpans(leaky))
+	require.ErrorContains(t, err, "ai.response.text")
+
+	clean := ptrace.NewTraces()
+	ok := clean.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	ok.SetName("invoke_agent opencode")
+	ok.Attributes().PutInt("gen_ai.usage.input_tokens", 10)
+	require.NoError(t, rejectOpenCodeContent(allSpans(clean)))
+}
+
+func TestValidateOpenCodeRawTraces(t *testing.T) {
+	raw := ptrace.NewTraces()
+	rs := raw.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	ss := rs.ScopeSpans().AppendEmpty()
+	llm := ss.Spans().AppendEmpty()
+	llm.SetName("ai.streamText")
+	noise := ss.Spans().AppendEmpty()
+	noise.SetName("sql.execute")
+	tool := ss.Spans().AppendEmpty()
+	tool.SetName("ai.toolCall")
+	tool.Attributes().PutStr("ai.toolCall.name", "bash")
+
+	require.NoError(t, validateOpenCodeRawTraces(raw, "run-1"))
+	require.Error(t, validateOpenCodeRawTraces(ptrace.NewTraces(), "run-1"), "empty run must fail")
+}
+
+func TestValidateOpenCodeRawFileParsesActualOTLPJSON(t *testing.T) {
+	raw := ptrace.NewTraces()
+	rs := raw.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Spans().AppendEmpty().SetName("ai.streamText")
+	tool := ss.Spans().AppendEmpty()
+	tool.SetName("ai.toolCall")
+	tool.Attributes().PutStr("ai.toolCall.name", "bash")
+
+	encoded, err := (&ptrace.JSONMarshaler{}).MarshalTraces(raw)
+	require.NoError(t, err)
+	path := t.TempDir() + "/raw.json"
+	require.NoError(t, os.WriteFile(path, append(encoded, '\n'), 0o600))
+	require.NoError(t, validateOpenCodeRawFile(path, "run-1"))
+	require.Error(t, validateOpenCodeRawFile(path, "different-run"))
+}

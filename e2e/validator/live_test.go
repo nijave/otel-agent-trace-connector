@@ -26,12 +26,12 @@ func TestLiveE2ETraces(t *testing.T) {
 		agent = "codex"
 	}
 	switch agent {
-	case "codex", "claude_code", "openai_adhoc", "strands":
+	case "codex", "claude_code", "openai_adhoc", "strands", "opencode":
 	default:
 		t.Fatalf("unsupported E2E_AGENT %q", agent)
 	}
 	rawPath := os.Getenv("RAW_TRACE_FILE")
-	if (agent == "claude_code" || agent == "strands") && rawPath == "" {
+	if (agent == "claude_code" || agent == "strands" || agent == "opencode") && rawPath == "" {
 		t.Fatal("RAW_TRACE_FILE is required for this agent's validation")
 	}
 
@@ -46,6 +46,9 @@ func TestLiveE2ETraces(t *testing.T) {
 		}
 		if lastErr == nil && agent == "strands" {
 			lastErr = validateStrandsRawFile(rawPath, runID)
+		}
+		if lastErr == nil && agent == "opencode" {
+			lastErr = validateOpenCodeRawFile(rawPath, runID)
 		}
 		if lastErr == nil {
 			return
