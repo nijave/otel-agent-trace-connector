@@ -17,8 +17,8 @@ func burstForTest() *burstState {
 		{Body: BodyAPIRequest, EventID: "ev-1", ConversationID: testConversation, UsageEventID: "ue-1",
 			Timestamp: base, Resource: testResourceRaw(),
 			Attrs: map[string]any{
-				"cursor.model.name":                               "claude-4.5-sonnet",
-				"cursor.api.request.input_tokens":                 int64(100), "cursor.api.request.output_tokens": int64(200),
+				"cursor.model.name":               "claude-4.5-sonnet",
+				"cursor.api.request.input_tokens": int64(100), "cursor.api.request.output_tokens": int64(200),
 				"cursor.api.request.cache_read_tokens": int64(50), "cursor.api.request.cache_creation_tokens": int64(10),
 				"cursor.api.billable": true,
 			}},
