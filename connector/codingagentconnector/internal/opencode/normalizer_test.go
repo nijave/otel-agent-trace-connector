@@ -178,3 +178,70 @@ func TestNormalizerEmitsNothingWithoutClaimedGroups(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all())
 }
+
+func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("opencode")
+
+	doStream := ss.Spans().AppendEmpty()
+	doStream.SetName("ai.streamText.doStream")
+	doStream.SetSpanID([8]byte{3})
+	doStream.SetParentSpanID([8]byte{2})
+	doStream.Attributes().PutStr("gen_ai.request.model", "ox-alpha-free")
+	doStream.Attributes().PutStr("gen_ai.response.id", "resp_1")
+	doStream.Attributes().PutStr("gen_ai.response.finish_reasons", "stop")
+
+	tool := ss.Spans().AppendEmpty()
+	tool.SetName("ai.toolCall")
+	tool.SetSpanID([8]byte{4})
+	tool.SetParentSpanID([8]byte{2})
+	tool.Attributes().PutStr("ai.toolCall.name", "bash")
+	tool.Attributes().PutStr("ai.toolCall.id", "call_1")
+	tool.Attributes().PutStr("ai.toolCall.args", "SECRET ARGS")
+	tool.Attributes().PutStr("ai.toolCall.result", "SECRET RESULT")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+
+	require.Equal(t, "chat ox-alpha-free", spans.At(0).Name())
+	v, ok := spans.At(0).Attributes().Get("gen_ai.operation.name")
+	require.True(t, ok)
+	require.Equal(t, "chat", v.Str())
+	_, leaked := spans.At(0).Attributes().Get("gen_ai.response.id")
+	require.False(t, leaked, "response metadata beyond model stays off canonical chat")
+
+	require.Equal(t, "execute_tool bash", spans.At(1).Name())
+	toolAttrs := spans.At(1).Attributes()
+	name, ok := toolAttrs.Get("gen_ai.tool.name")
+	require.True(t, ok)
+	require.Equal(t, "bash", name.Str())
+	op, ok := toolAttrs.Get("gen_ai.operation.name")
+	require.True(t, ok)
+	require.Equal(t, "execute_tool", op.Str())
+	for _, secret := range []string{"ai.toolCall.args", "ai.toolCall.result", "ai.toolCall.id"} {
+		_, leaked := toolAttrs.Get(secret)
+		require.False(t, leaked, "%s must not reach canonical output", secret)
+	}
+	require.Equal(t, pcommon.SpanID{3}, spans.At(0).SpanID(), "IDs pass through for backend reassembly")
+	require.Equal(t, pcommon.SpanID{4}, spans.At(1).SpanID())
+}
+
+func TestNormalizerBareNamesWhenSubjectMissing(t *testing.T) {
+	input := ptrace.NewTraces()
+	newGroup(input, "opencode", "ai.streamText.doStream")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "chat", out.Name())
+
+	input2 := ptrace.NewTraces()
+	newGroup(input2, "opencode", "ai.toolCall")
+	sink2 := &traceSink{}
+	require.NoError(t, New(sink2).ConsumeTraces(context.Background(), input2))
+	out2 := sink2.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "execute_tool", out2.Name())
+}

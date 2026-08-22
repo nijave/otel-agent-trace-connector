@@ -19,6 +19,8 @@ const (
 	agentName  = "opencode"
 
 	wireStreamText = "ai.streamText"
+	wireDoStream   = "ai.streamText.doStream"
+	wireToolCall   = "ai.toolCall"
 )
 
 // opencodeTraceNormalizer rewrites OpenCode's native Vercel AI SDK spans into
@@ -92,7 +94,7 @@ func ContainsOpenCodeSpans(resourceSpans ptrace.ResourceSpans) bool {
 // instrumentation and never enters canonical output.
 func isClaimedSpan(name string) bool {
 	switch name {
-	case wireStreamText:
+	case wireStreamText, wireDoStream, wireToolCall:
 		return true
 	}
 	return false
@@ -115,6 +117,24 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 		attrs.PutStr("gen_ai.agent.name", agentName)
 		copyUsage(wire.Attributes(), attrs)
 		span.SetName("invoke_agent " + agentName)
+	case wireDoStream:
+		model := firstString(wire.Attributes(), "gen_ai.request.model")
+		name := "chat"
+		if model != "" {
+			attrs.PutStr("gen_ai.request.model", model)
+			name += " " + model
+		}
+		attrs.PutStr("gen_ai.operation.name", "chat")
+		span.SetName(name)
+	case wireToolCall:
+		tool := firstString(wire.Attributes(), "ai.toolCall.name")
+		name := "execute_tool"
+		if tool != "" {
+			attrs.PutStr("gen_ai.tool.name", tool)
+			name += " " + tool
+		}
+		attrs.PutStr("gen_ai.operation.name", "execute_tool")
+		span.SetName(name)
 	}
 }
 
