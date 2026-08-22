@@ -28,6 +28,14 @@ trace vocabulary. It exposes two edges under a single component type,
 
 - **Codex (logs → traces):** correlates structured `codex.*` OTLP logs into one
   canonical trace per user turn.
+- **Cursor (logs → traces):** correlates native `cursor.telemetry` OTLP logs
+  (Enterprise beta, metrics + logs only) into one canonical trace per activity
+  burst, keyed on `cursor.conversation.id`. Chat spans carry per-request token
+  usage; the wire reports tool calls only as metrics without correlation IDs,
+  so canonical traces have no `execute_tool` children. Cursor exports
+  server-side from Team Settings (OTLP/HTTP to `/v1/logs`) — see the
+  [Cursor OpenTelemetry Export documentation](https://cursor.com/docs/enterprise/opentelemetry-export)
+  and its [wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire).
 - **Claude Code (traces → traces):** preserves Claude Code's native span
   hierarchy and normalizes the interaction, LLM, and tool span names and
   attributes into the same vocabulary.

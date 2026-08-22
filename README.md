@@ -5,6 +5,11 @@ OCB-built distribution for coding-agent traces:
 
 - **Codex:** correlates structured `codex.*` OTLP logs into one canonical trace
   per user turn.
+- **Cursor:** correlates native `cursor.telemetry` OTLP logs (Enterprise
+  beta, metrics + logs only) into one canonical trace per activity burst,
+  keyed on `cursor.conversation.id`. Chat spans carry per-request token
+  usage; the wire reports tool calls only as metrics without correlation
+  IDs, so canonical traces have no `execute_tool` children.
 - **Claude Code:** preserves its native span hierarchy and normalizes the
   interaction, LLM, and tool span names and attributes into the same canonical
   vocabulary.
@@ -33,6 +38,7 @@ Repository layout:
 │   ├── config.go, factory.go        #   public Collector component surface
 │   ├── metadata.yaml, doc.go        #   mdatagen source and generate directive
 │   ├── internal/codex/              #   stateful log correlation and trace building
+│   ├── internal/cursor/             #   burst correlation of native Cursor logs
 │   └── internal/claude/             #   stateless native-span normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
 │   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
@@ -109,6 +115,17 @@ service:
 with at least one `response.completed` event finalizes when that window is
 quiet. A turn without completion finalizes by `turn_timeout`, shutdown, a
 new prompt in the same conversation, or bounded-state eviction.
+
+One `coding_agent` instance on the logs pipeline claims both log sources:
+Codex records by their `codex.`-prefixed event names and Cursor records by
+their `cursor.telemetry` instrumentation scope. Cursor exports native OTLP
+logs server-side from Team Settings (OTLP/HTTP to `/v1/logs`; Enterprise
+beta) — see the
+[Cursor OpenTelemetry Export documentation](https://cursor.com/docs/enterprise/opentelemetry-export)
+and its [wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire).
+Cursor has no prompt or completion event on the wire, so each conversation's
+activity burst finalizes when `reorder_window` passes with no new record,
+by `turn_timeout`, at shutdown, or through bounded-state eviction.
 
 Configure Codex telemetry in the user-level `config.toml`; Codex
 ignores project-local `[otel]` configuration. Prompt logging should remain off.
@@ -229,6 +246,8 @@ elsewhere should mount their own config over it.
 - [OpenTelemetry Collector connectors](https://opentelemetry.io/docs/collector/components/connector/)
 - [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - [Codex observability and telemetry](https://developers.openai.com/codex/config-advanced#observability-and-telemetry)
+- [Cursor OpenTelemetry Export](https://cursor.com/docs/enterprise/opentelemetry-export)
+- [Cursor OpenTelemetry wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire)
 - [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage)
 - [Claude Code third-party endpoints](https://code.claude.com/docs/en/llm-gateway)
 - [z.ai coding-agent setup](https://docs.z.ai/devpack/tool/claude)

@@ -2,6 +2,7 @@ package validator
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -327,4 +328,9 @@ func validClaudeTraces(runID string, canonical bool) ptrace.Traces {
 		tool.Attributes().PutStr("tool_name", "Bash")
 	}
 	return traces
+}
+
+func TestCursorCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "cursor", "testdata", "cursor-canonical.otlp.json")
+	require.NoError(t, validateCursorCanonicalFile(path))
 }

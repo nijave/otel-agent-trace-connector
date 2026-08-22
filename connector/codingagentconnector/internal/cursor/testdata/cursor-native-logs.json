@@ -1,0 +1,150 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "cursor" } },
+          { "key": "service.version", "value": { "stringValue": "1.16.5" } },
+          { "key": "cursor.team.id", "value": { "intValue": "4242" } },
+          { "key": "cursor.surface", "value": { "stringValue": "cli" } },
+          { "key": "cursor.entrypoint", "value": { "stringValue": "cli" } },
+          { "key": "cursor.user.id", "value": { "intValue": "99" } }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": { "name": "cursor.telemetry", "version": "0.1.0" },
+          "logRecords": [
+            {
+              "timeUnixNano": "1787306400000000000",
+              "observedTimeUnixNano": "1787306400100000000",
+              "body": { "stringValue": "api_request" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-1" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-1" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.usage_event.id", "value": { "stringValue": "ue-1" } },
+                { "key": "cursor.model.name", "value": { "stringValue": "claude-4.5-sonnet" } },
+                { "key": "cursor.api.request.input_tokens", "value": { "intValue": "100" } },
+                { "key": "cursor.api.request.output_tokens", "value": { "intValue": "200" } },
+                { "key": "cursor.api.request.cache_read_tokens", "value": { "intValue": "50" } },
+                { "key": "cursor.api.request.cache_creation_tokens", "value": { "intValue": "10" } },
+                { "key": "cursor.api.billable", "value": { "boolValue": true } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306401000000000",
+              "body": { "stringValue": "skill_activated" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-2" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-2" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.skill.name", "value": { "stringValue": "code-review" } },
+                { "key": "cursor.skill.trigger", "value": { "stringValue": "agent_read" } },
+                { "key": "cursor.skill.source", "value": { "stringValue": "user" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306420000000000",
+              "body": { "stringValue": "api_request" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-3" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-3" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.usage_event.id", "value": { "stringValue": "ue-2" } },
+                { "key": "cursor.api.request.input_tokens", "value": { "intValue": "7" } },
+                { "key": "cursor.api.request.output_tokens", "value": { "intValue": "9" } },
+                { "key": "cursor.api.request.cache_read_tokens", "value": { "intValue": "0" } },
+                { "key": "cursor.api.request.cache_creation_tokens", "value": { "intValue": "0" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306421000000000",
+              "body": { "stringValue": "api_error" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-4" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-4" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.usage_event.id", "value": { "stringValue": "ue-2" } },
+                { "key": "cursor.model.name", "value": { "stringValue": "claude-4.5-sonnet" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306422000000000",
+              "body": { "stringValue": "api_correction_not_billed_errored" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-5" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-5" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.usage_event.id", "value": { "stringValue": "ue-2" } },
+                { "key": "cursor.api.correction.kind", "value": { "stringValue": "not_billed_errored" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306425000000000",
+              "body": { "stringValue": "hook_execution_complete" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-6" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-6" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.hook.name", "value": { "stringValue": "lint" } },
+                { "key": "cursor.hook.type", "value": { "stringValue": "post_tool_use" } },
+                { "key": "cursor.hook.outcome", "value": { "stringValue": "success" } },
+                { "key": "cursor.hook.duration_ms", "value": { "intValue": "42" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306580000000000",
+              "body": { "stringValue": "plugin_installed" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-plugin" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-plugin" } },
+                { "key": "cursor.plugin.name", "value": { "stringValue": "some-extension" } },
+                { "key": "cursor.plugin.scope", "value": { "stringValue": "team" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306700000000000",
+              "body": { "stringValue": "api_request" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-7" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-7" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.usage_event.id", "value": { "stringValue": "ue-3" } },
+                { "key": "cursor.model.name", "value": { "stringValue": "gpt-5.2" } },
+                { "key": "cursor.api.request.input_tokens", "value": { "intValue": "30" } },
+                { "key": "cursor.api.request.output_tokens", "value": { "intValue": "40" } },
+                { "key": "cursor.api.request.cache_read_tokens", "value": { "intValue": "0" } },
+                { "key": "cursor.api.request.cache_creation_tokens", "value": { "intValue": "0" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306702000000000",
+              "body": { "stringValue": "cloud_agent_setup_completed" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-8" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-8" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.cloud_agent.setup.kind", "value": { "stringValue": "completed" } },
+                { "key": "cursor.cloud_agent.setup.duration_ms", "value": { "intValue": "1500" } }
+              ]
+            }
+          ]
+        },
+        {
+          "scope": { "name": "some.other.scope" },
+          "logRecords": [
+            {
+              "body": { "stringValue": "api_request" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-foreign" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-foreign" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
