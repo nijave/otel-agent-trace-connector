@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
@@ -414,4 +415,88 @@ func validateStrandsRawTraces(traces ptrace.Traces, runID string) error {
 func boolAttr(span ptrace.Span, key string) bool {
 	value, ok := span.Attributes().Get(key)
 	return ok && value.Bool()
+}
+
+// allSpans flattens every span across all resource and scope groups, like
+// collectRunSpans without the run-id filter: fixture files carry no run id.
+func allSpans(traces ptrace.Traces) []ptrace.Span {
+	var spans []ptrace.Span
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		ss := traces.ResourceSpans().At(i).ScopeSpans()
+		for j := 0; j < ss.Len(); j++ {
+			group := ss.At(j).Spans()
+			for k := 0; k < group.Len(); k++ {
+				spans = append(spans, group.At(k))
+			}
+		}
+	}
+	return spans
+}
+
+// validateCursorCanonicalFile asserts the canonical Cursor shape over the
+// connector's committed fixture, keeping the wire's no-content guarantee under
+// test without an Enterprise Cursor tenant.
+func validateCursorCanonicalFile(path string) error {
+	return validateTraceFile(path, "", validateCursorCanonicalTraces)
+}
+
+func validateCursorCanonicalTraces(traces ptrace.Traces, _ string) error {
+	spans := allSpans(traces)
+	if err := validateCursorSpans(spans); err != nil {
+		return err
+	}
+	return rejectSensitiveAttrs(spans)
+}
+
+func validateCursorSpans(spans []ptrace.Span) error {
+	var roots, chats int
+	for _, span := range spans {
+		switch {
+		case strings.HasPrefix(span.Name(), "invoke_agent cursor"):
+			roots++
+			if err := validateCursorRoot(span); err != nil {
+				return err
+			}
+		case span.Name() == "chat" || strings.HasPrefix(span.Name(), "chat "):
+			chats++
+			if err := validateCursorChat(span); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unexpected span %q in cursor canonical output", span.Name())
+		}
+	}
+	if roots == 0 {
+		return errors.New("no invoke_agent cursor root found")
+	}
+	if chats == 0 {
+		return errors.New("no chat spans found under cursor root")
+	}
+	return nil
+}
+
+func validateCursorRoot(span ptrace.Span) error {
+	if got := stringAttr(span, "gen_ai.conversation.id"); got == "" {
+		return errors.New("cursor root missing gen_ai.conversation.id")
+	}
+	if got := stringAttr(span, "coding_agent.turn.finish_reason"); got == "" {
+		return errors.New("cursor root missing finish reason")
+	}
+	if _, ok := span.Attributes().Get("gen_ai.provider.name"); ok {
+		return errors.New("cursor root must not claim gen_ai.provider.name")
+	}
+	if _, ok := span.Attributes().Get("coding_agent.turn.complete"); ok {
+		return errors.New("cursor root must not claim completion")
+	}
+	return nil
+}
+
+func validateCursorChat(span ptrace.Span) error {
+	if got := stringAttr(span, "gen_ai.operation.name"); got != "chat" {
+		return fmt.Errorf("cursor chat span operation %q", got)
+	}
+	if span.StartTimestamp() != span.EndTimestamp() {
+		return errors.New("cursor chat span must stay a point span; the wire carries no durations")
+	}
+	return nil
 }
