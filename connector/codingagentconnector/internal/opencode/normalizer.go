@@ -1,0 +1,173 @@
+// Copyright The OpenTelemetry Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package opencode
+
+import (
+	"context"
+
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/connector"
+	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
+)
+
+const (
+	scopeName  = "opencode"
+	clientName = "opencode"
+	agentName  = "opencode"
+
+	wireStreamText = "ai.streamText"
+)
+
+// opencodeTraceNormalizer rewrites OpenCode's native Vercel AI SDK spans into
+// the canonical vocabulary and drops everything else OpenCode exports. It is
+// stateless: children can land in exports without their ancestors, so each
+// batch is rewritten as-is and backends reassemble by the preserved IDs.
+type opencodeTraceNormalizer struct {
+	next consumer.Traces
+	component.StartFunc
+	component.ShutdownFunc
+}
+
+// New creates the stateless OpenCode native traces-to-traces edge.
+func New(next consumer.Traces) connector.Traces {
+	return &opencodeTraceNormalizer{next: next}
+}
+
+func (*opencodeTraceNormalizer) Capabilities() consumer.Capabilities {
+	return consumer.Capabilities{MutatesData: false}
+}
+
+func (n *opencodeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
+	output := ptrace.NewTraces()
+	for i := 0; i < input.ResourceSpans().Len(); i++ {
+		inputResourceSpans := input.ResourceSpans().At(i)
+		if !ContainsOpenCodeSpans(inputResourceSpans) {
+			continue
+		}
+		rs := output.ResourceSpans().AppendEmpty()
+		inputResourceSpans.Resource().CopyTo(rs.Resource())
+		version := resourceString(rs.Resource(), "service.version")
+		resourceSessionID := resourceString(rs.Resource(), "session.id")
+		for j := 0; j < inputResourceSpans.ScopeSpans().Len(); j++ {
+			inputScopeSpans := inputResourceSpans.ScopeSpans().At(j)
+			ss := rs.ScopeSpans().AppendEmpty()
+			inputScopeSpans.Scope().CopyTo(ss.Scope())
+			spans := ss.Spans()
+			for k := 0; k < inputScopeSpans.Spans().Len(); k++ {
+				wire := inputScopeSpans.Spans().At(k)
+				if !isClaimedSpan(wire.Name()) {
+					continue
+				}
+				span := spans.AppendEmpty()
+				copySpanMetadata(wire, span)
+				normalizeSpan(wire, span, version, resourceSessionID)
+			}
+		}
+		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool { return ss.Spans().Len() == 0 })
+	}
+	output.ResourceSpans().RemoveIf(func(rs ptrace.ResourceSpans) bool { return rs.ScopeSpans().Len() == 0 })
+	if output.SpanCount() == 0 {
+		return nil
+	}
+	return n.next.ConsumeTraces(ctx, output)
+}
+
+// ContainsOpenCodeSpans reports whether any scope in the group is OpenCode's
+// native tracer. Exact match: prefixed scopes such as opencode.* plugins or
+// Kilo's com.opencode are separate surfaces this edge must not claim.
+func ContainsOpenCodeSpans(resourceSpans ptrace.ResourceSpans) bool {
+	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
+		if resourceSpans.ScopeSpans().At(i).Scope().Name() == scopeName {
+			return true
+		}
+	}
+	return false
+}
+
+// isClaimedSpan lists the exact wire span names rewritten into canonical
+// vocabulary; every other span OpenCode exports is internal Effect
+// instrumentation and never enters canonical output.
+func isClaimedSpan(name string) bool {
+	switch name {
+	case wireStreamText:
+		return true
+	}
+	return false
+}
+
+func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
+	attrs := span.Attributes()
+	putCommon(attrs, version)
+	attrs.PutStr("coding_agent.source.event", wire.Name())
+	switch wire.Name() {
+	case wireStreamText:
+		sessionID := firstString(wire.Attributes(), "session.id")
+		if sessionID == "" {
+			sessionID = resourceSessionID
+		}
+		if sessionID != "" {
+			attrs.PutStr("gen_ai.conversation.id", sessionID)
+		}
+		attrs.PutStr("gen_ai.operation.name", "invoke_agent")
+		attrs.PutStr("gen_ai.agent.name", agentName)
+		copyUsage(wire.Attributes(), attrs)
+		span.SetName("invoke_agent " + agentName)
+	}
+}
+
+func putCommon(attrs pcommon.Map, version string) {
+	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.client.name", clientName)
+	if version != "" {
+		attrs.PutStr("coding_agent.client.version", version)
+	}
+}
+
+var usageKeys = [][2]string{
+	{"ai.usage.inputTokens", "gen_ai.usage.input_tokens"},
+	{"ai.usage.outputTokens", "gen_ai.usage.output_tokens"},
+	{"ai.usage.cachedInputTokens", "gen_ai.usage.cache_read.input_tokens"},
+}
+
+func copyUsage(from, to pcommon.Map) {
+	for _, pair := range usageKeys {
+		if value, ok := from.Get(pair[0]); ok && value.Type() == pcommon.ValueTypeInt {
+			to.PutInt(pair[1], value.Int())
+		}
+	}
+}
+
+func firstString(attrs pcommon.Map, key string) string {
+	value, ok := attrs.Get(key)
+	if !ok || value.Str() == "" {
+		return ""
+	}
+	return value.Str()
+}
+
+func resourceString(resource pcommon.Resource, key string) string {
+	value, ok := resource.Attributes().Get(key)
+	if !ok {
+		return ""
+	}
+	return value.Str()
+}
+
+func copySpanMetadata(wire, span ptrace.Span) {
+	span.SetTraceID(wire.TraceID())
+	span.SetSpanID(wire.SpanID())
+	span.SetParentSpanID(wire.ParentSpanID())
+	span.SetKind(wire.Kind())
+	span.SetStartTimestamp(wire.StartTimestamp())
+	span.SetEndTimestamp(wire.EndTimestamp())
+	span.SetFlags(wire.Flags())
+	span.SetDroppedAttributesCount(wire.DroppedAttributesCount())
+	status := wire.Status()
+	span.Status().SetCode(status.Code())
+	span.Status().SetMessage(status.Message())
+}
+
+var _ connector.Traces = (*opencodeTraceNormalizer)(nil)
