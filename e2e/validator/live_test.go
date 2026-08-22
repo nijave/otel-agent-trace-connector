@@ -25,12 +25,14 @@ func TestLiveE2ETraces(t *testing.T) {
 	if agent == "" {
 		agent = "codex"
 	}
-	if agent != "codex" && agent != "claude_code" {
+	switch agent {
+	case "codex", "claude_code", "openai_adhoc", "strands":
+	default:
 		t.Fatalf("unsupported E2E_AGENT %q", agent)
 	}
 	rawPath := os.Getenv("RAW_TRACE_FILE")
-	if agent == "claude_code" && rawPath == "" {
-		t.Fatal("RAW_TRACE_FILE is required for Claude Code validation")
+	if (agent == "claude_code" || agent == "strands") && rawPath == "" {
+		t.Fatal("RAW_TRACE_FILE is required for this agent's validation")
 	}
 
 	// The collector flushes the file exporter asynchronously, so poll until the
@@ -41,6 +43,9 @@ func TestLiveE2ETraces(t *testing.T) {
 		lastErr = validateCanonicalFile(path, runID, agent)
 		if lastErr == nil && agent == "claude_code" {
 			lastErr = validateClaudeRawFile(rawPath, runID)
+		}
+		if lastErr == nil && agent == "strands" {
+			lastErr = validateStrandsRawFile(rawPath, runID)
 		}
 		if lastErr == nil {
 			return

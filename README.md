@@ -8,6 +8,11 @@ OCB-built distribution for coding-agent traces:
 - **Claude Code:** preserves its native span hierarchy and normalizes the
   interaction, LLM, and tool span names and attributes into the same canonical
   vocabulary.
+- **GenAI semconv sources:** normalizes native traces from
+  `opentelemetry-instrumentation-openai-v2` (both semconv modes),
+  direct `opentelemetry-util-genai` users, and the Strands Agents SDK into
+  the same canonical vocabulary, stripping prompt/completion/tool content
+  from canonical output.
 
 The canonical tree is:
 
@@ -17,7 +22,7 @@ invoke_agent <agent>
 └── execute_tool <tool>
 ```
 
-The raw vendor logs and traces are exported separately. Normalization never
+The raw vendor logs and traces export separately. Normalization never
 copies prompt text, tool arguments, or tool output into generated Codex spans.
 
 Repository layout:
@@ -38,8 +43,7 @@ Repository layout:
 ```
 
 The connector lives in its own module under `connector/codingagentconnector/`,
-matching the layout of components in `opentelemetry-collector-contrib` so it can
-be upstreamed with minimal changes.
+matching the layout of components in `opentelemetry-collector-contrib` and upstreams with minimal changes.
 
 ## Status
 
@@ -102,16 +106,33 @@ service:
 ```
 
 `reorder_window` starts after the most recently received Codex event. A turn
-with at least one `response.completed` event is finalized when that window is
-quiet. A turn without completion is finalized by `turn_timeout`, shutdown, a
+with at least one `response.completed` event finalizes when that window is
+quiet. A turn without completion finalizes by `turn_timeout`, shutdown, a
 new prompt in the same conversation, or bounded-state eviction.
 
-Codex telemetry must be configured in the user-level `config.toml`; Codex
+Configure Codex telemetry in the user-level `config.toml`; Codex
 ignores project-local `[otel]` configuration. Prompt logging should remain off.
 See the [official Codex observability documentation](https://developers.openai.com/codex/config-advanced#observability-and-telemetry).
 
+The traces edge auto-detects Claude Code and GenAI-semconv sources by
+instrumentation scope, so every source enters the same pipeline.
+
 Claude Code should export its native beta traces directly. See the
 [official Claude Code monitoring documentation](https://code.claude.com/docs/en/monitoring-usage#traces-beta).
+
+Ad-hoc Python agents can export through
+[`opentelemetry-instrumentation-openai-v2`](https://pypi.org/project/opentelemetry-instrumentation-openai-v2/)
+or `opentelemetry-util-genai`; Strands Agents SDK exports its
+[built-in traces](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)
+directly. All three enter the same `traces` pipeline as Claude Code — the
+connector detects each source by instrumentation scope.
+
+Strands captures prompt and completion content in span events by default and
+its redaction is opt-in, so the raw trace destination receives content under
+default agent settings. Configure Strands redaction
+(`gen_ai_unredacted_attributes` in `OTEL_SEMCONV_STABILITY_OPT_IN`) or apply
+the same access policy to the raw destination and any content store. The
+canonical pipeline strips content-bearing attributes and events regardless.
 
 ### S3 reference deployment
 
@@ -131,10 +152,10 @@ export OTEL_QUEUE_DIRECTORY=/var/lib/otelcol/sending-queue
 ./dist/otelcol-coding-agents --config examples/otelcol-s3.yaml
 ```
 
-Mount `OTEL_QUEUE_DIRECTORY` on durable local storage with sufficient capacity;
+Mount `OTEL_QUEUE_DIRECTORY` on durable local storage with enough capacity;
 an ephemeral container filesystem defeats restart recovery. Each Collector
 replica should have its own local volume. The default file-storage limit is 1
-GiB per queue database and can be changed with
+GiB per queue database and changes with
 `OTEL_QUEUE_MAX_SIZE_BYTES`. Queue capacity is also bounded to 10,000 requests
 per exporter.
 
@@ -152,11 +173,13 @@ telemetry privacy considerations below before enabling this configuration.
 The default suite (`go test`) covers event parsing and coercion, config
 validation, deterministic trace construction/hierarchy/tokens/status/redaction,
 bounded-state/out-of-order/timeout/shutdown/turn-splitting, factory/lifecycle,
-Claude native-tree normalization, and the e2e trace-validation assertions in
-`e2e/validator`.
+Claude native-tree normalization, GenAI semconv normalization, and the e2e
+trace-validation assertions in `e2e/validator`.
 
 The live, paid end-to-end tests (real Codex and Claude runs) are opt-in and
-documented separately in [`e2e/README.md`](e2e/README.md).
+documented separately in [`e2e/README.md`](e2e/README.md). Two more
+opt-in E2Es exercise GenAI-semconv sources (openai-v2 ad-hoc agent and
+Strands agent) and share the same collector stack.
 
 ## CI and releases
 
@@ -164,6 +187,20 @@ GitHub Actions runs formatting, shell syntax, lint, vet, unit/integration tests,
 race tests, custom Collector builds, Collector/Compose validation, container
 builds, and GoReleaser configuration checks. Live agent E2Es remain manual and
 never receive credentials in CI.
+
+Run the same unpaid checks locally before pushing:
+
+```bash
+./scripts/check.sh
+```
+
+The script needs `go`, `golangci-lint` v2.11.4 (the version CI pins; install
+with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4`),
+`shellcheck`, `jq`, `docker`, and `goreleaser`. It covers gofmt, shell syntax
+and shellcheck, golangci-lint on both modules, mdatagen freshness, vet, tests
+and race tests in both modules, Collector build and config validation, Compose
+validation including the credential-split assertions, container image builds,
+and `goreleaser check` — the full unpaid CI surface.
 
 Pushing a semantic version tag such as `v0.1.0` runs GoReleaser and creates a
 GitHub release containing cross-platform custom Collector archives and SHA-256
@@ -197,3 +234,5 @@ elsewhere should mount their own config over it.
 - [z.ai coding-agent setup](https://docs.z.ai/devpack/tool/claude)
 - [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/awss3exporter)
 - [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/storage/filestorage)
+- [opentelemetry-instrumentation-openai-v2](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2)
+- [Strands Agents traces](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)

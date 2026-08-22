@@ -1,22 +1,22 @@
 # End-to-end tests
 
 The live e2e tests build the custom Collector, run a real coding agent in a
-container, and validate the exported OTLP traces on the host with
+container, and check the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
 they are opt-in and never run in CI.
 
-Both stacks share `compose.e2e-base.yaml` (the collector); each defines only its
-own `agent` service. Output is written under `.e2e-output/`.
+All four stacks share `compose.e2e-base.yaml` (the collector); each defines only
+its own `agent` service. The stack writes output under `.e2e-output/`.
 
-Both agents run against [z.ai](https://docs.z.ai/)'s GLM models, so a single z.ai
-API key covers both stacks. Nothing about the connector is z.ai-specific — it is
-simply the provider these tests are wired to.
+All agents run against [z.ai](https://docs.z.ai/)'s GLM models, so a single z.ai
+API key covers all stacks. Nothing about the connector is z.ai-specific — these
+tests simply connect to it.
 
 ## Live Codex E2E
 
 The Compose stack builds the custom Collector, launches a real non-interactive
 Codex session which must use one harmless shell tool, waits for trace
-reconstruction, and validates the exported OTLP JSON. It checks the root/child
+reconstruction, and checks the exported OTLP JSON. It verifies the root/child
 hierarchy, canonical attributes, completion state, and absence of sensitive
 copied fields.
 
@@ -40,8 +40,8 @@ Optional overrides:
 CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
 
-The E2E defaults to `glm-4.7`, the model the pinned connector regression captures
-were recorded against. Overriding `E2E_CODEX_MODEL` also means adding an entry to
+The E2E defaults to `glm-4.7`, the model the pinned connector regression
+captures used. Overriding `E2E_CODEX_MODEL` also means adding an entry to
 `e2e/responses-proxy/config.yaml`, because the proxy routes by model name and
 only serves the models listed there.
 
@@ -49,10 +49,10 @@ only serves the models listed there.
 
 Codex 0.144.1 dropped `wire_api = "chat"` and speaks only the Responses API, which
 z.ai's coding endpoint does not serve. A third service, `responses-proxy`,
-therefore sits between them and translates Responses to Chat Completions. It is
-built from a pinned commit on a fork (see `e2e/responses-proxy/Dockerfile` for why
-the published release is unusable here) and exists only for this test — it is not
-part of the connector or any production path.
+sits between them and translates Responses to Chat Completions. The proxy
+builds from a pinned commit on a fork (see `e2e/responses-proxy/Dockerfile` for
+why the published release is unusable here) and exists only for this test — it
+is not part of the connector or any production path.
 
 It also injects `stream_options.include_usage` into the outbound request, because
 z.ai otherwise omits token usage from the stream. Without that the canonical chat
@@ -90,8 +90,8 @@ docker compose -f compose.e2e-codex.yaml down
 
 The Claude stack runs pinned Claude Code in bare, non-interactive mode against
 z.ai's Anthropic-compatible endpoint, and requires exactly one Bash tool
-invocation. Native beta traces are preserved in the raw trace pipeline,
-normalized by `coding_agent/claude`, and validated together on the host. Prompt
+invocation. The raw trace pipeline preserves native beta traces,
+`coding_agent/claude` normalizes them, and the host checks both together. Prompt
 text, tool arguments, tool output, and raw API bodies remain disabled.
 
 ### Credentials: one z.ai API key
@@ -108,11 +108,57 @@ export ANTHROPIC_AUTH_TOKEN=...   # your z.ai key
 ```
 
 The test defaults to `glm-4.7`, at most three agent turns, a $0.25 budget
-ceiling, and a ten-minute timeout. Claude Code's model tiers are mapped onto GLM
+ceiling, and a ten-minute timeout. Claude Code maps its model tiers onto GLM
 models: `E2E_CLAUDE_MODEL` sets both the main and Sonnet tiers, and
 `E2E_CLAUDE_HAIKU_MODEL` (default `glm-4.5-air`) covers the Haiku tier used for
 background requests.
 
 ```bash
 E2E_CLAUDE_MODEL=glm-4.7 E2E_CLAUDE_HAIKU_MODEL=glm-4.5-air ./scripts/e2e-claude.sh
+```
+
+## Live OpenAI-SDK ad-hoc agent (paid)
+
+The OpenAI-SDK stack uses a pinned Python image with pinned `openai`,
+`opentelemetry-instrumentation-openai-v2`, SDK, and OTLP exporter packages. A
+small ad-hoc agent script makes one chat-completions call to z.ai's
+OpenAI-compatible endpoint (no responses-proxy needed, unlike Codex) and
+force-flushes. The script runs twice in one paid container run, once per
+convention mode, under distinct service names. Validation checks rootless
+normalized `chat` spans for both modes, provider `openai`, usage tokens, and
+no content keys.
+
+```bash
+export OPENAI_API_KEY=...   # your z.ai key
+./scripts/e2e-openai.sh
+```
+
+The first run uses default semconv v1.30.0 under service name
+`openai-adhoc-legacy`; the second run sets
+`OTEL_SEMCONV_STABILITY_OPT_IN=genai_latest_experimental` under
+`openai-adhoc-latest`. Override the model with `E2E_OPENAI_MODEL` (default
+`glm-4.7`):
+
+```bash
+E2E_OPENAI_MODEL=glm-4.7 ./scripts/e2e-openai.sh
+```
+
+## Live Strands agent (paid)
+
+The Strands stack uses a pinned `strands-agents` image with its
+OpenAI-compatible model provider pointed at z.ai and one harmless tool the
+prompt forces. The raw trace pipeline preserves the native tree,
+the GenAI normalizer produces the canonical `invoke_agent`/`chat`/`execute_tool`
+tree, and the host checks both outputs. Content events appear in raw output
+and are absent in canonical output.
+
+```bash
+export OPENAI_API_KEY=...   # your z.ai key
+./scripts/e2e-strands.sh
+```
+
+Override the model with `E2E_STRANDS_MODEL`:
+
+```bash
+E2E_STRANDS_MODEL=glm-4.7 ./scripts/e2e-strands.sh
 ```

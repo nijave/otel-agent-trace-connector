@@ -1,0 +1,27 @@
+# Strands Agents SDK e2e stack. The shared collector comes from
+# compose.e2e-base.yaml. Strands exports its native OTel traces directly; its
+# OpenAI-compatible model provider is pointed at z.ai. The container receives
+# exactly one credential. Strands captures prompt/completion content in span
+# events by default; the raw pipeline retains it and the validator asserts the
+# canonical pipeline strips it.
+include:
+  - compose.e2e-base.yaml
+
+services:
+  agent:
+    build:
+      context: e2e/strands
+    environment:
+      # scripts/e2e-strands.sh checks this credential before Compose runs.
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      # Override to point the agent at any OpenAI-compatible endpoint
+      # (for example an opencode.ai subscription); z.ai is the default.
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.z.ai/api/coding/paas/v4}"
+      E2E_STRANDS_MODEL: "${E2E_STRANDS_MODEL:-glm-4.7}"
+      E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-strands.sh}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    depends_on:
+      collector:
+        condition: service_healthy
