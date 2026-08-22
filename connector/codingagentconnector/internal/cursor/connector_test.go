@@ -5,20 +5,26 @@ package cursor
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
 	"go.uber.org/zap"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadatatest"
 )
 
 type testRecord struct {
@@ -279,4 +285,62 @@ func TestShutdownFlushesOpenBurst(t *testing.T) {
 	)))
 	require.NoError(t, connectorLogs.Shutdown(context.Background()))
 	require.Equal(t, 1, sink.count())
+}
+
+type failingSink struct{}
+
+func (*failingSink) Capabilities() consumer.Capabilities { return consumer.Capabilities{} }
+
+func (*failingSink) ConsumeTraces(context.Context, ptrace.Traces) error {
+	return errors.New("downstream unavailable")
+}
+
+func TestEmittedTurnMetricSkipsFailedDelivery(t *testing.T) {
+	testTel := componenttest.NewTelemetry()
+	t.Cleanup(func() { require.NoError(t, testTel.Shutdown(context.Background())) })
+
+	connectorLogs, err := New(codex.NewDefaultConfig(), metadatatest.NewSettings(testTel), &failingSink{})
+	require.NoError(t, err)
+	instance := connectorLogs.(*cursorConnector)
+	// Start is never called, so Shutdown drains synchronously without a sweep loop.
+
+	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	require.NoError(t, instance.ConsumeLogs(context.Background(), makeCursorLogs(
+		apiRequest(base, "a", "m", 1, 1),
+	)))
+	require.Len(t, instance.bursts, 1)
+
+	require.Error(t, instance.Shutdown(context.Background()))
+
+	var rm sdkmetric.ResourceMetrics
+	require.NoError(t, testTel.Reader.Collect(context.Background(), &rm))
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			require.NotEqual(t, "otelcol_coding_agent_turns_emitted", m.Name,
+				"a failed delivery must not count as an emitted turn")
+		}
+	}
+}
+
+func TestEmittedTurnMetricCountsSuccessfulDelivery(t *testing.T) {
+	testTel := componenttest.NewTelemetry()
+	t.Cleanup(func() { require.NoError(t, testTel.Shutdown(context.Background())) })
+
+	sink := &traceSink{}
+	connectorLogs, err := New(codex.NewDefaultConfig(), metadatatest.NewSettings(testTel), sink)
+	require.NoError(t, err)
+	instance := connectorLogs.(*cursorConnector)
+
+	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	require.NoError(t, instance.ConsumeLogs(context.Background(), makeCursorLogs(
+		apiRequest(base, "a", "m", 1, 1),
+	)))
+	require.NoError(t, instance.Shutdown(context.Background()))
+
+	metadatatest.AssertEqualCodingAgentTurnsEmitted(t, testTel,
+		[]sdkmetric.DataPoint[int64]{{
+			Attributes: attribute.NewSet(attribute.String("finish_reason", "shutdown")),
+			Value:      1,
+		}},
+		metricdatatest.IgnoreTimestamp())
 }

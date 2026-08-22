@@ -53,6 +53,13 @@ func testResourceRaw() map[string]any {
 	}
 }
 
+func mustBuildTrace(t *testing.T, burst *burstState, reason string) ptrace.Traces {
+	t.Helper()
+	traces, err := buildTrace(burst, reason, "0.1.0")
+	require.NoError(t, err)
+	return traces
+}
+
 func spansByName(traces ptrace.Traces) map[string][]ptrace.Span {
 	out := map[string][]ptrace.Span{}
 	for i := 0; i < traces.ResourceSpans().Len(); i++ {
@@ -69,7 +76,7 @@ func spansByName(traces ptrace.Traces) map[string][]ptrace.Span {
 }
 
 func TestBuildTraceRoot(t *testing.T) {
-	traces := buildTrace(burstForTest(), "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burstForTest(), "quiet")
 	roots := spansByName(traces)["invoke_agent cursor"]
 	require.Len(t, roots, 1)
 	root := roots[0]
@@ -101,7 +108,7 @@ func TestBuildTraceRoot(t *testing.T) {
 }
 
 func TestBuildTraceChatSpans(t *testing.T) {
-	traces := buildTrace(burstForTest(), "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burstForTest(), "quiet")
 	chats := spansByName(traces)["chat claude-4.5-sonnet"]
 	require.Len(t, chats, 1)
 	chat := chats[0]
@@ -118,7 +125,7 @@ func TestBuildTraceChatSpans(t *testing.T) {
 }
 
 func TestBuildTraceModellessChatKeepsBareName(t *testing.T) {
-	traces := buildTrace(burstForTest(), "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burstForTest(), "quiet")
 	chats := spansByName(traces)["chat"]
 	require.Len(t, chats, 1)
 	_, ok := chats[0].Attributes().Get("gen_ai.request.model")
@@ -126,7 +133,7 @@ func TestBuildTraceModellessChatKeepsBareName(t *testing.T) {
 }
 
 func TestBuildTraceErrorJoinAndCorrectionJoin(t *testing.T) {
-	traces := buildTrace(burstForTest(), "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burstForTest(), "quiet")
 	// ev-2 (ue-2) has an api_error and a correction; both attach there.
 	chat := spansByName(traces)["chat"][0]
 	require.Equal(t, ptrace.StatusCodeError, chat.Status().Code())
@@ -144,7 +151,7 @@ func TestBuildTraceErrorJoinAndCorrectionJoin(t *testing.T) {
 }
 
 func TestBuildTraceRootEvents(t *testing.T) {
-	traces := buildTrace(burstForTest(), "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burstForTest(), "quiet")
 	root := rootOf(t, traces)
 	require.Equal(t, 1, root.Events().Len())
 	event := root.Events().At(0)
@@ -160,7 +167,7 @@ func TestBuildTraceUnjoinedErrorAndCorrectionLandOnRoot(t *testing.T) {
 	// Drop the api_request carrying ue-2 so its error and correction have no
 	// join target inside the burst.
 	burst.events = append(burst.events[:1], burst.events[2:]...)
-	traces := buildTrace(burst, "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burst, "quiet")
 	root := rootOf(t, traces)
 	var names []string
 	for i := 0; i < root.Events().Len(); i++ {
@@ -171,20 +178,30 @@ func TestBuildTraceUnjoinedErrorAndCorrectionLandOnRoot(t *testing.T) {
 }
 
 func TestBuildTraceTimeoutSetsErrorStatus(t *testing.T) {
-	traces := buildTrace(burstForTest(), "timeout", "0.1.0")
+	traces := mustBuildTrace(t, burstForTest(), "timeout")
 	require.Equal(t, ptrace.StatusCodeError, rootOf(t, traces).Status().Code())
 }
 
+func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
+	burst := burstForTest()
+	// chan int cannot round-trip into pdata; FromRaw rejects it.
+	burst.resource = map[string]any{"service.name": "cursor", "poison": make(chan int)}
+	traces, err := buildTrace(burst, "quiet", "0.1.0")
+	require.Error(t, err)
+	require.NotNil(t, traces)
+	require.Len(t, spansByName(traces)["invoke_agent cursor"], 1)
+}
+
 func TestBuildTraceDeterministicIDs(t *testing.T) {
-	first := buildTrace(burstForTest(), "quiet", "0.1.0")
-	second := buildTrace(burstForTest(), "quiet", "0.1.0")
+	first := mustBuildTrace(t, burstForTest(), "quiet")
+	second := mustBuildTrace(t, burstForTest(), "quiet")
 	require.Equal(t, rootOf(t, first).TraceID(), rootOf(t, second).TraceID())
 	require.Equal(t, rootOf(t, first).SpanID(), rootOf(t, second).SpanID())
 
 	// A different first event id changes the trace id.
 	burst := burstForTest()
 	burst.events[0].EventID = "ev-other"
-	third := buildTrace(burst, "quiet", "0.1.0")
+	third := mustBuildTrace(t, burst, "quiet")
 	require.NotEqual(t, rootOf(t, first).TraceID(), rootOf(t, third).TraceID())
 }
 
@@ -198,7 +215,7 @@ func TestBuildTraceCopiesNothingOutsideAllowlist(t *testing.T) {
 			"cursor.some.new.field": "prompt-like content that must not propagate",
 		},
 	})
-	traces := buildTrace(burst, "quiet", "0.1.0")
+	traces := mustBuildTrace(t, burst, "quiet")
 	spans := spansByName(traces)
 	for _, group := range spans {
 		for _, span := range group {

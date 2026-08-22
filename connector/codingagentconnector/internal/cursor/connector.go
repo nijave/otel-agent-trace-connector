@@ -256,8 +256,17 @@ func (c *cursorConnector) emit(ctx context.Context, finalized []finalizedBurst) 
 		if fb.burst == nil {
 			continue
 		}
-		if err := c.next.ConsumeTraces(ctx, buildTrace(fb.burst, fb.reason, c.scopeVersion)); err != nil {
+		traces, err := buildTrace(fb.burst, fb.reason, c.scopeVersion)
+		if err != nil {
+			// Deliver anyway: the spans are intact even when resource
+			// attributes fail to copy, and returning the error would make the
+			// upstream retry rebuild the finalized conversation as a fresh
+			// burst.
+			c.set.Logger.Error("failed to fully reconstruct cursor trace", zap.Error(err))
+		}
+		if err := c.next.ConsumeTraces(ctx, traces); err != nil {
 			errs = errors.Join(errs, err)
+			continue
 		}
 		c.telemetry.recordEmitted(ctx, fb.reason, fb.burst.truncated)
 	}

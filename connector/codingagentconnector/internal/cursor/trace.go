@@ -5,6 +5,7 @@ package cursor
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -55,7 +56,7 @@ var cloudAgentAllowlist = []attrMapping{
 	{"cursor.mcp.server.name", "coding_agent.cursor.mcp.server.name"},
 }
 
-func buildTrace(burst *burstState, reason, scopeVersion string) ptrace.Traces {
+func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, error) {
 	events := append([]Event(nil), burst.events...)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp.Before(events[j].Timestamp) })
 	traceID := deterministicTraceID(burst.conversationID, events)
@@ -63,7 +64,7 @@ func buildTrace(burst *burstState, reason, scopeVersion string) ptrace.Traces {
 
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
-	_ = rs.Resource().Attributes().FromRaw(burst.resource)
+	resErr := rs.Resource().Attributes().FromRaw(burst.resource)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
 	ss.Scope().SetVersion(scopeVersion)
@@ -83,7 +84,10 @@ func buildTrace(burst *burstState, reason, scopeVersion string) ptrace.Traces {
 
 	appendChatSpans(ss.Spans(), traceID, rootID, events)
 	appendRootEvents(root.Events(), events)
-	return traces
+	if resErr != nil {
+		return traces, fmt.Errorf("copy burst resource attributes: %w", resErr)
+	}
+	return traces, nil
 }
 
 func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event, reason string) {
