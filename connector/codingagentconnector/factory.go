@@ -10,7 +10,6 @@ import (
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/consumer"
 
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
@@ -32,7 +31,7 @@ func createLogsToTraces(
 	cfg component.Config,
 	next consumer.Traces,
 ) (connector.Logs, error) {
-	return codex.New(cfg.(*Config), set, next)
+	return newLogsRouter(cfg.(*Config), set, next)
 }
 
 func createTracesToTraces(

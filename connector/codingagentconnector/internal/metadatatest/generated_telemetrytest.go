@@ -24,7 +24,7 @@ func NewSettings(tt *componenttest.Telemetry) connector.Settings {
 func AssertEqualCodingAgentActiveTurns(t *testing.T, tt *componenttest.Telemetry, dps []metricdata.DataPoint[int64], opts ...metricdatatest.Option) {
 	want := metricdata.Metrics{
 		Name:        "otelcol_coding_agent_active_turns",
-		Description: "Codex turns currently held in correlation state. [Development]",
+		Description: "Coding-agent turns currently held in correlation state, by provider edge. [Development]",
 		Unit:        "1",
 		Data: metricdata.Gauge[int64]{
 			DataPoints: dps,
@@ -38,7 +38,7 @@ func AssertEqualCodingAgentActiveTurns(t *testing.T, tt *componenttest.Telemetry
 func AssertEqualCodingAgentEventsDropped(t *testing.T, tt *componenttest.Telemetry, dps []metricdata.DataPoint[int64], opts ...metricdatatest.Option) {
 	want := metricdata.Metrics{
 		Name:        "otelcol_coding_agent_events_dropped",
-		Description: "Redelivered Codex events dropped by within-turn deduplication. [Development]",
+		Description: "Redelivered coding-agent events dropped by within-burst deduplication. [Development]",
 		Unit:        "1",
 		Data: metricdata.Sum[int64]{
 			Temporality: metricdata.CumulativeTemporality,

@@ -8,7 +8,7 @@ The following telemetry is emitted by this component.
 
 ### otelcol_coding_agent_active_turns
 
-Codex turns currently held in correlation state.
+Coding-agent turns currently held in correlation state, by provider edge.
 
 | Unit | Metric Type | Value Type | Stability |
 | ---- | ----------- | ---------- | --------- |
@@ -16,7 +16,7 @@ Codex turns currently held in correlation state.
 
 ### otelcol_coding_agent_events_dropped
 
-Redelivered Codex events dropped by within-turn deduplication.
+Redelivered coding-agent events dropped by within-burst deduplication.
 
 | Unit | Metric Type | Value Type | Monotonic | Stability |
 | ---- | ----------- | ---------- | --------- | --------- |

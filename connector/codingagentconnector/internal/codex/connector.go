@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
@@ -85,8 +86,10 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 	}
 	// Report active-turn count on demand so operators can watch state approach
 	// max_active_turns without the connector maintaining a hand-balanced counter.
+	// The provider attribute separates this edge's series from the cursor edge's,
+	// which registers the same shared gauge.
 	if err := builder.RegisterCodingAgentActiveTurnsCallback(func(_ context.Context, observer metric.Int64Observer) error {
-		observer.Observe(c.activeTurnCount())
+		observer.Observe(c.activeTurnCount(), metric.WithAttributes(attribute.String("provider", "codex")))
 		return nil
 	}); err != nil {
 		return nil, err

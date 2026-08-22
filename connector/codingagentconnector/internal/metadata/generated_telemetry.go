@@ -90,13 +90,13 @@ func NewTelemetryBuilder(settings component.TelemetrySettings, options ...Teleme
 	var err, errs error
 	builder.CodingAgentActiveTurns, err = builder.meter.Int64ObservableGauge(
 		"otelcol_coding_agent_active_turns",
-		metric.WithDescription("Codex turns currently held in correlation state. [Development]"),
+		metric.WithDescription("Coding-agent turns currently held in correlation state, by provider edge. [Development]"),
 		metric.WithUnit("1"),
 	)
 	errs = errors.Join(errs, err)
 	builder.CodingAgentEventsDropped, err = builder.meter.Int64Counter(
 		"otelcol_coding_agent_events_dropped",
-		metric.WithDescription("Redelivered Codex events dropped by within-turn deduplication. [Development]"),
+		metric.WithDescription("Redelivered coding-agent events dropped by within-burst deduplication. [Development]"),
 		metric.WithUnit("1"),
 	)
 	errs = errors.Join(errs, err)

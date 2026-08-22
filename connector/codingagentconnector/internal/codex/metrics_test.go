@@ -59,8 +59,9 @@ func counterValue(t *testing.T, rm metricdata.ResourceMetrics, name string, attr
 	return 0
 }
 
-func gaugeValue(t *testing.T, rm metricdata.ResourceMetrics, name string) int64 {
+func gaugeValue(t *testing.T, rm metricdata.ResourceMetrics, name string, attrs ...attribute.KeyValue) int64 {
 	t.Helper()
+	want := attribute.NewSet(attrs...)
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
 			if m.Name != name {
@@ -69,7 +70,12 @@ func gaugeValue(t *testing.T, rm metricdata.ResourceMetrics, name string) int64 
 			g, ok := m.Data.(metricdata.Gauge[int64])
 			require.True(t, ok, "metric %s is not an int64 gauge", name)
 			require.NotEmpty(t, g.DataPoints)
-			return g.DataPoints[len(g.DataPoints)-1].Value
+			for _, dp := range g.DataPoints {
+				if dp.Attributes.Equals(&want) {
+					return dp.Value
+				}
+			}
+			t.Fatalf("gauge %s has no datapoint for %v", name, want)
 		}
 	}
 	t.Fatalf("gauge %s not found", name)
@@ -143,5 +149,5 @@ func TestTelemetryReportsActiveTurns(t *testing.T) {
 		promptEvent("b", base),
 	)))
 	rm := collectMetrics(t, reader)
-	require.Equal(t, int64(2), gaugeValue(t, rm, "otelcol_coding_agent_active_turns"))
+	require.Equal(t, int64(2), gaugeValue(t, rm, "otelcol_coding_agent_active_turns", attribute.String("provider", "codex")))
 }
