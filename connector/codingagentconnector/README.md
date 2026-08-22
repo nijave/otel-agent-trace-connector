@@ -95,6 +95,15 @@ service:
 `coding_agent/claude` also handles the GenAI sources listed above; the
 instance name is historical.
 
+## Delivery semantics
+
+Redelivered records deduplicate only while their turn (Codex) or burst
+(Cursor) is still open. A record that arrives after its turn finalized starts
+a new turn and can produce a second, smaller trace. Trace and span IDs are
+deterministic, so a full replay merges idempotently downstream; consumers
+needing replay-proof reads deduplicate on trace ID. See
+[docs/design.md](../../docs/design.md) for details.
+
 ## Self-observability
 
 The connector reports its own metrics (turns emitted by finish reason, events
