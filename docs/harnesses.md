@@ -12,19 +12,22 @@ attribute names below as snapshots, not contracts.
 
 ## Summary
 
-| Harness | Signal | Token usage in OTel | Project/repo identity in OTel |
-| --- | --- | --- | --- |
-| **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here |
-| **Codex** | structured logs | yes (`response.completed`) | conversation ID, no repo path |
-| **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** |
-| **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** |
-| **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) |
-| **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) |
-| **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no |
+| Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics |
+| --- | --- | --- | --- | --- |
+| **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) |
+| **Codex** | structured logs | yes (`response.completed`) | conversation ID, no repo path | yes (native) |
+| **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) |
+| **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions |
+| **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) | no |
+| **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) | yes (native) |
+| **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no | yes, health gauges only |
+| **OpenCode** | traces + logs (native, new) | yes (native spans, no cost) | no (plugins add it) | via plugins |
+| **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no |
 
 Claude Code and Codex are the connector's existing edges and `docs/design.md`
-covers them; this file focuses on Cline, Pi, and Kilo, with Cursor and Hermes
-added from the same research.
+covers them. This file focuses on Cline, Pi, and Kilo, with Cursor, Hermes,
+OpenCode, and OpenHands added from the same research. The `## OTel metrics`
+section below covers the metrics dimension.
 
 ## Cline
 
@@ -195,6 +198,129 @@ emits a repo, working directory, or project. Closest are operator-set
 paths. Maintainer policy (PR #9596 closed as not-planned) keeps observability
 backends as standalone plugins, not core.
 
+## OpenCode
+
+OpenCode (`sst/opencode`, Anomaly/SST) is the most-starred open-source coding
+agent (~172K stars, ~7.5M MAU per opencode.ai). Native OTel exists in-tree on
+the dev branch (traces + logs only), but it's new and undocumented — on
+released versions (`opencode-ai` 1.1.51–1.1.65) the `experimental.openTelemetry`
+flag alone produced no spans. The richer story (metrics, cost, repo identity)
+comes from plugins.
+
+Two independent native paths:
+- **Vercel AI SDK spans** (`ai.streamText`, `ai.toolCall`), enabled by
+  `experimental.openTelemetry: true`; every span gets `session.id` (`ses_…`)
+  via a tracer proxy.
+- **Effect spans** (`Tool.execute` with `tool.name`/`message.id`/`tool.call_id`)
+  and Effect logs, exported whenever `OTEL_EXPORTER_OTLP_ENDPOINT` points at a
+  collector.
+
+**Token usage — yes, native on spans.** `ai.usage.*` (input/output/
+cache-read/cache-write/reasoning/total) on the root span, plus
+`gen_ai.usage.input_tokens`/`output_tokens` on per-step spans. No cost. Richer
+per-message token+cost data exists internally (`Session.getUsage`) but is not
+exported to OTel natively.
+
+**Project/repo identity — none natively.** Only `session.id`, OS username, and
+a random `opencode.run` id. No cwd, repo, branch, or remote URL. Plugins add
+identity:
+- **`felixti/opencode-otel-plugin`** — OTel GenAI semconv matching the
+  canonical model exactly (`invoke_agent opencode` → `chat {model}` →
+  `execute_tool {tool}`) with full VCS identity (`vcs.repository.url.full`,
+  `vcs.repository.ref.name`, `enduser.id` = git author email,
+  `opencode.directory`, `opencode.worktree`). No cost.
+- **`@devtheops/opencode-plugin-otel`** — de-facto standard (SigNoz/Grafana/
+  Honeycomb/Datadog docs). Metrics + logs + traces using **OpenInference**
+  conventions; full token/cost metrics; repo identity only as a hashed
+  `project.id` (`Hash.fast("git-remote:<normalized-remote>")`).
+- **`opentelemetry-hooks`** — traces + logs with `cwd` + `session_id`; no tokens.
+
+## OpenHands
+
+OpenHands (`OpenHands/OpenHands`, formerly All-Hands-AI) runs on the
+`software-agent-sdk` (Python), which is where native OTel lives — via the
+Laminar SDK (`lmnr`) as the OTel layer, exporting standard OTLP traces. The
+main repo itself is now the Electron/TypeScript desktop app with PostHog
+analytics, not OTel.
+
+**Token usage — yes, on LLM spans.** `gen_ai.usage.input_tokens`,
+`gen_ai.usage.output_tokens`, `llm.usage.total_tokens`,
+`gen_ai.usage.cost`/`input_cost`/`output_cost`, `gen_ai.system`,
+`gen_ai.request.model`, `gen_ai.response.model`. No cache-token attributes on
+spans by default; fine-grained cache/reasoning tokens exist only in-process
+(served over the agent-server API), not as OTel.
+
+**Project/repo identity — not attached.** The workspace working dir exists
+in-process but is never written to spans; the desktop app deliberately does not
+forward repo/branch/workspace to the agent-server. You get
+`lmnr.association.properties.session_id` (conversation UUID), `user_id` (if set
+by the deployment), and `conversation.tags.*` (automation run identity, not
+repo). To get repo identity you must pass it yourself via `observability_metadata`
+or `tags` at conversation start.
+
+## OTel metrics
+
+Whether each harness emits OTel metrics, with the instrument names. Research
+refreshed 2026-08-21; instrument names come from source or vendor docs unless
+noted.
+
+**Native OTel metrics:**
+- **Codex** — in-tree `codex-otel` crate. Counters `codex.thread.started`,
+  `codex.conversation.turn.count`, `codex.tool.call`, `codex.tool.unified_exec`,
+  `codex.websocket.request`, `codex.plugins.startup_sync`; histograms
+  `codex.turn.e2e_duration_ms`, `codex.turn.ttft/ttfm.duration_ms`,
+  `codex.turn.token_usage` (by `type`), `codex.turn.tool.call`,
+  `codex.mcp.tools.*.duration_ms`, `codex.websocket.request.duration_ms`. Needs
+  `analytics_enabled = true` plus `[otel.metrics_exporter.otlp-http]` in
+  `~/.codex/config.toml`; default exporter is `statsig`.
+- **Claude Code** — meter scope `com.anthropic.claude_code`:
+  `claude_code.session.count` (Sum/delta), `claude_code.token.usage` (by
+  `type`), `claude_code.cost.usage`, `claude_code.lines_of_code.count`.
+  `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `OTEL_METRICS_EXPORTER=otlp`.
+- **openai-v2 / util-genai** — histograms `gen_ai.client.operation.duration`,
+  `gen_ai.client.token.usage`; experimental adds
+  `gen_ai.client.operation.time_to_first_chunk`,
+  `gen_ai.client.operation.time_per_output_chunk`. Standard OTel SDK config.
+- **Strands** — in-tree `MetricsClient`. Counters `strands.event_loop.cycle_count`,
+  `strands.event_loop.start_cycle`/`end_cycle`, `strands.tool.call_count`/
+  `success_count`/`error_count`; histograms `strands.event_loop.latency`,
+  `strands.tool.duration`, `strands.event_loop.{input,output,cache_read,
+  cache_write}.tokens`, `strands.model.time_to_first_token`.
+- **Cline** — 30+ `cline.*` instruments via remote config (Enterprise):
+  `cline.turns.*`, `cline.tokens.input/output.*`, `cline.cost.*`,
+  `cline.cache.*`, `cline.tool.calls.*`, `cline.errors.*`,
+  `cline.api.ttft.seconds`/`duration.seconds`/`throughput.tokens_per_second`,
+  `cline.hooks.*`, `cline.ai_output.accepted/rejected.*`,
+  `cline.grpc.response.size_bytes`, gauge `cline.workspace.active_roots`.
+- **Cursor** — Enterprise beta, server-side: `cursor.token.usage` (by
+  `cursor.token.type`), `cursor.tool.calls` (by `cursor.tool.kind`),
+  `cursor.cost.usage`. Delta temporality. Metrics + logs only, no traces.
+- **Hermes** — gauges only, gateway/cron health: `hermes.gateway.up/state/busy/
+  drainable/active_agents/background_work/background_delegations/
+  restart_requested`, `hermes.platform.up/degraded`, cron scheduler gauges. No
+  token/cost/usage metrics.
+
+**No native OTel metrics:**
+- **Kilo** — native OTLP traces + logs only; internal telemetry goes to PostHog.
+- **OpenHands** — OTel traces only (via Laminar); token/cost/latency metrics
+  exist only in-process (`llm.metrics`, `conversation.conversation_stats`), not
+  as an OTel/Prometheus endpoint.
+
+**Metrics via third-party extensions/plugins:**
+- **Pi** — no native telemetry. `pi-otel-telemetry`: `pi.tool.duration`
+  (histogram), `pi.turns`, `pi.prompts`, `pi.session.duration`.
+  `devkade/pi-opentelemetry`: session/turn/tool/prompt/token/cost/duration
+  (instrument names not enumerated). `@the-agency/pi-observability` and
+  `NikiforovAll/pi-otel` are traces-only (metrics not verified).
+- **OpenCode** — native `experimental.openTelemetry` is traces-focused and
+  reported broken for `opencode run`. Metrics come from plugins:
+  `@devtheops/opencode-plugin-otel` mirrors Claude Code's catalog
+  (`opencode.session.count`, `opencode.token.usage`, `opencode.cost.usage`,
+  `opencode.lines_of_code.*`, `opencode.tool.duration`, `opencode.cache.count`,
+  `opencode.session.duration`, `opencode.message.count`, `opencode.model.usage`,
+  `opencode.retry.count`); `@gcornut/opencode-otel` offers 8 counters with a
+  `telemetryProfile: "claude-code"` rename.
+
 ## Relevance to the connector
 
 The connector does not sort Cline, Pi, Kilo, Cursor, or Hermes today, and the
@@ -245,3 +371,9 @@ candidate.
 - Hermes OTel plugin (tokens): https://github.com/briancaffey/hermes-otel
 - Hermes rejected in-tree OTel PR (policy): https://github.com/NousResearch/hermes-agent/pull/9596
 - Cross-harness OTel normalization: https://github.com/o11y-dev/opentelemetry-hooks
+- OpenCode: https://github.com/sst/opencode; plugin https://github.com/DEVtheOPS/opencode-plugin-otel
+- OpenHands SDK observability: https://docs.openhands.dev/sdk/guides/observability,
+  https://docs.openhands.dev/sdk/guides/metrics
+- Codex OTel metrics: https://github.com/openai/codex/blob/main/codex-rs/otel/README.md
+- Claude Code monitoring (metrics): https://code.claude.com/docs/en/monitoring-usage
+- Strands metrics: https://strandsagents.com/docs/user-guide/observability-evaluation/metrics/
