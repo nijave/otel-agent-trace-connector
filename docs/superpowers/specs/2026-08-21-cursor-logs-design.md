@@ -268,8 +268,12 @@ untouched, with operator-side retention and access policy.
 
 ## Configuration and component surface
 
-No new configuration fields, component types, `metadata.yaml` changes, or
-self-observability instruments. `Config` remains the alias to the existing
+No new configuration fields, component types, or self-observability
+instruments. Two mdatagen artifacts do change: the turn-state metric
+descriptions lose their Codex-specific wording (both edges share the
+instruments now), and the active-turns gauge splits into a `provider` series
+per edge because two identical async gauge registrations on one meter would
+emit colliding observations. `Config` remains the alias to the existing
 provider-neutral knobs (`turn_timeout`, `reorder_window`, `max_active_turns`,
 `max_events_per_turn`); both logs edges consume them with per-edge semantics
 documented (Codex quiet-closes only after a completion; Cursor quiet-closes
