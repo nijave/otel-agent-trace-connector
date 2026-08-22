@@ -672,7 +672,7 @@ make stale-output detection ineffective.
 
 - Codex state does not persist across crashes.
 - Collector replicas require consistent routing by conversation ID or
-  shared state.
+  shared state (see [multi-instance-ha.md](multi-instance-ha.md)).
 - The connector intentionally ignores coding-agent logs without a conversation ID.
 - Implemented sources:
   - Codex log synthesis.
