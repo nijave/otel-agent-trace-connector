@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding-agent OTel Collector &mdash; architecture</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2129; --stroke:#30363d;
+    --text:#c9d1d9; --muted:#8b949e;
+    --logs:#58a6ff; --traces:#a371f7; --stateful:#d29922; --stateless:#3fb950;
+    --canonical:#f0883e;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--text);
+         font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  h1 { font-size:20px; margin:0 0 4px; color:#f0f6fc; }
+  h2 { font-size:16px; margin:32px 0 10px; color:#f0f6fc;
+       border-bottom:1px solid var(--stroke); padding-bottom:6px; }
+  p.lead { color:var(--muted); margin:0 0 16px; max-width:110ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+         font-size:.92em; color:var(--logs); }
+  .wrap { max-width:1780px; margin:0 auto; }
+  svg text { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .svgbox { background:var(--panel); border:1px solid var(--stroke);
+            border-radius:8px; padding:12px; overflow-x:auto; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--stroke);
+          border-radius:8px; padding:12px 14px; }
+  .card h3 { margin:0 0 2px; font-size:13.5px; font-family:ui-monospace,Menlo,Consolas,monospace;
+             color:#f0f6fc; }
+  .card p.sub { margin:0 0 10px; color:var(--muted); font-size:12.5px; }
+  ul.types { list-style:none; margin:0; padding:0; }
+  ul.types li { background:var(--panel2); border:1px solid var(--stroke); border-radius:6px;
+                padding:7px 10px; margin:6px 0; font-size:12.5px; }
+  ul.types li code { color:var(--logs); font-size:12px; }
+  .badge { display:inline-block; font-size:10.5px; font-weight:600; letter-spacing:.04em;
+           border-radius:999px; padding:2px 8px; vertical-align:1px; margin-left:6px;
+           font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .badge.stateful { color:var(--stateful); border:1px solid var(--stateful); }
+  .badge.stateless { color:var(--stateless); border:1px solid var(--stateless); }
+  .badge.gen { color:var(--muted); border:1px solid var(--muted); }
+  table.reasons { border-collapse:collapse; width:100%; max-width:900px; font-size:13px; }
+  table.reasons th, table.reasons td { border:1px solid var(--stroke); padding:6px 10px; text-align:left; }
+  table.reasons th { background:var(--panel2); color:#f0f6fc; font-size:12.5px; }
+  pre.tree { background:var(--panel); border:1px solid var(--stroke); border-radius:8px;
+             padding:12px 16px; font-family:ui-monospace,Menlo,Consolas,monospace;
+             font-size:12.5px; overflow-x:auto; max-width:760px; }
+  footer { margin-top:28px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Coding-agent OpenTelemetry Collector &mdash; clients, flows, and code structure</h1>
+<p class="lead">
+  Custom Collector distribution (<code>otelcol-coding-agents</code>, OCB-pinned) that normalizes
+  coding-agent telemetry into a canonical trace per user turn while exporting raw vendor
+  telemetry in parallel. Source of truth: <code>builder-config.yaml</code>,
+  <code>collector-config.yaml</code>, <code>docs/design.md</code>.
+</p>
+
+<h2>End-to-end flow through the Collector</h2>
+<div class="svgbox">
+<svg viewBox="0 0 1720 730" width="100%" style="min-width:1400px"
+     xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Flow of coding-agent telemetry through the collector pipelines into raw and canonical exporters">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8b949e"/></marker>
+    <marker id="arrLogs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
+    <marker id="arrTraces" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a371f7"/></marker>
+    <marker id="arrCanon" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f0883e"/></marker>
+  </defs>
+
+  <text x="160" y="34" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">CLIENTS (SOURCES)</text>
+  <text x="490" y="34" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">INGRESS</text>
+  <text x="770" y="34" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">INPUT PIPELINES</text>
+  <text x="1085" y="34" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">coding_agent CONNECTOR EDGES</text>
+  <text x="1360" y="34" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">OUTPUT PIPELINE</text>
+  <text x="1600" y="34" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">EXPORTERS</text>
+
+  <!-- clients -->
+  <g>
+    <rect x="20" y="60" width="280" height="86" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="84" fill="#f0f6fc" font-size="13" font-weight="600">Codex CLI</text>
+    <text x="36" y="102" fill="#58a6ff" font-size="11.5">OTLP logs &#8212; codex.* events</text>
+    <text x="36" y="118" fill="#8b949e" font-size="11">key attr: conversation.id &#183; gRPC or HTTP</text>
+
+    <rect x="20" y="166" width="280" height="104" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="190" fill="#f0f6fc" font-size="13" font-weight="600">Cursor (cloud export)</text>
+    <text x="36" y="208" fill="#58a6ff" font-size="11.5">OTLP/HTTP logs &#8212; cursor.telemetry scope</text>
+    <text x="36" y="224" fill="#8b949e" font-size="11">keys: cursor.conversation.id / cursor.event.id</text>
+    <text x="36" y="240" fill="#8b949e" font-size="11">+ metrics (no metrics pipeline in bundled config)</text>
+    <text x="36" y="256" fill="#8b949e" font-size="11">at-least-once, unordered delivery</text>
+
+    <rect x="20" y="300" width="280" height="72" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="324" fill="#f0f6fc" font-size="13" font-weight="600">Claude Code</text>
+    <text x="36" y="342" fill="#a371f7" font-size="11.5">OTLP traces &#8212; claude_code.* spans (beta)</text>
+    <text x="36" y="358" fill="#8b949e" font-size="11">native span hierarchy preserved</text>
+
+    <rect x="20" y="402" width="280" height="86" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="426" fill="#f0f6fc" font-size="13" font-weight="600">openai-v2 / util-genai agents</text>
+    <text x="36" y="444" fill="#a371f7" font-size="11.5">OTLP traces &#8212; GenAI semconv scopes</text>
+    <text x="36" y="460" fill="#8b949e" font-size="11">opentelemetry.instrumentation.openai_v2</text>
+    <text x="36" y="476" fill="#8b949e" font-size="11">opentelemetry.util.genai.handler</text>
+
+    <rect x="20" y="518" width="280" height="72" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="542" fill="#f0f6fc" font-size="13" font-weight="600">Strands Agents SDK</text>
+    <text x="36" y="560" fill="#a371f7" font-size="11.5">OTLP traces &#8212; strands.telemetry.tracer</text>
+    <text x="36" y="576" fill="#8b949e" font-size="11">content in events by default (redaction opt-in)</text>
+  </g>
+
+  <!-- receiver -->
+  <g>
+    <rect x="380" y="220" width="220" height="200" rx="8" fill="#1c2129" stroke="#58a6ff"/>
+    <text x="490" y="250" fill="#f0f6fc" font-size="13.5" font-weight="600" text-anchor="middle">otlp receiver</text>
+    <text x="490" y="286" fill="#c9d1d9" font-size="12" text-anchor="middle">gRPC :4317</text>
+    <text x="490" y="306" fill="#c9d1d9" font-size="12" text-anchor="middle">HTTP :4318 (/v1/logs, /v1/traces)</text>
+    <text x="490" y="340" fill="#8b949e" font-size="11" text-anchor="middle">health_check ext :13133</text>
+    <text x="490" y="356" fill="#8b949e" font-size="11" text-anchor="middle">(liveness for LB / orchestrator)</text>
+  </g>
+
+  <!-- input pipelines -->
+  <g>
+    <rect x="650" y="120" width="240" height="150" rx="8" fill="#161b22" stroke="#58a6ff"/>
+    <text x="666" y="144" fill="#f0f6fc" font-size="13" font-weight="600">pipeline logs/vendor</text>
+    <text x="666" y="164" fill="#8b949e" font-size="11.5">processors: batch</text>
+    <text x="666" y="186" fill="#c9d1d9" font-size="12">exporters:</text>
+    <text x="676" y="203" fill="#8b949e" font-size="11.5">&#8594; raw exporter (fan-out copy)</text>
+    <text x="676" y="219" fill="#8b949e" font-size="11.5">&#8594; coding_agent (claim router)</text>
+    <text x="666" y="252" fill="#58a6ff" font-size="11">claims: codex.* names &#183; cursor scope</text>
+
+    <rect x="650" y="430" width="240" height="150" rx="8" fill="#161b22" stroke="#a371f7"/>
+    <text x="666" y="454" fill="#f0f6fc" font-size="13" font-weight="600">pipeline traces/native</text>
+    <text x="666" y="474" fill="#8b949e" font-size="11.5">processors: batch</text>
+    <text x="666" y="496" fill="#c9d1d9" font-size="12">exporters:</text>
+    <text x="676" y="513" fill="#8b949e" font-size="11.5">&#8594; raw exporter (fan-out copy)</text>
+    <text x="676" y="529" fill="#8b949e" font-size="11.5">&#8594; coding_agent/claude (normalizers)</text>
+    <text x="666" y="562" fill="#a371f7" font-size="11">auto-detect by instrumentation scope</text>
+  </g>
+
+  <!-- connector container -->
+  <g>
+    <rect x="950" y="88" width="270" height="520" rx="10" fill="#10151c" stroke="#30363d" stroke-dasharray="6 4"/>
+    <text x="1085" y="112" fill="#8b949e" font-size="12" text-anchor="middle" letter-spacing="1">connector type coding_agent</text>
+
+    <rect x="970" y="130" width="230" height="106" rx="8" fill="#161b22" stroke="#d29922"/>
+    <text x="986" y="152" fill="#f0f6fc" font-size="12.5" font-weight="600">codex edge&#160;&#160;<tspan fill="#d29922" font-size="10.5">&#9679; stateful</tspan></text>
+    <text x="986" y="170" fill="#c9d1d9" font-size="11">turn state keyed on conversation.id</text>
+    <text x="986" y="186" fill="#8b949e" font-size="11">sweep loop &#183; LRU bound &#183; dedupe</text>
+    <text x="986" y="202" fill="#8b949e" font-size="11">synthesizes root + chat + tool spans</text>
+    <text x="986" y="218" fill="#8b949e" font-size="11">completed/timeout/superseded/shutdown/evicted</text>
+
+    <rect x="970" y="256" width="230" height="106" rx="8" fill="#161b22" stroke="#d29922"/>
+    <text x="986" y="278" fill="#f0f6fc" font-size="12.5" font-weight="600">cursor edge&#160;&#160;<tspan fill="#d29922" font-size="10.5">&#9679; stateful</tspan></text>
+    <text x="986" y="296" fill="#c9d1d9" font-size="11">bursts keyed on cursor.conversation.id</text>
+    <text x="986" y="312" fill="#8b949e" font-size="11">dedupe on cursor.event.id</text>
+    <text x="986" y="328" fill="#8b949e" font-size="11">usage rollups &#183; usage_event.id joins</text>
+    <text x="986" y="344" fill="#8b949e" font-size="11">quiet/timeout/shutdown/evicted</text>
+
+    <line x1="962" y1="388" x2="1208" y2="388" stroke="#30363d"/>
+
+    <rect x="970" y="416" width="230" height="80" rx="8" fill="#161b22" stroke="#3fb950"/>
+    <text x="986" y="438" fill="#f0f6fc" font-size="12.5" font-weight="600">claude edge&#160;&#160;<tspan fill="#3fb950" font-size="10.5">&#9679; stateless</tspan></text>
+    <text x="986" y="456" fill="#8b949e" font-size="11">rename interaction / llm_request / tool spans</text>
+    <text x="986" y="472" fill="#8b949e" font-size="11">copy group; keep IDs + hierarchy intact</text>
+
+    <rect x="970" y="516" width="230" height="76" rx="8" fill="#161b22" stroke="#3fb950"/>
+    <text x="986" y="538" fill="#f0f6fc" font-size="12.5" font-weight="600">genai edge&#160;&#160;<tspan fill="#3fb950" font-size="10.5">&#9679; stateless</tspan></text>
+    <text x="986" y="556" fill="#8b949e" font-size="11">scope allowlist claim &#8594; normalize names,</text>
+    <text x="986" y="572" fill="#8b949e" font-size="11">map tokens, strip content attrs + events</text>
+  </g>
+
+  <!-- canonical pipeline -->
+  <g>
+    <rect x="1270" y="230" width="180" height="250" rx="8" fill="#161b22" stroke="#f0883e"/>
+    <text x="1360" y="256" fill="#f0f6fc" font-size="13" font-weight="600" text-anchor="middle">pipeline</text>
+    <text x="1360" y="276" fill="#f0883e" font-size="13.5" font-weight="700" text-anchor="middle">traces/canonical</text>
+    <text x="1286" y="304" fill="#8b949e" font-size="11">receivers: both edges</text>
+    <text x="1286" y="320" fill="#8b949e" font-size="11">processors: batch</text>
+    <text x="1286" y="348" fill="#c9d1d9" font-size="11.5">content-free output:</text>
+    <text x="1286" y="364" fill="#c9d1d9" font-size="11.5">invoke_agent / chat /</text>
+    <text x="1286" y="380" fill="#c9d1d9" font-size="11.5">execute_tool vocabulary</text>
+    <text x="1286" y="406" fill="#8b949e" font-size="11">prompt/tool content never</text>
+    <text x="1286" y="422" fill="#8b949e" font-size="11">copied from raw records</text>
+    <text x="1286" y="450" fill="#8b949e" font-size="11">finish_reason on root;</text>
+    <text x="1286" y="464" fill="#8b949e" font-size="11">timeout roots = error status</text>
+  </g>
+
+  <!-- exporters -->
+  <g>
+    <rect x="1500" y="110" width="200" height="100" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="1516" y="132" fill="#f0f6fc" font-size="12.5" font-weight="600">raw logs</text>
+    <text x="1516" y="152" fill="#8b949e" font-size="11">file/raw (e2e config)</text>
+    <text x="1516" y="168" fill="#8b949e" font-size="11">awss3/raw-logs (S3 reference)</text>
+    <text x="1516" y="192" fill="#8b949e" font-size="10.5">persistent sending_queue + file_storage</text>
+
+    <rect x="1500" y="330" width="200" height="100" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="1516" y="352" fill="#f0f6fc" font-size="12.5" font-weight="600">raw native traces</text>
+    <text x="1516" y="372" fill="#8b949e" font-size="11">file/raw-traces (e2e config)</text>
+    <text x="1516" y="388" fill="#8b949e" font-size="11">awss3/raw-traces (S3 reference)</text>
+    <text x="1516" y="412" fill="#8b949e" font-size="10.5">full fidelity, incl. content-bearing attrs</text>
+
+    <rect x="1500" y="550" width="200" height="100" rx="8" fill="#161b22" stroke="#f0883e"/>
+    <text x="1516" y="572" fill="#f0f6fc" font-size="12.5" font-weight="600">canonical traces</text>
+    <text x="1516" y="592" fill="#8b949e" font-size="11">file/canonical (e2e config)</text>
+    <text x="1516" y="608" fill="#8b949e" font-size="11">awss3/canonical-traces (S3 ref)</text>
+    <text x="1516" y="632" fill="#8b949e" font-size="10.5">normalized, content-free</text>
+  </g>
+
+  <!-- clients to receiver -->
+  <path d="M 300 103 H 340 V 260 H 376" fill="none" stroke="#58a6ff" stroke-width="1.6" marker-end="url(#arrLogs)"/>
+  <path d="M 300 218 H 350 V 300 H 376" fill="none" stroke="#58a6ff" stroke-width="1.6" marker-end="url(#arrLogs)"/>
+  <path d="M 300 336 H 350 V 340 H 376" fill="none" stroke="#a371f7" stroke-width="1.6" marker-end="url(#arrTraces)"/>
+  <path d="M 300 445 H 350 V 380 H 376" fill="none" stroke="#a371f7" stroke-width="1.6" marker-end="url(#arrTraces)"/>
+  <path d="M 300 554 H 340 V 400 H 376" fill="none" stroke="#a371f7" stroke-width="1.6" marker-end="url(#arrTraces)"/>
+
+  <!-- receiver to pipelines -->
+  <path d="M 600 262 H 646" fill="none" stroke="#58a6ff" stroke-width="1.8" marker-end="url(#arrLogs)"/>
+  <text x="623" y="252" fill="#58a6ff" font-size="10.5" text-anchor="middle">logs</text>
+  <path d="M 600 380 H 620 V 505 H 646" fill="none" stroke="#a371f7" stroke-width="1.8" marker-end="url(#arrTraces)"/>
+  <text x="622" y="452" fill="#a371f7" font-size="10.5" text-anchor="middle">traces</text>
+
+  <!-- logs pipeline fan-out -->
+  <path d="M 890 165 H 930 V 183 H 966" fill="none" stroke="#58a6ff" stroke-width="1.6" marker-end="url(#arrLogs)"/>
+  <path d="M 890 212 H 930 V 309 H 966" fill="none" stroke="#58a6ff" stroke-width="1.6" marker-end="url(#arrLogs)"/>
+  <!-- raw fan-out routed above the connector container -->
+  <path d="M 890 140 H 920 V 70 H 1580 V 106" fill="none" stroke="#8b949e" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+  <text x="1300" y="64" fill="#8b949e" font-size="10.5">raw logs copy bypasses normalization</text>
+  <path d="M 890 470 H 935 V 82 H 1620 V 326" fill="none" stroke="#8b949e" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+  <text x="1300" y="96" fill="#8b949e" font-size="10.5">raw native traces copy bypasses normalization</text>
+
+  <!-- traces pipeline fan-out -->
+  <path d="M 890 483 H 930 V 456 H 966" fill="none" stroke="#a371f7" stroke-width="1.6" marker-end="url(#arrTraces)"/>
+  <path d="M 890 530 H 930 V 554 H 966" fill="none" stroke="#a371f7" stroke-width="1.6" marker-end="url(#arrTraces)"/>
+
+  <!-- edges to canonical -->
+  <path d="M 1200 183 H 1242 V 300 H 1266" fill="none" stroke="#f0883e" stroke-width="1.6" marker-end="url(#arrCanon)"/>
+  <path d="M 1200 309 H 1232 V 330 H 1266" fill="none" stroke="#f0883e" stroke-width="1.6" marker-end="url(#arrCanon)"/>
+  <path d="M 1200 456 H 1242 V 370 H 1266" fill="none" stroke="#f0883e" stroke-width="1.6" marker-end="url(#arrCanon)"/>
+  <path d="M 1200 554 H 1232 V 420 H 1266" fill="none" stroke="#f0883e" stroke-width="1.6" marker-end="url(#arrCanon)"/>
+
+  <!-- canonical to exporter -->
+  <path d="M 1450 355 H 1472 V 600 H 1496" fill="none" stroke="#f0883e" stroke-width="1.8" marker-end="url(#arrCanon)"/>
+
+  <!-- legend -->
+  <g>
+    <rect x="20" y="650" width="1680" height="60" rx="8" fill="#10151c" stroke="#30363d"/>
+    <text x="40" y="686" fill="#8b949e" font-size="11" letter-spacing="1">LEGEND</text>
+    <line x1="120" y1="682" x2="160" y2="682" stroke="#58a6ff" stroke-width="2"/><text x="168" y="686" fill="#c9d1d9" font-size="11">logs</text>
+    <line x1="220" y1="682" x2="260" y2="682" stroke="#a371f7" stroke-width="2"/><text x="268" y="686" fill="#c9d1d9" font-size="11">traces</text>
+    <line x1="330" y1="682" x2="370" y2="682" stroke="#f0883e" stroke-width="2"/><text x="378" y="686" fill="#c9d1d9" font-size="11">canonical traces</text>
+    <line x1="500" y1="682" x2="540" y2="682" stroke="#8b949e" stroke-width="2" stroke-dasharray="5 4"/><text x="548" y="686" fill="#c9d1d9" font-size="11">raw fan-out (unmodified copy)</text>
+    <rect x="740" y="674" width="14" height="14" fill="none" stroke="#d29922"/><text x="762" y="686" fill="#c9d1d9" font-size="11">stateful edge (in-memory per instance)</text>
+    <rect x="1010" y="674" width="14" height="14" fill="none" stroke="#3fb950"/><text x="1032" y="686" fill="#c9d1d9" font-size="11">stateless edge</text>
+  </g>
+</svg>
+</div>
+
+<h2>Code and class structure</h2>
+<p class="lead">
+  One component type with two edges. The module layout mirrors
+  opentelemetry-collector-contrib: public Collector surface at the module root,
+  provider logic in internal packages so schemas stay out of the public API.
+</p>
+
+<div class="cards">
+  <div class="card">
+    <h3>connector/codingagentconnector <span class="badge gen">component root</span></h3>
+    <p class="sub">Public Collector surface (own Go module, built into the distribution via OCB)</p>
+    <ul class="types">
+      <li><code>NewFactory</code> &#8212; factory.go; registers the logs and traces edges (<code>connector.NewFactory</code>), default config, stability from generated metadata.</li>
+      <li><code>Config = codex.Config</code> &#8212; config.go alias so mdatagen docs/validation stay on the component type.</li>
+      <li><code>logsRouter</code> &#8212; logs.go; fans each logs batch to the codex and cursor claimers; Start/Shutdown fan out because both edges own sweep loops and drain state. Each record lands in at most one edge; unclaimed records stay out of canonical output.</li>
+      <li><code>tracesRouter</code> &#8212; traces.go; fans each traces batch to the claude and genai normalizers; Claude claims first so a resource group is emitted at most once.</li>
+      <li><code>internal/metadata</code> &#8212; mdatagen-generated status and TelemetryBuilder (self-metrics wiring).</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>internal/codex <span class="badge stateful">stateful</span></h3>
+    <p class="sub">Reconstructs one canonical trace per user turn from structured Codex logs</p>
+    <ul class="types">
+      <li><code>codingAgentConnector</code> &#8212; connector.go; ConsumeLogs entrypoint, mutex-guarded <code>turns map[string]*turnState</code>, background sweepLoop ticker; Shutdown drains all active turns with finish reason &#8220;shutdown&#8221;.</li>
+      <li><code>turnState</code> &#8212; event slice, seen-fingerprint set, first/last/lastSeen timestamps, completeSeen/completionAt, promptSeen, truncated flag.</li>
+      <li><code>parseEvent</code> (event.go) &#8212; claims records whose <code>event.name</code> starts <code>codex.</code> and carries <code>conversation.id</code>; strips prompt/arguments/output before retention.</li>
+      <li><code>fingerprint()</code> &#8212; sha256 over name, timestamp, attributes; dedupes at-least-once redelivery inside a live turn so token usage is not double-counted.</li>
+      <li><code>buildTrace</code> (trace.go) &#8212; deterministic IDs: traceID = sha256(conversationID + prompt timestamp). One chat span per turn-completion <code>response.completed</code> (<code>ttft_ms</code> distinguishes the timing-only duplicate), execute_tool spans per tool_result joined by call_id, remaining events as root span events.</li>
+      <li>Bounds and finalization &#8212; <code>max_active_turns</code> LRU eviction, <code>max_events_per_turn</code> truncation flag; reasons: completed, superseded, timeout, shutdown, evicted.</li>
+      <li><code>telemetry</code> (metrics.go) &#8212; coding_agent.active_turns gauge (provider=codex) plus emitted/dropped/truncated counters.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>internal/cursor <span class="badge stateful">stateful</span></h3>
+    <p class="sub">Correlates native Cursor logs into activity-burst traces (Enterprise beta wire)</p>
+    <ul class="types">
+      <li><code>cursorConnector</code> &#8212; connector.go; same lifecycle shape as codex: bursts map, sweep loop, flushAll on Shutdown.</li>
+      <li><code>burstState</code> &#8212; event slice plus seen set keyed exactly on <code>cursor.event.id</code> (deterministic across retries/Kafka replay); same bounds as turnState.</li>
+      <li><code>ParseRecord</code> (event.go) &#8212; claims the <code>cursor.telemetry</code> scope when a conversation id is present; declines codex-named records.</li>
+      <li><code>buildTrace</code> (trace.go) &#8212; root invoke_agent cursor spanning the burst; one point chat span per api_request (no durations invented); cache token rollups; api_error / api_correction join chat spans via <code>cursor.usage_event.id</code>; unmatched records become root events. Attribute policy is an allowlist, so canonical output stays content-free.</li>
+      <li>Finalization &#8212; quiet (normal close), timeout measured from first event (error status), shutdown, evicted.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>internal/claude + internal/genai <span class="badge stateless">stateless</span></h3>
+    <p class="sub">Traces-to-traces normalization; copies pdata, preserves all IDs and hierarchy</p>
+    <ul class="types">
+      <li><code>claude.New</code> (normalizer.go) &#8212; renames only interaction / llm_request / tool span types to the canonical vocabulary; everything else keeps native names; maps session.id to gen_ai.conversation.id.</li>
+      <li><code>genai normalizer</code> (normalizer.go) &#8212; claims resource groups by scope-name allowlist prefixes (openai_v2, util.genai, strands.telemetry, plus the announced upstream rename), after the Claude-first check.</li>
+      <li>Name table &#8212; rewrites only when the subject attribute is present: chat {model}, invoke_agent {agent}, execute_tool {tool}.</li>
+      <li>Attribute work &#8212; legacy token-key mapping (prompt/completion &#8594; input/output), gen_ai.system fallback for provider, provenance attributes, blanket removal of content-bearing attributes and events.</li>
+      <li>Copy-on-write &#8212; reports MutatesData:false and copies before modifying so Collector fan-out stays safe.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>distribution + deployment files <span class="badge gen">packaging</span></h3>
+    <p class="sub">What turns the component into a running Collector</p>
+    <ul class="types">
+      <li><code>builder-config.yaml</code> &#8212; pins OCB v0.156.0; otlp receiver, batch + resource processors, otlp/awss3/file exporters, file_storage + healthcheck extensions, this connector.</li>
+      <li><code>Dockerfile</code> &#8212; two-stage build; OCB generates the dist main package, ships a single binary plus bundled config; EXPOSE 4317 / 4318 / 13133.</li>
+      <li><code>collector-config.yaml</code> &#8212; e2e shape: three pipelines (logs/vendor, traces/native, traces/canonical) with file exporters.</li>
+      <li><code>examples/otelcol-s3.yaml</code> &#8212; production reference: one S3 prefix per stream, persistent sending queues on local file_storage with fsync, bounded queue size and database size.</li>
+      <li>State contract &#8212; correlation state is memory-only; exporter queues persist completed batches but not active turns. See docs/multi-instance-ha.md for the N-instance analysis.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Canonical output</h2>
+<pre class="tree">invoke_agent &lt;agent&gt;          root span, one per user turn / activity burst
+&#9500;&#9472;&#9472; chat &lt;model&gt;             one per model call (per api_request for Cursor)
+&#9492;&#9472;&#9472; execute_tool &lt;tool&gt;      Codex tool_result spans; absent on Cursor wire
+</pre>
+
+<table class="reasons">
+  <tr><th>finish_reason</th><th>Edge</th><th>Meaning</th><th>Status</th></tr>
+  <tr><td>completed</td><td>codex</td><td>reorder window quiet after a completion event</td><td>unset</td></tr>
+  <tr><td>quiet</td><td>cursor</td><td>no new record for the reorder window (normal close)</td><td>unset</td></tr>
+  <tr><td>superseded</td><td>codex</td><td>a newer prompt arrived for the conversation</td><td>unset</td></tr>
+  <tr><td>timeout</td><td>both</td><td>no completion (codex) or overlong burst (cursor)</td><td>error</td></tr>
+  <tr><td>shutdown</td><td>both</td><td>collector drain on graceful shutdown</td><td>unset</td></tr>
+  <tr><td>evicted</td><td>both</td><td>LRU eviction past max_active_turns</td><td>unset</td></tr>
+</table>
+
+<footer>
+  Static documentation artifact; regenerate by hand when pipelines change.
+  See <code>docs/design.md</code> for decisions and assumptions,
+  <code>docs/multi-instance-ha.md</code> for multi-instance deployment analysis.
+</footer>
+
+</div>
+</body>
+</html>
