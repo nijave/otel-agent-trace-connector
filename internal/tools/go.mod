@@ -1,6 +1,6 @@
 module github.com/nijave/otel-agent-trace-connector/internal/tools
 
-go 1.25.0
+go 1.27.0
 
 tool go.opentelemetry.io/collector/cmd/mdatagen
 

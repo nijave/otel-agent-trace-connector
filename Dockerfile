@@ -1,4 +1,4 @@
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.27-bookworm AS builder
 
 ARG OCB_VERSION=0.156.0
 RUN go install go.opentelemetry.io/collector/cmd/builder@v${OCB_VERSION}
