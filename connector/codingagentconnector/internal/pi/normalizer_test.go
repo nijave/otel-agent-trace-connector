@@ -269,6 +269,69 @@ func TestPiTraceNormalizerReparentsModellessChatChildren(t *testing.T) {
 		"a chat child without a model suffix must attach to the agent root instead of dangling")
 }
 
+// TestPiTraceNormalizerKeepsDanglingParentsInChildOnlyBatch covers a batch
+// carrying only canonical children: the chat-turn they ran under was exported
+// in an earlier batch. Zeroing their parent would destroy the join key, so
+// children keep their original parent span ID and a backend can reattach them
+// once the chat-turn arrives, mirroring the Claude Code export behavior.
+func TestPiTraceNormalizerKeepsDanglingParentsInChildOnlyBatch(t *testing.T) {
+	input := ptrace.NewTraces()
+	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	spans := scope.Spans()
+	turnParent := pcommon.SpanID{2}
+
+	gen := spans.AppendEmpty()
+	gen.SetName("llm-generation [main] [request]")
+	gen.SetParentSpanID(turnParent)
+	gen.Attributes().PutStr("model", "deepseek-v4-flash")
+	tool := spans.AppendEmpty()
+	tool.SetName("bash")
+	tool.SetParentSpanID(turnParent)
+	tool.Attributes().PutStr("toolName", "bash")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	require.Equal(t, turnParent, findSpan(t, all, "chat deepseek-v4-flash").ParentSpanID(),
+		"a chat child in a batch without its chat-turn keeps its dangling parent")
+	require.Equal(t, turnParent, findSpan(t, all, "execute_tool bash").ParentSpanID(),
+		"a tool child in a batch without its chat-turn keeps its dangling parent")
+}
+
+// TestPiTraceNormalizerPreservesParentsAcrossBatches pins the split-export
+// shape: pi exports the chat-turn in one batch and its children in the next,
+// so the stateless connector sees two calls. Keeping the children's original
+// parent span ID preserves the linkage a backend needs to reassemble the tree.
+func TestPiTraceNormalizerPreservesParentsAcrossBatches(t *testing.T) {
+	turnBatch := ptrace.NewTraces()
+	scope := turnBatch.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	turn := scope.Spans().AppendEmpty()
+	turn.SetName("chat-turn")
+	turn.SetSpanID(pcommon.SpanID{2})
+	turn.Attributes().PutStr("sessionId", "session-1")
+
+	childrenBatch := ptrace.NewTraces()
+	scope = childrenBatch.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	gen := scope.Spans().AppendEmpty()
+	gen.SetName("llm-generation [main] [request]")
+	gen.SetParentSpanID(pcommon.SpanID{2})
+	gen.Attributes().PutStr("model", "deepseek-v4-flash")
+
+	sink := &traceSink{}
+	normalizer := New(sink)
+	require.NoError(t, normalizer.ConsumeTraces(context.Background(), turnBatch))
+	require.NoError(t, normalizer.ConsumeTraces(context.Background(), childrenBatch))
+
+	all := reassemble(sink)
+	root := findSpan(t, all, "invoke_agent pi")
+	require.Equal(t, pcommon.SpanID{2}, root.SpanID())
+	require.Equal(t, root.SpanID(), findSpan(t, all, "chat deepseek-v4-flash").ParentSpanID(),
+		"children from a later batch keep the parent linkage for backend reassembly")
+}
+
 func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
 	t.Helper()
 	for i := 0; i < spans.Len(); i++ {
