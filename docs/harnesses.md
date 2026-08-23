@@ -22,10 +22,11 @@ attribute names below as snapshots, not contracts.
 | **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) | yes (native) | yes (logs edge) |
 | **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no | yes, health gauges only | no |
 | **OpenCode** | traces + logs (native, new) | yes (native spans, no cost) | no (plugins add it) | via plugins | yes (traces edge) |
-| **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no | no |
+| **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no | yes (traces edge) |
 
-Codex, Cursor, Claude Code, OpenCode, Pi, and the GenAI-semconv scopes are the
-connector's supported edges; the root [README](../README.md) lists the
+Codex, Cursor, Claude Code, OpenCode, Pi, OpenHands, and the GenAI-semconv
+scopes are the connector's supported edges; the root [README](../README.md)
+lists the
 required configuration for each. This file focuses on Cline and Kilo,
 with Pi, Cursor, Hermes, OpenCode, and OpenHands added from the same research.
 The `## OTel metrics` section below covers the metrics dimension.
@@ -249,7 +250,10 @@ analytics, not OTel.
 `gen_ai.usage.cost`/`input_cost`/`output_cost`, `gen_ai.system`,
 `gen_ai.request.model`, `gen_ai.response.model`. No cache-token attributes on
 spans by default; fine-grained cache/reasoning tokens exist only in-process
-(served over the agent-server API), not as OTel.
+(served over the agent-server API), not as OTel. Wire inspection on
+2026-08-23 (SDK `9421149`, lmnr 0.7.56) found no cost and no reasoning-token
+counts on the exported spans, and streamed completions carry no token usage
+upstream at all.
 
 **Project/repo identity — not attached.** The workspace working dir exists
 in-process but is never written to spans; the desktop app deliberately does not
@@ -258,6 +262,11 @@ forward repo/branch/workspace to the agent-server. You get
 by the deployment), and `conversation.tags.*` (automation run identity, not
 repo). To get repo identity you must pass it yourself via `observability_metadata`
 or `tags` at conversation start.
+
+**Desktop-UI env-forwarding gap.** The Electron app does not forward
+operator-set environment to the agent-server process that hosts the SDK, so
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must reach the agent-server's own process
+environment; setting it in the desktop shell is not enough.
 
 ## OTel metrics
 
@@ -347,7 +356,15 @@ repo/cwd identity these extensions carry is not yet mapped into canonical
 output — the connector drops nothing from the raw pipeline, so identity stays
 available there.
 
-The connector does not sort Cline, Kilo, Hermes, or OpenHands today, and
+OpenHands is handled too: the traces edge claims `lmnr.tracer` scope groups
+carrying OpenHands markers (the SDK's conversation/step span names or its
+delegate flag) and normalizes them into the canonical vocabulary. The
+2026-08-23 wire inspection found no cost and no reasoning-token counts on
+spans, and streamed completions carry no token usage upstream. The desktop
+UI does not forward operator-set environment to the agent-server process,
+so the export endpoint must reach the agent-server itself.
+
+The connector does not sort Cline, Kilo, or Hermes today, and
 the approved GenAI semconv design (which claims by instrumentation scope:
 `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
 `strands.telemetry`) does not cover them either.
