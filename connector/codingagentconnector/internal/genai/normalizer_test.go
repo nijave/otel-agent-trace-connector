@@ -547,3 +547,60 @@ func TestCapturedCanonicalFixturesHoldNoContent(t *testing.T) {
 		})
 	}
 }
+
+func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
+	input := loadFixtureLines(t, filepath.Join("testdata", "copilot-native.otlp.json"))
+	require.NotZero(t, input.SpanCount())
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	outputs := sink.all()
+	require.Len(t, outputs, 1, "both fixture batches share the claimed scope")
+	require.Equal(t, 2, outputs[0].ResourceSpans().Len(), "both flavors stay distinct resource groups")
+
+	names := map[string]ptrace.Span{}
+	eachFixtureSpan(t, outputs[0], func(span ptrace.Span) {
+		for _, key := range contentAttributeKeys {
+			_, exists := span.Attributes().Get(key)
+			require.False(t, exists, "content attribute %q survived on %q", key, span.Name())
+		}
+		names[span.Name()] = span
+	})
+
+	cliRoot, ok := names["invoke_agent copilot-cli"]
+	require.True(t, ok, "CLI invoke_agent root renames by agent name")
+	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "telemetry.source"))
+	require.Equal(t, "github.copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source.scope"))
+	require.Equal(t, "github-copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.client.name"))
+	require.Equal(t, "11111111-2222-3333-4444-555555555555", fixtureAttrString(t, cliRoot.Attributes(), "gen_ai.conversation.id"))
+	cost, ok := cliRoot.Attributes().Get("github.copilot.cost")
+	require.True(t, ok, "vendor cost passes through")
+	require.Equal(t, 0.15, cost.Double())
+	var shutdownSeen bool
+	for i := 0; i < cliRoot.Events().Len(); i++ {
+		if cliRoot.Events().At(i).Name() == "github.copilot.session.shutdown" {
+			shutdownSeen = true
+		}
+	}
+	require.True(t, shutdownSeen, "lifecycle span events survive")
+
+	chat, ok := names["chat gpt-5.2"]
+	require.True(t, ok)
+	require.Equal(t, "t-1", fixtureAttrString(t, chat.Attributes(), "github.copilot.turn_id"))
+
+	tool, ok := names["execute_tool run_commands"]
+	require.True(t, ok)
+	require.Equal(t, "function", fixtureAttrString(t, tool.Attributes(), "gen_ai.tool.type"))
+
+	vsCodeRoot, ok := names["invoke_agent copilotcli"]
+	require.True(t, ok, "VS Code flavor renames by its own agent name")
+	reasoning, ok := vsCodeRoot.Attributes().Get("gen_ai.usage.reasoning.output_tokens")
+	require.True(t, ok, "the reasoning-token key passes through unmapped")
+	require.Equal(t, int64(25), reasoning.Int())
+	require.Equal(t, "https://github.com/acme/widgets", fixtureAttrString(t, vsCodeRoot.Attributes(), "github.copilot.git.repository"))
+	require.Equal(t, "https://github.com/acme/widgets", fixtureAttrString(t, vsCodeRoot.Attributes(), "copilot_chat.repo.remote_url"), "legacy namespace rides along untouched")
+
+	hook, ok := names["execute_hook PreToolUse"]
+	require.True(t, ok, "unknown operations keep their wire names")
+	require.Equal(t, "pass", fixtureAttrString(t, hook.Attributes(), "github.copilot.hook.decision"))
+}
