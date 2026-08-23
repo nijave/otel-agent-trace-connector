@@ -228,6 +228,34 @@ func TestBuildTraceDeterministicIDs(t *testing.T) {
 	require.NotEqual(t, rootOf(t, first).TraceID(), rootOf(t, third).TraceID())
 }
 
+// TestBuildTraceStableUnderTiedTimestampReordering pins that a reordered
+// at-least-once batch produces the same canonical trace when the earliest
+// events share a timestamp: the anchor event is picked by the wire dedupe key,
+// not by arrival order.
+func TestBuildTraceStableUnderTiedTimestampReordering(t *testing.T) {
+	tied := func() *burstState {
+		burst := burstForTest()
+		burst.events[1].Timestamp = burst.events[0].Timestamp
+		return burst
+	}
+	forward := mustBuildTrace(t, tied(), "quiet")
+
+	reordered := tied()
+	for i, j := 0, len(reordered.events)-1; i < j; i, j = i+1, j-1 {
+		reordered.events[i], reordered.events[j] = reordered.events[j], reordered.events[i]
+	}
+	backward := mustBuildTrace(t, reordered, "quiet")
+
+	require.Equal(t, rootOf(t, forward).TraceID(), rootOf(t, backward).TraceID())
+	require.Equal(t, rootOf(t, forward).SpanID(), rootOf(t, backward).SpanID())
+	marshaler := &ptrace.JSONMarshaler{}
+	a, err := marshaler.MarshalTraces(forward)
+	require.NoError(t, err)
+	b, err := marshaler.MarshalTraces(backward)
+	require.NoError(t, err)
+	requireTraceJSONEqual(t, a, b)
+}
+
 func TestBuildTraceCopiesNothingOutsideAllowlist(t *testing.T) {
 	burst := burstForTest()
 	burst.events = append(burst.events, Event{

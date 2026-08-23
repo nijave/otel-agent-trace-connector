@@ -58,7 +58,14 @@ var cloudAgentAllowlist = []attrMapping{
 
 func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, error) {
 	events := append([]Event(nil), burst.events...)
-	sort.SliceStable(events, func(i, j int) bool { return events[i].Timestamp.Before(events[j].Timestamp) })
+	// Tie-break equal timestamps on the dedupe key so a reordered at-least-once
+	// batch still picks the same anchor event, and therefore the same trace id.
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].Timestamp.Equal(events[j].Timestamp) {
+			return events[i].EventID < events[j].EventID
+		}
+		return events[i].Timestamp.Before(events[j].Timestamp)
+	})
 	traceID := deterministicTraceID(burst.conversationID, events)
 	rootID := deterministicSpanID(traceID, "root")
 
