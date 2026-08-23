@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:24-trixie-slim
 
 ARG PI_CODING_AGENT_VERSION=0.84.2
 RUN apt-get update \
