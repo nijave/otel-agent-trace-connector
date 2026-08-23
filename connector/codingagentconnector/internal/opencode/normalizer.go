@@ -106,6 +106,11 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 	attrs.PutStr("coding_agent.source.event", wire.Name())
 	switch wire.Name() {
 	case wireStreamText:
+		// The wire nests each step under internal Effect spans
+		// (SessionProcessor.process -> LLM.run) that never reach canonical
+		// output, so a kept parent would dangle downstream; this renamed span
+		// is a true root.
+		span.SetParentSpanID(pcommon.SpanID{})
 		sessionID := firstString(wire.Attributes(), "session.id")
 		if sessionID == "" {
 			sessionID = resourceSessionID
