@@ -173,6 +173,20 @@ func (c *cursorConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) error
 }
 
 func (b *burstState) add(event Event, now time.Time, maxEvents int) {
+	if len(b.events) >= maxEvents {
+		// The burst is full: record the EventID so at-least-once redeliveries
+		// of this record stay deduplicated, flag the burst, and stop.
+		// first/last/lastSeen must track stored records only -- otherwise
+		// records missing from the emitted trace keep refreshing lastSeen and
+		// defer the quiet-window close until only turn_timeout can fire,
+		// skewing finish_reason to "timeout".
+		b.truncated = true
+		if b.seen == nil {
+			b.seen = make(map[string]struct{})
+		}
+		b.seen[event.EventID] = struct{}{}
+		return
+	}
 	if event.Timestamp.Before(b.first) {
 		b.first = event.Timestamp
 	}
@@ -180,15 +194,11 @@ func (b *burstState) add(event Event, now time.Time, maxEvents int) {
 		b.last = event.Timestamp
 	}
 	b.lastSeen = now
-	if len(b.events) < maxEvents {
-		b.events = append(b.events, event)
-		if b.seen == nil {
-			b.seen = make(map[string]struct{})
-		}
-		b.seen[event.EventID] = struct{}{}
-	} else {
-		b.truncated = true
+	b.events = append(b.events, event)
+	if b.seen == nil {
+		b.seen = make(map[string]struct{})
 	}
+	b.seen[event.EventID] = struct{}{}
 }
 
 func (c *cursorConnector) sweepLoop() {
