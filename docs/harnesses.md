@@ -329,6 +329,13 @@ groups whose instrumentation scope is exactly `opencode` and normalizes the
 Vercel AI SDK spans. Plugin surfaces (`felixti/opencode-otel-plugin` GenAI
 semconv, `@devtheops/opencode-plugin-otel` OpenInference) remain future work.
 
+GitHub Copilot native traces are handled the same way: the GenAI edge claims
+instrumentation scope `github.copilot` (CLI GA since v1.0.4; VS Code Chat
+speaks the identical vocabulary). The cloud coding agent has no OTLP export,
+so its hooks path stays out of scope; the JetBrains extension shows no
+telemetry at all. Research record: verified against primary sources on
+2026-08-22.
+
 Pi is handled too, through a different extension than this section's 2026-08-20
 research surveyed: the traces edge claims groups scoped
 `@amaster.ai/pi-telemetry` (the only maintained open OTLP exporter found in the
