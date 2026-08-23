@@ -220,3 +220,26 @@ jq '.resourceSpans[0].scopeSpans |= map(.spans |= ((map(select(.name | startswit
 
 After slicing, rerun `go test ./internal/opencode/` from
 `connector/codingagentconnector/` to confirm the fixture still replays green.
+
+## Live Pi agent (paid)
+
+The Pi stack runs the [Pi coding agent](https://pi.dev) with the
+`@amaster.ai/pi-telemetry` extension (pinned via image args), which exports
+OTLP/HTTP traces to the shared collector. The image bakes the telemetry
+settings and a `models.json` provider pointing at z.ai's
+Anthropic-compatible endpoint; `ANTHROPIC_AUTH_TOKEN` is the only credential.
+The prompt forces one bash tool call. The run produces two agentic iterations,
+so validation accepts any valid `invoke_agent pi` root with chat and
+`execute_tool` children.
+
+```bash
+export ANTHROPIC_AUTH_TOKEN=...   # your z.ai key
+./scripts/e2e-pi.sh
+```
+
+Override the model with `E2E_PI_MODEL` (default `zai/glm-4.7`) or pin versions
+with `PI_CODING_AGENT_VERSION`:
+
+```bash
+E2E_PI_MODEL=zai/glm-4.7 ./scripts/e2e-pi.sh
+```

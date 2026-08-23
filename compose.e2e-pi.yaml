@@ -1,0 +1,25 @@
+# Pi coding agent (z.ai) e2e stack. The shared collector comes from
+# compose.e2e-base.yaml; only the Pi agent is defined here, so this stack never
+# requires other stacks' credentials. The agent's telemetry endpoint and the
+# @amaster.ai/pi-telemetry extension are baked into the image
+# (e2e/pi/settings.json); only credentials and run parameters flow through env.
+include:
+  - compose.e2e-base.yaml
+
+services:
+  agent:
+    build:
+      context: e2e/pi
+      args:
+        PI_CODING_AGENT_VERSION: "${PI_CODING_AGENT_VERSION:-0.84.2}"
+    environment:
+      # Pi reaches z.ai's Anthropic-compatible endpoint through the baked
+      # models.json provider; scripts/e2e-pi.sh checks this credential before
+      # Compose runs.
+      ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN:-}"
+      E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
+      E2E_PI_MODEL: "${E2E_PI_MODEL:-zai/glm-4.7}"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-pi.sh}"
+    depends_on:
+      collector:
+        condition: service_healthy

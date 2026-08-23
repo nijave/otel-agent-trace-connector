@@ -141,6 +141,48 @@ func TestValidateOpenAIAdhocCanonical(t *testing.T) {
 	require.Error(t, validateCanonicalTraces(traces, "run-1", "openai_adhoc"))
 }
 
+// TestValidatePiCanonicalRequiresTreeWithoutContent pins the canonical shape
+// the Pi normalizer emits for one user input: multiple invoke_agent roots (one
+// per agentic iteration), each chat child carrying model and usage, and the
+// bash tool call attached under an agent root.
+func TestValidatePiCanonicalRequiresTreeWithoutContent(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	traceID := pcommon.TraceID{1}
+	root := spans.AppendEmpty()
+	root.SetName("invoke_agent pi")
+	root.SetTraceID(traceID)
+	root.SetSpanID(pcommon.SpanID{2})
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.agent.name", "pi")
+	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
+	root.Attributes().PutStr("telemetry.source", "native")
+
+	chat := spans.AppendEmpty()
+	chat.SetName("chat glm-4.7")
+	chat.SetTraceID(traceID)
+	chat.SetParentSpanID(pcommon.SpanID{2})
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+	chat.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
+
+	tool := spans.AppendEmpty()
+	tool.SetName("execute_tool bash")
+	tool.SetTraceID(traceID)
+	tool.SetParentSpanID(pcommon.SpanID{2})
+	tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	tool.Attributes().PutStr("gen_ai.tool.name", "bash")
+
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "pi"))
+
+	// Content events must fail canonical validation.
+	chat.Events().AppendEmpty().SetName("gen_ai.user.message")
+	require.Error(t, validateCanonicalTraces(traces, "run-1", "pi"))
+}
+
 func TestValidateStrandsCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()

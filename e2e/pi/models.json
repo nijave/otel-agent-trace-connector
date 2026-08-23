@@ -1,0 +1,13 @@
+{
+  "providers": {
+    "zai": {
+      "name": "z.ai",
+      "baseUrl": "https://api.z.ai/api/anthropic",
+      "api": "anthropic-messages",
+      "apiKey": "$ANTHROPIC_AUTH_TOKEN",
+      "models": [
+        { "id": "glm-4.7", "name": "GLM-4.7" }
+      ]
+    }
+  }
+}

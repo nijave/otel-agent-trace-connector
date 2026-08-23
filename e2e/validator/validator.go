@@ -125,6 +125,10 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		if err := rejectOpenCodeContent(spans); err != nil {
 			return err
 		}
+	case "pi":
+		if err := rejectGenAIContent(spans); err != nil {
+			return err
+		}
 	}
 	if agent == "claude_code" {
 		if err := rejectClaudeTraceContent(spans); err != nil {

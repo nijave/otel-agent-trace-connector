@@ -26,7 +26,7 @@ func TestLiveE2ETraces(t *testing.T) {
 		agent = "codex"
 	}
 	switch agent {
-	case "codex", "claude_code", "openai_adhoc", "strands", "opencode":
+	case "codex", "claude_code", "openai_adhoc", "strands", "opencode", "pi":
 	default:
 		t.Fatalf("unsupported E2E_AGENT %q", agent)
 	}

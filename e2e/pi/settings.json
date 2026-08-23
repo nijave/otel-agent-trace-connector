@@ -1,0 +1,10 @@
+{
+  "packages": ["npm:@amaster.ai/pi-telemetry"],
+  "pi-telemetry": {
+    "serviceName": "pi",
+    "otel": {
+      "enabled": true,
+      "endpoint": "http://collector:4318/v1/traces"
+    }
+  }
+}
