@@ -1,6 +1,6 @@
-FROM node:24-bookworm-slim
+FROM node:24-trixie-slim
 
-ARG CODEX_VERSION=0.144.1
+ARG CODEX_VERSION=0.149.0
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates \

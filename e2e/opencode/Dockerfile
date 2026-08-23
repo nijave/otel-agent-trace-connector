@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:24-trixie-slim
 
 ARG OPENCODE_VERSION=1.18.21
 RUN apt-get update \

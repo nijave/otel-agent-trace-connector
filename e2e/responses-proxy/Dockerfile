@@ -14,7 +14,7 @@
 #      (choices empty); z.ai attaches usage to the final content chunk, so usage
 #      was dropped. Our fork patch captures usage from any chunk that carries it.
 # Fork branch: fix/usage-capture-on-content-chunk (PR-able back upstream).
-FROM rust:1-slim-bookworm AS build
+FROM rust:1-slim-trixie AS build
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         git ca-certificates \
@@ -29,7 +29,7 @@ RUN cargo install responses-proxy \
         --locked \
         --root /out
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates curl \
