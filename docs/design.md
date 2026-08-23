@@ -583,13 +583,16 @@ pi 0.84.2), which ships as the golden fixture:
 
 ### Decision record
 
-- The exporter references an internal parent span it never sends: every span
-  arrives with a dangling `ParentSpanID`. Each `chat-turn` therefore becomes
-  a root with its parent cleared, matching the plan-level rule that turn
-  grouping relies on `gen_ai.conversation.id` rather than a long-lived
-  session root. Orphaned `chat`/`execute_tool` spans re-attach to the first
-  agent root in their batch; children arriving in a batch of their own become
-  roots, mirroring the Claude Code sub-batch behavior.
+- Hierarchy does not survive export intact. Children reference the
+  `chat-turn` span they ran under, but a batch can arrive without the turn it
+  references, and the pinned capture shows successive iterations reusing one
+  turn span ID (so their children all attach to its first occurrence). Each
+  `chat-turn` therefore becomes a root with any dangling parent cleared,
+  matching the plan-level rule that turn grouping relies on
+  `gen_ai.conversation.id` rather than a long-lived session root. Orphaned
+  `chat`/`execute_tool` spans re-attach to the first agent root in their
+  batch; children arriving in a batch of their own become roots, mirroring
+  the Claude Code sub-batch behavior.
 - Exporter-local metadata never reaches canonical output: `langfuse.*`
   attribute baggage, the serialized `usage` JSON object (the flat per-field
   source keys are renamed instead), cost totals, and diagnostic `status` /

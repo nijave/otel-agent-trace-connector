@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 set -euo pipefail
 
 # The container receives one credential: the z.ai API key, passed to pi through
@@ -13,9 +14,11 @@ export E2E_PI_MODEL="${E2E_PI_MODEL:-zai/glm-4.7}"
 export E2E_AGENT=pi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
 # shellcheck source=scripts/lib-e2e.sh
 . "${script_dir}/lib-e2e.sh"
 
+# shellcheck disable=SC2034
 compose_files=(-f compose.e2e-pi.yaml)
 # The Pi stack only needs the shared collector; pi talks to z.ai's
 # Anthropic-compatible endpoint directly, so no proxy is required.

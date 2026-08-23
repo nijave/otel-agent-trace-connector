@@ -56,6 +56,7 @@ automatic. No per-source connector setting exists.
 | OpenCode | traces | instrumentation scope named exactly `opencode` | `experimental.openTelemetry: true` plus OTLP endpoint env vars |
 | openai-v2 / util-genai agents | traces | instrumentation scope starting with `opentelemetry.instrumentation.openai_v2`, `opentelemetry.instrumentation.genai`, or `opentelemetry.util.genai` | standard OpenTelemetry SDK env vars |
 | Strands Agents SDK | traces | instrumentation scope starting with `strands.telemetry` | standard OpenTelemetry SDK env vars |
+| Pi | traces | instrumentation scope starting with `@amaster.ai/pi-telemetry`, or resource `telemetry.sdk.name` with the same prefix | install the `@amaster.ai/pi-telemetry` extension and enable its exporter (below) |
 
 Minimal harness-side settings, as exercised by the e2e stacks:
 
@@ -124,7 +125,8 @@ Repository layout:
 │   ├── internal/codex/              #   stateful log correlation and trace building
 │   ├── internal/cursor/             #   burst correlation of native Cursor logs
 │   ├── internal/claude/             #   stateless native-span normalization
-│   └── internal/pi/                  #   stateless @amaster.ai/pi-telemetry normalization
+│   ├── internal/genai/, opencode/   #   more stateless traces-edge normalizers
+│   └── internal/pi/                 #   stateless @amaster.ai/pi-telemetry normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
 │   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues

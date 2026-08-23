@@ -54,10 +54,13 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 		version := resourceString(rs.Resource(), "service.version")
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
+			children := make(map[pcommon.SpanID]bool, spans.Len())
 			for k := 0; k < spans.Len(); k++ {
-				normalizePiSpan(spans.At(k), version)
+				if normalizePiSpan(spans.At(k), version) {
+					children[spans.At(k).SpanID()] = true
+				}
 			}
-			reparentOrphans(spans)
+			reparentOrphans(spans, children)
 		}
 	}
 	if output.SpanCount() == 0 {
@@ -81,7 +84,9 @@ func ContainsPiSpans(resourceSpans ptrace.ResourceSpans) bool {
 	return false
 }
 
-func normalizePiSpan(span ptrace.Span, version string) {
+// normalizePiSpan rewrites one span into the canonical vocabulary and reports
+// whether it becomes a canonical child of an agent root.
+func normalizePiSpan(span ptrace.Span, version string) bool {
 	if toolName := firstSpanString(span, "toolName"); toolName != "" {
 		// Live captures show tool spans named after the bare tool with the
 		// identity in attributes, so the attribute is the discriminator.
@@ -96,13 +101,14 @@ func normalizePiSpan(span ptrace.Span, version string) {
 		}
 		putPiCommon(attrs, version)
 		stripPiBaggage(span)
-		return
+		return true
 	}
+	child := false
 	switch name := span.Name(); {
 	case name == turnSpanName:
 		span.SetName("invoke_agent pi")
-		// The exporter references a parent span it never sends (observed on
-		// the wire), so the canonical agent root is this span with the
+		// Turn spans arrive as roots or referencing a parent absent from
+		// their batch, so each becomes a canonical agent root with any
 		// dangling parent cleared.
 		span.SetParentSpanID(pcommon.SpanID{})
 		attrs := span.Attributes()
@@ -114,6 +120,7 @@ func normalizePiSpan(span ptrace.Span, version string) {
 		}
 		putPiCommon(attrs, version)
 	case strings.HasPrefix(name, generation):
+		child = true
 		model := firstSpanString(span, "model")
 		span.SetName("chat" + optionalNameSuffix(model))
 		attrs := span.Attributes()
@@ -133,15 +140,16 @@ func normalizePiSpan(span ptrace.Span, version string) {
 		putPiCommon(attrs, version)
 	}
 	stripPiBaggage(span)
+	return child
 }
 
-// reparentOrphans fixes the broken hierarchy the exporter sends: every span
-// references an internal parent it never exports, so canonical children would
-// dangle. Chat and execute_tool spans whose parent is missing from the same
-// span slice attach to the slice's first invoke_agent span, or become roots
-// when the batch carries none (children can land in a batch of their own,
-// mirroring the Claude Code export behavior).
-func reparentOrphans(spans ptrace.SpanSlice) {
+// reparentOrphans repairs hierarchy across batch boundaries: canonical
+// children reference the chat-turn span they ran under, and when a batch
+// arrives without it they would dangle. Children attach to the slice's first
+// invoke_agent span, or become roots when the batch carries none (children
+// can land in a batch of their own, mirroring the Claude Code export
+// behavior).
+func reparentOrphans(spans ptrace.SpanSlice, children map[pcommon.SpanID]bool) {
 	exported := make(map[pcommon.SpanID]bool, spans.Len())
 	var agentRoot pcommon.SpanID
 	foundRoot := false
@@ -155,9 +163,7 @@ func reparentOrphans(spans ptrace.SpanSlice) {
 	}
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)
-		name := span.Name()
-		isChild := strings.HasPrefix(name, "chat ") || strings.HasPrefix(name, "execute_tool ")
-		if !isChild || exported[span.ParentSpanID()] {
+		if !children[span.SpanID()] || exported[span.ParentSpanID()] {
 			continue
 		}
 		if foundRoot && span.ParentSpanID() != agentRoot {

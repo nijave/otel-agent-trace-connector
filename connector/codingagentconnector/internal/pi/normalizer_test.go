@@ -84,7 +84,7 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 
 	root := findSpan(t, spans, "invoke_agent pi")
 	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(),
-		"the extension references a parent span it never exports; invoke_agent must be a real root")
+		"a parent absent from the batch must not survive; invoke_agent must be a real root")
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
 	require.Equal(t, "pi", attrString(t, root, "gen_ai.agent.name"))
 	require.Equal(t, "session-1", attrString(t, root, "gen_ai.conversation.id"))
@@ -100,6 +100,10 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 	require.Equal(t, int64(3335), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(3), attrInt(t, chat, "gen_ai.usage.output_tokens"))
 	require.Equal(t, int64(3338), attrInt(t, chat, "gen_ai.usage.total_tokens"))
+	// The dotted semconv cache keys must be renamed even when the wire value
+	// is zero, not dropped with the source key.
+	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
 
 	for _, span := range []ptrace.Span{root, chat} {
 		for _, key := range []string{
@@ -164,7 +168,7 @@ func TestPiTraceNormalizerMatchesGenerationNamePrefixes(t *testing.T) {
 // TestPiTraceNormalizerMapsToolSpansByAttributeName pins how tools appear on
 // the wire (live capture 2026-08-22): the span NAME is the bare tool name
 // ("bash"), the identity lives in the toolName/toolCallId attributes, and the
-// exported parent references a span the exporter never sends.
+// referenced parent can be absent from the batch.
 func TestPiTraceNormalizerMapsToolSpansByAttributeName(t *testing.T) {
 	input := ptrace.NewTraces()
 	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
@@ -240,6 +244,31 @@ func TestPiTraceNormalizerReparentsOrphansToFirstAgentRoot(t *testing.T) {
 	}
 }
 
+// TestPiTraceNormalizerReparentsModellessChatChildren pins that a generation
+// span without a model attribute — normalized to bare "chat" with no suffix —
+// still counts as a canonical child and attaches to the agent root instead of
+// dangling on its unexported parent.
+func TestPiTraceNormalizerReparentsModellessChatChildren(t *testing.T) {
+	input := ptrace.NewTraces()
+	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	spans := scope.Spans()
+	turn := spans.AppendEmpty()
+	turn.SetName("chat-turn")
+	turn.SetSpanID(pcommon.SpanID{2})
+	gen := spans.AppendEmpty()
+	gen.SetName("llm-generation [main] [request]")
+	gen.SetParentSpanID(pcommon.SpanID{9}) // absent from the batch
+	// no model attribute, so the canonical name is bare "chat"
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	root := findSpan(t, all, "invoke_agent pi")
+	require.Equal(t, root.SpanID(), findSpan(t, all, "chat").ParentSpanID(),
+		"a chat child without a model suffix must attach to the agent root instead of dangling")
+}
+
 func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
 	t.Helper()
 	for i := 0; i < spans.Len(); i++ {
@@ -304,7 +333,7 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 
 	all := reassemble(sink)
 	root := findSpan(t, all, "invoke_agent pi")
-	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "phantom parent must be cleared")
+	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "the agent root carries no dangling parent")
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "native", attrString(t, root, "telemetry.source"))
 
@@ -312,6 +341,19 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
 	require.Equal(t, int64(2286), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(2334), attrInt(t, chat, "gen_ai.usage.total_tokens"))
+
+	// Both generations in the capture pin the cache renames: the first reads
+	// nothing from cache, the second reads 2304 tokens.
+	var chats []ptrace.Span
+	for i := 0; i < all.Len(); i++ {
+		if span := all.At(i); span.Name() == "chat deepseek-v4-flash" {
+			chats = append(chats, span)
+		}
+	}
+	require.Len(t, chats, 2)
+	require.Equal(t, int64(0), attrInt(t, chats[0], "gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(2304), attrInt(t, chats[1], "gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(7), attrInt(t, chats[1], "gen_ai.usage.output_tokens"))
 
 	tool := findSpan(t, all, "execute_tool bash")
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())

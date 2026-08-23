@@ -47,10 +47,10 @@ trace vocabulary. It exposes two edges under a single component type,
 - **Pi (traces → traces):** normalizes native spans emitted by the
   `@amaster.ai/pi-telemetry` extension for the Pi coding agent. Each
   `chat-turn` span becomes an `invoke_agent pi` root (one per agentic
-  iteration; the exporter references parents it never sends, so dangling
-  parents are cleared and orphaned children re-attach to the first agent
-  root in the batch), generation spans become `chat <model>`, and tool spans
-  become `execute_tool <tool>`.
+  iteration; turn spans become roots with any dangling parent cleared, and
+  orphaned children re-attach to the first agent root in the batch),
+  generation spans become `chat <model>`, and tool spans become
+  `execute_tool <tool>`.
 - **GenAI semconv (traces → traces):** claims resource groups whose
   instrumentation scope starts with `opentelemetry.instrumentation.openai_v2`,
   `opentelemetry.util.genai`, `opentelemetry.instrumentation.genai`, or
