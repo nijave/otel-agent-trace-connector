@@ -135,6 +135,8 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		if err := rejectOpenCodeContent(spans); err != nil {
 			return err
 		}
+	case "openhands":
+		return validateOpenHandsCanonicalTraces(traces, runID)
 	case "pi":
 		if err := rejectGenAIContent(spans); err != nil {
 			return err
@@ -635,6 +637,86 @@ func validateCursorChat(span ptrace.Span) error {
 	}
 	if span.StartTimestamp() != span.EndTimestamp() {
 		return errors.New("cursor chat span must stay a point span; the wire carries no durations")
+	}
+	return nil
+}
+
+// validateOpenHandsCanonicalFile asserts the canonical OpenHands shape over
+// a committed fixture.
+func validateOpenHandsCanonicalFile(path string) error {
+	return validateTraceFile(path, "", validateOpenHandsCanonicalTraces)
+}
+
+// validateOpenHandsRawFile pins the raw wire shape the normalizer claims:
+// marker spans and LLM spans present under the lmnr.tracer scope.
+func validateOpenHandsRawFile(path, _ string) error {
+	return validateTraceFile(path, "", validateOpenHandsRawTraces)
+}
+
+func validateOpenHandsCanonicalTraces(traces ptrace.Traces, _ string) error {
+	spans := allSpans(traces)
+	if err := validateOpenHandsSpans(spans); err != nil {
+		return err
+	}
+	// The raw lmnr.tracer wire carries gen_ai content attributes, so the
+	// canonical check needs the genai strip contract, not just the vendor trio.
+	if err := rejectGenAIContent(spans); err != nil {
+		return err
+	}
+	return rejectSensitiveAttrs(spans)
+}
+
+func validateOpenHandsRawTraces(traces ptrace.Traces, _ string) error {
+	spans := allSpans(traces)
+	var markers, llm int
+	for _, span := range spans {
+		switch span.Name() {
+		case "conversation", "agent.step", "agent.astep":
+			markers++
+		case "litellm.completion", "litellm.responses":
+			llm++
+		}
+	}
+	if markers == 0 {
+		return fmt.Errorf("no openhands marker spans in raw capture")
+	}
+	if llm == 0 {
+		return fmt.Errorf("no llm spans in raw openhands capture")
+	}
+	return nil
+}
+
+func validateOpenHandsSpans(spans []ptrace.Span) error {
+	var roots, others int
+	for _, span := range spans {
+		switch {
+		case span.Name() == "invoke_agent openhands":
+			roots++
+			if got := stringAttr(span, "gen_ai.conversation.id"); got == "" {
+				return fmt.Errorf("openhands root missing gen_ai.conversation.id")
+			}
+			if got := stringAttr(span, "gen_ai.agent.name"); got != "openhands" {
+				return fmt.Errorf("openhands root agent name %q", got)
+			}
+		case strings.HasPrefix(span.Name(), "chat"):
+			others++
+			if got := stringAttr(span, "gen_ai.operation.name"); got != "chat" {
+				return fmt.Errorf("openhands chat span operation %q", got)
+			}
+		case strings.HasPrefix(span.Name(), "execute_tool"):
+			others++
+			if got := stringAttr(span, "gen_ai.operation.name"); got != "execute_tool" {
+				return fmt.Errorf("openhands tool span operation %q", got)
+			}
+		default:
+			return fmt.Errorf("unexpected span %q in openhands canonical output", span.Name())
+		}
+	}
+	if roots == 0 {
+		return fmt.Errorf("no invoke_agent openhands root found")
+	}
+	if others == 0 {
+		return fmt.Errorf("no chat or execute_tool children found under openhands root")
 	}
 	return nil
 }

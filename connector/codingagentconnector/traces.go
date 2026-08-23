@@ -14,14 +14,16 @@ import (
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/genai"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/openhands"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/pi"
 )
 
 // tracesRouter fans the traces-to-traces edge across the stateless
 // normalizers. Each normalizer claims disjoint resource groups (the GenAI
 // edge defers to Claude via claude.ContainsClaudeSpans, to OpenCode via
-// opencode.ContainsOpenCodeSpans, and to Pi via pi.ContainsPiSpans), so a
-// group is emitted at most once and unclaimed groups stay out of the
+// opencode.ContainsOpenCodeSpans, and to Pi via pi.ContainsPiSpans; the
+// OpenHands edge claims lmnr.tracer scope groups carrying OpenHands markers,
+// so a group is emitted at most once and unclaimed groups stay out of the
 // canonical edge.
 type tracesRouter struct {
 	edges []connector.Traces
@@ -30,7 +32,7 @@ type tracesRouter struct {
 }
 
 func newTracesRouter(next consumer.Traces) connector.Traces {
-	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next), opencode.New(next), pi.New(next)}}
+	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next), opencode.New(next), pi.New(next), openhands.New(next)}}
 }
 
 func (*tracesRouter) Capabilities() consumer.Capabilities {

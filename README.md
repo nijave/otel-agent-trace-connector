@@ -31,6 +31,13 @@ OCB-built distribution for coding-agent traces:
   one `invoke_agent pi` root per agentic iteration, with `chat <model>` and
   `execute_tool <tool>` children; exporter-local Langfuse baggage and raw
   usage blobs never reach canonical output.
+- **OpenHands:** normalizes native OpenTelemetry traces from the OpenHands
+  SDK (Laminar instrumentation, scope `lmnr.tracer`) into one canonical
+  `invoke_agent openhands` trace per conversation, keyed on the SDK's
+  session id. Delegate subagents arrive as sibling traces sharing the
+  conversation id. Streamed completions carry no token usage upstream.
+  Enable export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
+  `OTEL_EXPORTER=otlp_http`.
 
 The canonical tree is:
 
@@ -61,6 +68,7 @@ automatic. No per-source connector setting exists.
 | openai-v2 / util-genai agents | traces | instrumentation scope starting with `opentelemetry.instrumentation.openai_v2`, `opentelemetry.instrumentation.genai`, or `opentelemetry.util.genai` | standard OpenTelemetry SDK env vars |
 | Strands Agents SDK | traces | instrumentation scope starting with `strands.telemetry` | standard OpenTelemetry SDK env vars |
 | Pi | traces | instrumentation scope starting with `@amaster.ai/pi-telemetry`, or resource `telemetry.sdk.name` with the same prefix | install the `@amaster.ai/pi-telemetry` extension and enable its exporter (below) |
+| OpenHands | traces | instrumentation scope `lmnr.tracer` whose spans carry OpenHands marker span names | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus `OTEL_EXPORTER=otlp_http` |
 
 Minimal harness-side settings, as exercised by the e2e stacks:
 
@@ -114,7 +122,7 @@ the same file:
 GenAI-semconv sources need no keys beyond the standard SDK environment
 (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`).
 
-No support yet: Cline, Kilo Code CLI, Hermes Agent, OpenHands, and hook- or
+No support yet: Cline, Kilo Code CLI, Hermes Agent, and hook- or
 plugin-based surfaces such as Cursor hooks, other Pi extensions, and OpenCode
 plugins. [docs/harnesses.md](docs/harnesses.md) records what each exports and
 why it does not fit today.
@@ -129,7 +137,8 @@ Repository layout:
 │   ├── internal/codex/              #   stateful log correlation and trace building
 │   ├── internal/cursor/             #   burst correlation of native Cursor logs
 │   ├── internal/claude/             #   stateless native-span normalization
-│   ├── internal/genai/, opencode/   #   more stateless traces-edge normalizers
+│   ├── internal/genai/, opencode/,  #   more stateless traces-edge normalizers
+│   │   openhands/
 │   └── internal/pi/                 #   stateless @amaster.ai/pi-telemetry normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
 │   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
@@ -214,8 +223,8 @@ completion event on the wire, so each conversation's activity burst finalizes
 when `reorder_window` passes with no new record, by `turn_timeout`, at
 shutdown, or through bounded-state eviction.
 
-The traces edge auto-detects Claude Code, OpenCode, and GenAI-semconv
-sources, so every source enters the same pipeline.
+The traces edge auto-detects Claude Code, OpenCode, OpenHands, and
+GenAI-semconv sources, so every source enters the same pipeline.
 
 Strands captures prompt and completion content in span events by default and
 its redaction is opt-in, so the raw trace destination receives content under
@@ -329,3 +338,4 @@ elsewhere should mount their own config over it.
 - [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/storage/filestorage)
 - [opentelemetry-instrumentation-openai-v2](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2)
 - [Strands Agents traces](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)
+- [OpenHands SDK observability](https://docs.openhands.dev/sdk/guides/observability)

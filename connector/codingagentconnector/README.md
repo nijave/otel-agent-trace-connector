@@ -62,6 +62,14 @@ trace vocabulary. It exposes two edges under a single component type,
   `strands.telemetry`; normalizes `chat`/`invoke_agent`/`execute_tool` spans
   into the canonical vocabulary and strips content-bearing attributes and
   events. Claude Code groups keep priority, so a group is never emitted twice.
+- **OpenHands (traces → traces):** normalizes native OpenTelemetry traces from
+  the OpenHands SDK (Laminar instrumentation, scope `lmnr.tracer`) into one
+  canonical `invoke_agent openhands` trace per conversation, keyed on the
+  SDK's session id. Delegate subagents arrive as sibling traces sharing the
+  conversation id. Streamed completions carry no token usage upstream.
+  Enable export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
+  `OTEL_EXPORTER=otlp_http` — see the
+  [OpenHands SDK observability documentation](https://docs.openhands.dev/sdk/guides/observability).
 
 The canonical tree is:
 

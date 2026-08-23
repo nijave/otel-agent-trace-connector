@@ -607,6 +607,59 @@ pi 0.84.2), which ships as the golden fixture:
   actually exists on the wire today; if Pi grows a first-party exporter, it
   becomes another claim profile in this edge.
 
+## OpenHands correlation model
+
+The OpenHands SDK instruments through the Laminar tracer, so its native
+traces arrive under the scope `lmnr.tracer`. Research reflects primary
+sources as of 2026-08-23 (SDK commit `9421149`, lmnr 0.7.56); the committed
+fixtures pin that wire.
+
+### Claiming
+
+Every Laminar-instrumented application shares the `lmnr.tracer` scope, so
+scope matching alone would claim unrelated applications. A resource group
+belongs to this edge only when an `lmnr.tracer` span carries an explicit
+OpenHands marker: one of the SDK's conversation- and step-family span names
+(`conversation`, `conversation.send_message`, `conversation.run`,
+`agent.step`, and siblings) or the delegate metadata flag. The router
+claims Claude-first like every other edge, so a group never emits twice.
+
+### Canonical mapping
+
+Spans classify by the Laminar span type: `LLM` becomes `chat <model>`,
+`TOOL` becomes `execute_tool <tool>`, and the long-lived `conversation`
+span becomes the `invoke_agent openhands` root. Every other span in the
+group drops from canonical output, but still widens the root's time
+envelope for its trace ID. Kept children reparent under the root; a tool
+call and its result share a `tool_call_id` and dedupe to one span. The
+root maps `gen_ai.conversation.id` from
+`lmnr.association.properties.session_id`, copies `user_id` onto
+`enduser.pseudo.id`, and preserves conversation tags under
+`coding_agent.openhands.*`.
+
+The normalizer stays stateless like the OpenCode edge: mid-conversation
+exports can arrive before their `conversation` root ends, so such fragments
+get a synthetic root whose span ID derives from SHA-256 of the trace ID.
+Delegates run their own sessions, so they arrive as sibling traces sharing
+the conversation id rather than as descendants; each delegate root carries
+`coding_agent.openhands.delegate=true` plus linkage attributes (task id,
+subagent type, parent session id, tool call id) so downstream consumers can
+reconstruct the delegation.
+
+### Usage and content
+
+Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*`,
+including cache read/creation input tokens; `llm.usage.total_tokens` is
+derivable and never copied. Streamed completions carry no token usage
+upstream, so a chat span may carry no usage at all. The wire reports no
+cost and no reasoning-token counts on spans.
+
+Attribute policy is a structural allowlist like the OpenCode edge: renamed
+spans rebuild with only the mapped attributes plus the common marker set,
+so the content-heavy Laminar wire — prompt and completion payloads ride
+span attributes by default — has no path into canonical output. Full
+fidelity remains in the parallel raw pipeline.
+
 ## Privacy and security
 
 The connector discards Codex prompt content, tool arguments, and tool output
@@ -770,6 +823,7 @@ make stale-output detection ineffective.
   - OpenCode native-span normalization (Vercel AI SDK spans).
   - GitHub Copilot native-span normalization (via the GenAI edge, scope
     prefix `github.copilot`).
+  - OpenHands SDK native-trace normalization (Laminar instrumentation).
 - Opt-in root synthesis for rootless ad-hoc traces (explicitly deferred; a
   config flag behind which the connector synthesizes `invoke_agent` parents is
   future work if rootless traces prove common).

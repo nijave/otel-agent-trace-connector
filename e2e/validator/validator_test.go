@@ -1,6 +1,8 @@
 package validator
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -526,4 +528,46 @@ func TestValidateOpenCodeRawFileParsesActualOTLPJSON(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, append(encoded, '\n'), 0o600))
 	require.NoError(t, validateOpenCodeRawFile(path, "run-1"))
 	require.Error(t, validateOpenCodeRawFile(path, "different-run"))
+}
+
+func TestOpenHandsCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "openhands", "testdata", "openhands-canonical.otlp.json")
+	require.NoError(t, validateOpenHandsCanonicalFile(path))
+}
+
+// TestOpenHandsRawFixtureValidates exercises validateOpenHandsRawFile over the
+// committed wire-reference fixture without the e2e build tag, keeping it used
+// for the linter.
+func TestOpenHandsRawFixtureValidates(t *testing.T) {
+	fixture := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "openhands", "testdata", "openhands-native-traces.json")
+	raw, err := os.ReadFile(fixture)
+	require.NoError(t, err)
+	// The fixture is pretty-printed for review; the file wrapper reads
+	// collector-style JSONL, so compact before parsing.
+	var compact bytes.Buffer
+	require.NoError(t, json.Compact(&compact, raw))
+	path := filepath.Join(t.TempDir(), "raw.jsonl")
+	require.NoError(t, os.WriteFile(path, compact.Bytes(), 0o600))
+	require.NoError(t, validateOpenHandsRawFile(path, ""))
+}
+
+// TestOpenHandsCanonicalFixtureRejectsContent injects the content attribute the
+// raw lmnr.tracer wire actually carries; canonical validation must catch it.
+func TestOpenHandsCanonicalFixtureRejectsContent(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "openhands", "testdata", "openhands-canonical.otlp.json")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	traces, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(raw)
+	require.NoError(t, err)
+	span := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	span.Attributes().PutStr("gen_ai.input.messages", `[{"role":"user","content":"leak"}]`)
+
+	temp := filepath.Join(t.TempDir(), "leaky.json")
+	data, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(temp, data, 0o600))
+
+	err = validateOpenHandsCanonicalFile(temp)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "survived normalization")
 }
