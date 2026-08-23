@@ -561,6 +561,49 @@ Claude edge, the normalizer stays stateless and rewrites whatever each export
 contains: OpenCode fragments its output, children can land without their
 ancestors, and backends reassemble by the preserved IDs.
 
+## Pi normalization
+
+The Pi coding agent has no native OTLP export; the
+[`@amaster.ai/pi-telemetry`](https://www.npmjs.com/package/@amaster.ai/pi-telemetry)
+extension (Apache-2.0) fills that gap. It emits OTLP/HTTP traces only — no
+logs or metrics — scoped to user-input boundaries: one trace per user
+message, containing every agentic iteration and tool call until the reply is
+published.
+
+Groups are claimed by instrumentation-scope prefix
+(`@amaster.ai/pi-telemetry`) or the resource `telemetry.sdk.name` attribute.
+The wire shape was pinned from a live capture on 2026-08-22 (extension 0.1.9,
+pi 0.84.2), which ships as the golden fixture:
+
+| Native span | Canonical name | Notes |
+| --- | --- | --- |
+| `chat-turn` (one per iteration) | `invoke_agent pi` | parent cleared |
+| `llm-generation [lane] [n]` (prefix match) | `chat <model>` | usage keys renamed to canonical `gen_ai.usage.*`; cache keys use the dotted semconv form |
+| `<tool name>` with a `toolName` attribute | `execute_tool <tool>` | tool identity lives in attributes (`toolName`, `toolCallId`); the span name is the bare tool name |
+
+### Decision record
+
+- The exporter references an internal parent span it never sends: every span
+  arrives with a dangling `ParentSpanID`. Each `chat-turn` therefore becomes
+  a root with its parent cleared, matching the plan-level rule that turn
+  grouping relies on `gen_ai.conversation.id` rather than a long-lived
+  session root. Orphaned `chat`/`execute_tool` spans re-attach to the first
+  agent root in their batch; children arriving in a batch of their own become
+  roots, mirroring the Claude Code sub-batch behavior.
+- Exporter-local metadata never reaches canonical output: `langfuse.*`
+  attribute baggage, the serialized `usage` JSON object (the flat per-field
+  source keys are renamed instead), cost totals, and diagnostic `status` /
+  `stopReason` fields are dropped. Payload capture stays off by default in
+  the extension (`includePayloads`).
+- Unknown span names pass through unchanged with Langfuse baggage stripped,
+  so future extension events surface visibly instead of being silently
+  dropped.
+- The extension's own telemetry contract differs from Pi's first-party
+  `@earendil-works/pi-telemetry` package, which defines vocabulary but ships
+  no exporter. Supporting the third-party extension here reflects what
+  actually exists on the wire today; if Pi grows a first-party exporter, it
+  becomes another claim profile in this edge.
+
 ## Privacy and security
 
 The connector discards Codex prompt content, tool arguments, and tool output

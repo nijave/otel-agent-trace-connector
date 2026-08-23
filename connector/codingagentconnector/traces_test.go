@@ -41,6 +41,11 @@ func TestTracesRouterSendsEachGroupToExactlyOneNormalizer(t *testing.T) {
 	chat.SetName("chat glm-4.7")
 	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
 
+	piGroup := input.ResourceSpans().AppendEmpty()
+	piScope := piGroup.ScopeSpans().AppendEmpty()
+	piScope.Scope().SetName("@amaster.ai/pi-telemetry")
+	piScope.Spans().AppendEmpty().SetName("chat-turn")
+
 	unknownGroup := input.ResourceSpans().AppendEmpty()
 	unknownGroup.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("startup")
 
@@ -69,8 +74,9 @@ func TestTracesRouterSendsEachGroupToExactlyOneNormalizer(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, 3, total, "unknown groups stay out of the canonical edge")
+	require.Equal(t, 4, total, "unknown groups stay out of the canonical edge")
 	require.Equal(t, 1, names["invoke_agent claude_code"], "claude normalizer claimed its group once")
 	require.Equal(t, 1, names["chat glm-4.7"], "genai normalizer claimed its group once")
 	require.Equal(t, 1, names["invoke_agent opencode"], "opencode normalizer claimed its group once")
+	require.Equal(t, 1, names["invoke_agent pi"], "pi normalizer claimed its group once")
 }

@@ -22,6 +22,12 @@ OCB-built distribution for coding-agent traces:
   direct `opentelemetry-util-genai` users, and the Strands Agents SDK into
   the same canonical vocabulary, stripping prompt/completion/tool content
   from canonical output.
+- **Pi:** normalizes native traces emitted by the
+  [`@amaster.ai/pi-telemetry`](https://www.npmjs.com/package/@amaster.ai/pi-telemetry)
+  extension for the [Pi coding agent](https://pi.dev). Each user input becomes
+  one `invoke_agent pi` root per agentic iteration, with `chat <model>` and
+  `execute_tool <tool>` children; exporter-local Langfuse baggage and raw
+  usage blobs never reach canonical output.
 
 The canonical tree is:
 
@@ -102,7 +108,8 @@ Repository layout:
 │   ├── metadata.yaml, doc.go        #   mdatagen source and generate directive
 │   ├── internal/codex/              #   stateful log correlation and trace building
 │   ├── internal/cursor/             #   burst correlation of native Cursor logs
-│   └── internal/claude/             #   stateless native-span normalization
+│   ├── internal/claude/             #   stateless native-span normalization
+│   └── internal/pi/                  #   stateless @amaster.ai/pi-telemetry normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
 │   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues

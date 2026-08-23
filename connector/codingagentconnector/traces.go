@@ -14,6 +14,7 @@ import (
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/genai"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/pi"
 )
 
 // tracesRouter fans the traces-to-traces edge across the stateless
@@ -28,7 +29,7 @@ type tracesRouter struct {
 }
 
 func newTracesRouter(next consumer.Traces) connector.Traces {
-	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next), opencode.New(next)}}
+	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next), opencode.New(next), pi.New(next)}}
 }
 
 func (*tracesRouter) Capabilities() consumer.Capabilities {
