@@ -103,6 +103,7 @@ func isClaimedSpan(name string) bool {
 func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 	attrs := span.Attributes()
 	putCommon(attrs, version)
+	copyWireStrings(wire.Attributes(), attrs)
 	attrs.PutStr("coding_agent.source.event", wire.Name())
 	switch wire.Name() {
 	case wireStreamText:
@@ -155,6 +156,20 @@ var usageKeys = [][2]string{
 	{"ai.usage.inputTokens", "gen_ai.usage.input_tokens"},
 	{"ai.usage.outputTokens", "gen_ai.usage.output_tokens"},
 	{"ai.usage.cachedInputTokens", "gen_ai.usage.cache_read.input_tokens"},
+}
+
+// wireStringAttrs maps OpenCode string attributes onto canonical destinations,
+// the string counterpart to the token usage table above.
+var wireStringAttrs = [][2]string{
+	{"ai.model.provider", "gen_ai.provider.name"},
+}
+
+func copyWireStrings(from, to pcommon.Map) {
+	for _, pair := range wireStringAttrs {
+		if value := firstString(from, pair[0]); value != "" {
+			to.PutStr(pair[1], value)
+		}
+	}
 }
 
 func copyUsage(from, to pcommon.Map) {
