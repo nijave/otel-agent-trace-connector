@@ -91,13 +91,28 @@ OpenCode enables its tracer with `"experimental": {"openTelemetry": true}` in
 (set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`). Released versions without
 the native tracer emit nothing under the flag alone.
 
+Pi has no native OTel surface. Install the
+[`@amaster.ai/pi-telemetry`](https://www.npmjs.com/package/@amaster.ai/pi-telemetry)
+extension (`pi install npm:@amaster.ai/pi-telemetry`, which registers itself
+under `"packages"` in `~/.pi/agent/settings.json`) and enable its exporter in
+the same file:
+
+```json
+{
+  "pi-telemetry": {
+    "serviceName": "pi",
+    "otel": { "enabled": true, "endpoint": "http://collector:4318/v1/traces" }
+  }
+}
+```
+
 GenAI-semconv sources need no keys beyond the standard SDK environment
 (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`).
 
-No support yet: Cline, Pi, Kilo Code CLI, Hermes Agent, OpenHands, and
-hook- or plugin-based surfaces such as Cursor hooks and OpenCode plugins.
-[docs/harnesses.md](docs/harnesses.md) records what each exports and why it
-does not fit today.
+No support yet: Cline, Kilo Code CLI, Hermes Agent, OpenHands, and hook- or
+plugin-based surfaces such as Cursor hooks, other Pi extensions, and OpenCode
+plugins. [docs/harnesses.md](docs/harnesses.md) records what each exports and
+why it does not fit today.
 
 Repository layout:
 

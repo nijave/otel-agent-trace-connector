@@ -17,17 +17,17 @@ attribute names below as snapshots, not contracts.
 | **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) | yes (traces edge) |
 | **Codex** | structured logs | yes (`response.completed`) | conversation ID, no repo path | yes (native) | yes (logs edge) |
 | **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) | no |
-| **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions | no |
+| **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions | yes (traces edge, `@amaster.ai/pi-telemetry`) |
 | **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) | no | no |
 | **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) | yes (native) | yes (logs edge) |
 | **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no | yes, health gauges only | no |
 | **OpenCode** | traces + logs (native, new) | yes (native spans, no cost) | no (plugins add it) | via plugins | yes (traces edge) |
 | **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no | no |
 
-Codex, Cursor, Claude Code, OpenCode, and the GenAI-semconv scopes are the
+Codex, Cursor, Claude Code, OpenCode, Pi, and the GenAI-semconv scopes are the
 connector's supported edges; the root [README](../README.md) lists the
-required configuration for each. This file focuses on Cline, Pi, and Kilo,
-with Cursor, Hermes, OpenCode, and OpenHands added from the same research.
+required configuration for each. This file focuses on Cline and Kilo,
+with Pi, Cursor, Hermes, OpenCode, and OpenHands added from the same research.
 The `## OTel metrics` section below covers the metrics dimension.
 
 ## Cline
@@ -329,16 +329,22 @@ groups whose instrumentation scope is exactly `opencode` and normalizes the
 Vercel AI SDK spans. Plugin surfaces (`felixti/opencode-otel-plugin` GenAI
 semconv, `@devtheops/opencode-plugin-otel` OpenInference) remain future work.
 
-The connector does not sort Cline, Pi, Kilo, Hermes, or OpenHands today, and
+Pi is handled too, through a different extension than this section's 2026-08-20
+research surveyed: the traces edge claims groups scoped
+`@amaster.ai/pi-telemetry` (the only maintained open OTLP exporter found in the
+npm ecosystem on 2026-08-22) and normalizes its custom vocabulary. The other
+extensions below (`pi-otel-telemetry`, `@the-agency/pi-observability`,
+`devkade/pi-opentelemetry`, …) emit different span names and scopes; each would
+need its own claim profile if it gains adoption worth tracking. The repo-level
+repo/cwd identity these extensions carry is not yet mapped into canonical
+output — the connector drops nothing from the raw pipeline, so identity stays
+available there.
+
+The connector does not sort Cline, Kilo, Hermes, or OpenHands today, and
 the approved GenAI semconv design (which claims by instrumentation scope:
 `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
 `strands.telemetry`) does not cover them either.
 
-- **Pi** is the closest fit: its extensions emit GenAI-semconv traces with the
-  `invoke_agent`/`chat`/`execute_tool` vocabulary, but their span names
-  (`pi.session`, `pi.turn`, `gen_ai.chat`) and scopes do not match the planned
-  detection rules. Folding Pi in would use the design's "configurable scope
-  allowlist" future-work item.
 - **Cline** emits metrics/logs, not traces, so it does not fit a traces-edge
   normalizer.
 - **Kilo** emits `opencode.*`-namespaced spans and deliberately strips
@@ -363,7 +369,8 @@ candidate.
 - Cline source (telemetry): https://github.com/cline/cline/blob/main/src/services/telemetry
 - Pi extensions: `pi-otel-telemetry`, `@the-agency/pi-observability`,
   `pi-otel` (NikiforovAll), `maxmalkin/pi-OTEL`, `devkade/pi-opentelemetry`
-  (pi.dev / npm)
+  (pi.dev / npm); supported exporter:
+  https://www.npmjs.com/package/@amaster.ai/pi-telemetry
 - Pi session transcript format (cwd header): https://openusage.sh/docs/providers/pi/
 - Kilo Code CLI: https://kilo.ai/docs/code-with-ai/platforms/cli
 - Kilo telemetry source: https://github.com/Kilo-Org/kilocode (packages/kilo-telemetry)
