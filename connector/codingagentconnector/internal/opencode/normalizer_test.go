@@ -5,6 +5,9 @@ package opencode
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -246,4 +249,70 @@ func TestNormalizerBareNamesWhenSubjectMissing(t *testing.T) {
 	require.NoError(t, New(sink2).ConsumeTraces(context.Background(), input2))
 	out2 := sink2.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "execute_tool", out2.Name())
+}
+
+func countSpans(traces ptrace.Traces) int {
+	total := 0
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		rs := traces.ResourceSpans().At(i)
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			total += rs.ScopeSpans().At(j).Spans().Len()
+		}
+	}
+	return total
+}
+
+func anySpanNameWithPrefix(names map[string]bool, prefix string) bool {
+	for name := range names {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNormalizerFixtureReplay(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "opencode-native-traces.json"))
+	require.NoError(t, err, "run scripts/e2e-opencode.sh and capture the fixture first")
+	unmarshaler := &ptrace.JSONUnmarshaler{}
+	input, err := unmarshaler.UnmarshalTraces(data)
+	require.NoError(t, err)
+	inputSpans := countSpans(input)
+	require.Positive(t, inputSpans)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+	output := sink.all()[0]
+	require.Less(t, countSpans(output), inputSpans, "Effect noise must be dropped")
+
+	names := map[string]bool{}
+	roots := 0
+	for i := 0; i < output.ResourceSpans().Len(); i++ {
+		rs := output.ResourceSpans().At(i)
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			spans := rs.ScopeSpans().At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				span := spans.At(k)
+				names[span.Name()] = true
+				for _, secret := range []string{"ai.response.text", "ai.toolCall.args", "ai.toolCall.result"} {
+					_, leaked := span.Attributes().Get(secret)
+					require.False(t, leaked, "%s must not survive normalization", secret)
+				}
+				if strings.HasPrefix(span.Name(), "invoke_agent") {
+					roots++
+				}
+			}
+		}
+	}
+	for name := range names {
+		switch strings.SplitN(name, " ", 2)[0] {
+		case "invoke_agent", "chat", "execute_tool":
+		default:
+			t.Fatalf("unexpected canonical span name %q", name)
+		}
+	}
+	require.Positive(t, roots, "fixture must contain at least one step root")
+	require.True(t, anySpanNameWithPrefix(names, "chat"), "fixture must contain a chat child")
+	require.True(t, anySpanNameWithPrefix(names, "execute_tool"), "fixture must contain an execute_tool child")
 }
