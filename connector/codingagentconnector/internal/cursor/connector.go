@@ -73,7 +73,7 @@ func New(cfg *codex.Config, set connector.Settings, next consumer.Traces) (conne
 	}
 	scopeVersion := set.BuildInfo.Version
 	if scopeVersion == "" {
-		scopeVersion = "0.1.0"
+		scopeVersion = codex.DefaultScopeVersion
 	}
 	c := &cursorConnector{
 		config: cfg, set: set, next: next, scopeVersion: scopeVersion,
