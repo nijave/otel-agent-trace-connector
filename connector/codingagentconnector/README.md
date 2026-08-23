@@ -82,6 +82,65 @@ invoke_agent <agent>
 Normalization never copies prompt text, tool arguments, or tool output into
 generated Codex spans.
 
+## Canonical span attributes
+
+Every emitted span carries the provenance attributes below. The normalizers then
+add operation-specific attributes. All attributes and events pass through one
+allowlist (`internal/content`), so an attribute outside these tables never
+reaches canonical output.
+
+Provenance attributes, present on every span:
+
+| Attribute | Value |
+| --- | --- |
+| `telemetry.source` | `native` (traces edges) or `normalized` (Codex and Cursor logs edge). |
+| `coding_agent.client.name` | The agent name, for example `claude_code`. |
+| `coding_agent.client.version` | Client version, when the source reports one. |
+| `coding_agent.source.scope` | Instrumentation scope name, on scope-claimed groups. |
+| `coding_agent.source.event` | Original log body or span name, on event-derived spans. |
+
+Attributes on the `invoke_agent <agent>` root:
+
+| Attribute | Notes |
+| --- | --- |
+| `gen_ai.operation.name` | Always `invoke_agent`. |
+| `gen_ai.agent.name` | Agent identifier: `codex`, `cursor`, `claude_code`, `pi`, `opencode`, or `openhands`. |
+| `gen_ai.conversation.id` | Session or burst identifier, when available. |
+| `gen_ai.provider.name` | Codex sets `openai`; Claude Code sets `anthropic`. Cursor omits it because its wire never names a provider. |
+| `gen_ai.request.model` | Last model seen in the turn (Codex). |
+| `coding_agent.turn.finish_reason` | `completed` or `timeout`; roots built by the logs edge. |
+| `coding_agent.turn.complete` | True when the turn finished cleanly (Codex). |
+| `coding_agent.turn.prompt_observed` | True when a `codex.user_prompt` arrived in the turn (Codex). |
+| `coding_agent.turn.events_truncated` | True when the turn or burst hit `max_events_per_turn`. |
+| `coding_agent.model_provider` | Display label from the Codex provider config; not an identifier. |
+| `gen_ai.usage.*` | Aggregate token totals across all calls in the turn or burst (Codex and Cursor roots only). |
+| `coding_agent.cursor.*` | Cursor surface, entrypoint, team id, and user id, copied from the resource. |
+
+Attributes on a `chat <model>` span:
+
+| Attribute | Notes |
+| --- | --- |
+| `gen_ai.operation.name` | Always `chat`. |
+| `gen_ai.request.model` | Model name; it also forms the `<model>` part of the span name. |
+| `gen_ai.provider.name` | Set when the source names the provider (`anthropic` for Claude Code, `openai` for Codex). |
+| `gen_ai.response.*`, `gen_ai.server.time_to_first_token` | Response metadata, copied when the source reports it. |
+| `gen_ai.usage.*` | Token counts for this call. |
+| `coding_agent.cursor.billable` | Cursor billing flag for the request. |
+
+Attributes on an `execute_tool <tool>` span:
+
+| Attribute | Notes |
+| --- | --- |
+| `gen_ai.operation.name` | Always `execute_tool`. |
+| `gen_ai.tool.name` | Tool name; it also forms the `<tool>` part of the span name. |
+| `gen_ai.tool.call.id` | Call identifier, when the source carries one. Codex uses `coding_agent.tool.call_id`. |
+| `gen_ai.tool.type`, `gen_ai.tool.status` | Copied when the source reports them. |
+| `coding_agent.tool.success` | Codex tool outcome; `false` sets the span status to `Error`. |
+
+GenAI-semconv sources keep benign request and response attributes that pass the
+allowlist, and GitHub Copilot spans keep their `github.copilot.*` operational
+counters. Content-bearing span events are removed entirely before export.
+
 ## Configuration
 
 <!-- vale off -->
