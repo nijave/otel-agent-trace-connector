@@ -7,9 +7,11 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -114,4 +116,33 @@ func TestTracesRouterEmitsMixedPiGenAIGroupOnce(t *testing.T) {
 	}
 	require.Equal(t, 1, names["invoke_agent pi"], "pi normalizer claimed the group once")
 	require.Equal(t, 1, names["chat gpt-5.2"], "the genai edge must defer Pi-owned groups")
+}
+
+func TestTracesRouterClaimsOpenHandsGroup(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "agent-server")
+
+	lmnr := rs.ScopeSpans().AppendEmpty()
+	lmnr.Scope().SetName("lmnr.tracer")
+	root := lmnr.Spans().AppendEmpty()
+	root.SetTraceID(pcommon.TraceID([16]byte{1}))
+	root.SetSpanID(pcommon.SpanID([8]byte{2}))
+	root.SetName("conversation")
+	root.Attributes().PutStr("lmnr.association.properties.session_id", "conv-uuid")
+	root.SetStartTimestamp(pcommon.NewTimestampFromTime(time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)))
+	root.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2026, 8, 23, 10, 0, 1, 0, time.UTC)))
+
+	next := &routerSink{}
+	router := newTracesRouter(next)
+	require.NoError(t, router.ConsumeTraces(context.Background(), traces))
+
+	require.Len(t, next.traces, 1)
+	var names []string
+	spans := next.traces[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	for i := 0; i < spans.Len(); i++ {
+		names = append(names, spans.At(i).Name())
+	}
+	require.Contains(t, names, "invoke_agent openhands")
+	require.NotContains(t, names, "unrelated_span")
 }
