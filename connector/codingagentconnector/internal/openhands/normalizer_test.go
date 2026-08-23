@@ -207,7 +207,12 @@ func TestClaimsMarkerGroupsOnly(t *testing.T) {
 		makeTraces(makeSpan(traceA, conversationSpec()))))
 	require.Len(t, s.batches, 1)
 
-	unmarked := makeTraces(makeSpan(traceA, spanSpec{name: "my_function", spanID: "bbbbbbbbbbbbbbbb"}))
+	unmarked := makeTraces(
+		makeSpan(traceA, spanSpec{name: "my_function", spanID: "bbbbbbbbbbbbbbbb"}),
+		makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "b100000000000001", spanType: "LLM",
+		}),
+	)
 	s2 := &sink{}
 	require.NoError(t, New(s2).ConsumeTraces(context.Background(), unmarked))
 	require.Empty(t, s2.batches)
@@ -223,6 +228,18 @@ func TestClaimsMarkerGroupsOnly(t *testing.T) {
 	s3 := &sink{}
 	require.NoError(t, New(s3).ConsumeTraces(context.Background(), foreign))
 	require.Empty(t, s3.batches)
+}
+
+func TestUnmarkedLLMTypeSpanDoesNotClaim(t *testing.T) {
+	// An lmnr.tracer group whose only kept-role span is LLM-typed carries no
+	// OpenHands marker (no marker name, no delegate flag); the edge must not
+	// claim generic Laminar-instrumented traffic.
+	s := &sink{}
+	require.NoError(t, New(s).ConsumeTraces(context.Background(),
+		makeTraces(makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "c000000000000001", spanType: "LLM",
+		}))))
+	require.Empty(t, s.batches)
 }
 
 func TestDelegateFlagAloneClaims(t *testing.T) {

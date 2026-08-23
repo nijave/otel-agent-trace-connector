@@ -108,6 +108,9 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputRS := input.ResourceSpans().At(i)
+		if !ContainsOpenHandsSpans(inputRS) {
+			continue
+		}
 		groups, order := collect(inputRS)
 		if len(groups) == 0 {
 			continue
