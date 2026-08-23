@@ -776,7 +776,11 @@ make stale-output detection ineffective.
   A live Cursor E2E stays blocked on Enterprise-only server-side configuration
   (no Enterprise access available); tool-call children would need Cursor to
   log tool calls with a conversation id — today they are metrics without
-  correlation IDs.
+  correlation IDs. The wire surface was re-verified against the 2026-08-22
+  reference: all ten log events are covered, `cloud_agent.mcp_auth_error`
+  maps its server attribute onto the root event, and correction records
+  annotate the joined chat span with the correction kind instead of dropping
+  its token totals (deliberate; downstream decides billing semantics).
 - Add GitHub Copilot support: the same provider edge + live E2E for Copilot,
   likewise pending confirmation of its telemetry format.
 - Generate committed OTLP fixtures from real Codex, Claude, and GenAI runs
