@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim
+FROM node:24-trixie-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.241
 RUN apt-get update \
