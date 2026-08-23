@@ -12,6 +12,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 )
 
 // claudeTraceNormalizer preserves Claude Code's native hierarchy and IDs while
@@ -31,6 +33,8 @@ func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
+// ConsumeTraces renames native claude_code.* spans and strips content from
+// non-native sibling scopes riding in the same claimed group.
 func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
@@ -45,7 +49,12 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
-				normalizeClaudeSpan(spans.At(k), version, resourceSessionID)
+				span := spans.At(k)
+				if strings.HasPrefix(span.Name(), claudeSpanPrefix) {
+					normalizeClaudeSpan(span, version, resourceSessionID)
+				} else {
+					content.Strip(span)
+				}
 			}
 		}
 	}

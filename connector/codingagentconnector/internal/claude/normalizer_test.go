@@ -142,6 +142,37 @@ func TestClaudeTraceNormalizerKeepsSubToolOnlyBatch(t *testing.T) {
 	require.Equal(t, pcommon.SpanID{4}, findSpan(t, all, "claude_code.tool.execution").ParentSpanID())
 }
 
+// TestClaudeTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups
+// covers a claimed group that also carries a sibling instrumentation scope:
+// only claude_code.* spans are native, so sibling spans keep their shape but
+// lose prompt/completion/tool content before canonical export.
+func TestClaudeTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	nativeScope := rs.ScopeSpans().AppendEmpty()
+	nativeScope.Spans().AppendEmpty().SetName("claude_code.interaction")
+
+	siblingScope := rs.ScopeSpans().AppendEmpty()
+	siblingScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	sibling := siblingScope.Spans().AppendEmpty()
+	sibling.SetName("plugin.chat")
+	sibling.Attributes().PutStr("gen_ai.input.messages", "SENSITIVE")
+	sibling.Events().AppendEmpty().SetName("gen_ai.choice")
+	sibling.Events().AppendEmpty().SetName("plugin.step")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	findSpan(t, all, "invoke_agent claude_code")
+	outSibling := findSpan(t, all, "plugin.chat")
+	_, exists := outSibling.Attributes().Get("gen_ai.input.messages")
+	require.False(t, exists, "content must not ride along on non-native scopes in a claimed group")
+	require.Equal(t, 1, outSibling.Events().Len(), "content events are removed, non-content events survive")
+	// The input keeps its content: raw fidelity is the raw pipeline's job.
+	inSibling := input.ResourceSpans().At(0).ScopeSpans().At(1).Spans().At(0)
+	require.Equal(t, "SENSITIVE", attrString(t, inSibling, "gen_ai.input.messages"))
+}
+
 func TestClaudeTraceNormalizerFiltersOtherProviders(t *testing.T) {
 	input := ptrace.NewTraces()
 	input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("codex.internal")
