@@ -172,12 +172,11 @@ type kept struct {
 }
 
 type traceGroup struct {
-	traceID   pcommon.TraceID
-	root      *ptrace.Span
-	children  []kept
-	seenTools map[string]bool
-	minStart  pcommon.Timestamp
-	maxEnd    pcommon.Timestamp
+	traceID  pcommon.TraceID
+	root     *ptrace.Span
+	children []kept
+	minStart pcommon.Timestamp
+	maxEnd   pcommon.Timestamp
 }
 
 // window accumulates the time envelope of every lmnr.tracer span in a
@@ -216,7 +215,7 @@ func collect(rs ptrace.ResourceSpans) (map[pcommon.TraceID]*traceGroup, []pcommo
 			}
 			g := groups[key]
 			if g == nil {
-				g = &traceGroup{traceID: key, seenTools: map[string]bool{}}
+				g = &traceGroup{traceID: key}
 				groups[key] = g
 			}
 			switch rol {
@@ -225,15 +224,6 @@ func collect(rs ptrace.ResourceSpans) (map[pcommon.TraceID]*traceGroup, []pcommo
 					root := span
 					g.root = &root
 				}
-			case roleTool:
-				id := firstString(span.Attributes(), attrToolCallID)
-				if id != "" {
-					if g.seenTools[id] {
-						continue
-					}
-					g.seenTools[id] = true
-				}
-				g.children = append(g.children, kept{span: span, rol: rol})
 			default:
 				g.children = append(g.children, kept{span: span, rol: rol})
 			}
@@ -283,7 +273,20 @@ func emitGroup(dst ptrace.SpanSlice, g *traceGroup) {
 		ii, jj := si.SpanID(), sj.SpanID()
 		return string(ii[:]) < string(jj[:])
 	})
+	// Tool calls arrive once as a call and again as its result sharing a
+	// tool_call_id. Deduping after the deterministic sort keeps the
+	// earliest record regardless of wire arrival order.
+	emittedTools := map[string]bool{}
 	for _, child := range children {
+		if child.rol == roleTool {
+			id := firstString(child.span.Attributes(), attrToolCallID)
+			if id != "" {
+				if emittedTools[id] {
+					continue
+				}
+				emittedTools[id] = true
+			}
+		}
 		span := dst.AppendEmpty()
 		copySpanMetadata(child.span, span)
 		span.SetParentSpanID(root.SpanID())
