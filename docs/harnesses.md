@@ -4,7 +4,7 @@ This document records what each coding-agent harness exports over OpenTelemetry,
 scoped to the two concerns that matter for the connector's canonical edge:
 **token usage** and **project/workspace/repo identity**. It does not propose
 connector support; it records what the sources say so a decision can rest on
-evidence.
+evidence, and the summary marks which harnesses the connector sorts today.
 
 Research refreshed 2026-08-20 against primary sources (official docs and the
 harnesses' own source trees). Provider schemas are not stable APIs; treat the
@@ -12,22 +12,23 @@ attribute names below as snapshots, not contracts.
 
 ## Summary
 
-| Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics |
-| --- | --- | --- | --- | --- |
-| **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) |
-| **Codex** | structured logs | yes (`response.completed`) | conversation ID, no repo path | yes (native) |
-| **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) |
-| **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions |
-| **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) | no |
-| **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) | yes (native) |
-| **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no | yes, health gauges only |
-| **OpenCode** | traces + logs (native, new) | yes (native spans, no cost) | no (plugins add it) | via plugins |
-| **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no |
+| Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics | Connector today |
+| --- | --- | --- | --- | --- | --- |
+| **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) | yes (traces edge) |
+| **Codex** | structured logs | yes (`response.completed`) | conversation ID, no repo path | yes (native) | yes (logs edge) |
+| **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) | no |
+| **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions | no |
+| **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) | no | no |
+| **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) | yes (native) | yes (logs edge) |
+| **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no | yes, health gauges only | no |
+| **OpenCode** | traces + logs (native, new) | yes (native spans, no cost) | no (plugins add it) | via plugins | yes (traces edge) |
+| **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no | no |
 
-Claude Code and Codex are the connector's existing edges and `docs/design.md`
-covers them. This file focuses on Cline, Pi, and Kilo, with Cursor, Hermes,
-OpenCode, and OpenHands added from the same research. The `## OTel metrics`
-section below covers the metrics dimension.
+Codex, Cursor, Claude Code, OpenCode, and the GenAI-semconv scopes are the
+connector's supported edges; the root [README](../README.md) lists the
+required configuration for each. This file focuses on Cline, Pi, and Kilo,
+with Cursor, Hermes, OpenCode, and OpenHands added from the same research.
+The `## OTel metrics` section below covers the metrics dimension.
 
 ## Cline
 
@@ -328,8 +329,8 @@ groups whose instrumentation scope is exactly `opencode` and normalizes the
 Vercel AI SDK spans. Plugin surfaces (`felixti/opencode-otel-plugin` GenAI
 semconv, `@devtheops/opencode-plugin-otel` OpenInference) remain future work.
 
-The connector does not sort Cline, Pi, Kilo, Cursor, or Hermes today, and the
-approved GenAI semconv design (which claims by instrumentation scope:
+The connector does not sort Cline, Pi, Kilo, Hermes, or OpenHands today, and
+the approved GenAI semconv design (which claims by instrumentation scope:
 `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
 `strands.telemetry`) does not cover them either.
 
@@ -342,8 +343,8 @@ approved GenAI semconv design (which claims by instrumentation scope:
   normalizer.
 - **Kilo** emits `opencode.*`-namespaced spans and deliberately strips
   `gen_ai.*`; no match.
-- **Cursor** natively emits metrics/logs only (no traces) and no repo identity;
-  traces and repo identity come only from hook tooling
+- **Cursor**: the native metrics/logs surface already feeds the connector's
+  logs edge. Traces and repo identity come only from hook tooling
   (opentelemetry-hooks/cursorscope), whose `gen_ai.*` scopes would need the
   allowlist extension.
 - **Hermes** exposes neither token usage nor repo identity in-tree; both require
