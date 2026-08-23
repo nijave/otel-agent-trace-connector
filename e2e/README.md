@@ -5,12 +5,15 @@ container, and check the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
 they are opt-in and never run in CI.
 
-All four stacks share `compose.e2e-base.yaml` (the collector); each defines only
+All five stacks share `compose.e2e-base.yaml` (the collector); each defines only
 its own `agent` service. The stack writes output under `.e2e-output/`.
 
-All agents run against [z.ai](https://docs.z.ai/)'s GLM models, so a single z.ai
-API key covers all stacks. Nothing about the connector is z.ai-specific — these
-tests simply connect to it.
+The stacks use one of two model APIs. Claude Code runs against z.ai's
+Anthropic-compatible endpoint. The rest speak an OpenAI Completions-compatible
+API pointed at either [z.ai](https://docs.z.ai/)'s GLM models or OpenCode Go
+(the OpenCode stack). Nothing about the connector is provider-specific — these
+tests simply connect to whatever each stack points at. A single z.ai API key
+covers every stack except OpenCode, which needs its own `OPENCODE_API_KEY`.
 
 ## Live Codex E2E
 
@@ -162,3 +165,58 @@ Override the model with `E2E_STRANDS_MODEL`:
 ```bash
 E2E_STRANDS_MODEL=glm-4.7 ./scripts/e2e-strands.sh
 ```
+
+## Live OpenCode E2E
+
+The OpenCode stack builds the custom Collector and runs a real non-interactive
+`opencode run` against the [OpenCode Go](https://opencode.ai/zen) plan through
+the provider alias `oclaude`, using the default model `ox-alpha-free`. The
+prompt forces one harmless bash tool call. Native OTLP export activates through
+`experimental.openTelemetry` in the baked-in `opencode.json` plus
+`OTEL_EXPORTER_OTLP_ENDPOINT`, so spans stream to the collector while the agent
+runs. The stack then waits for trace normalization and validates the exported
+OTLP JSON on the host.
+
+Prerequisites:
+
+- Docker with Compose v2;
+- a Go toolchain (validation runs as `go test` on the host);
+- an `OPENCODE_API_KEY` holding an OpenCode Go API key;
+- network access to build images and call the model.
+
+Run it only when you intend to incur the model request:
+
+```bash
+export OPENCODE_API_KEY=...   # your OpenCode Go API key
+./scripts/e2e-opencode.sh
+```
+
+Optional overrides:
+
+```bash
+OPENCODE_VERSION=1.18.21 E2E_OPENCODE_MODEL=ox-alpha-free E2E_AGENT_TIMEOUT=10m ./scripts/e2e-opencode.sh
+```
+
+`E2E_OPENCODE_MODEL` must name a model that exists in the `models` map of
+`e2e/opencode/opencode.json`; the baked-in config has no other entries.
+
+### Fixture refresh
+
+A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`. The
+committed regression fixture,
+`connector/codingagentconnector/internal/opencode/testdata/opencode-native-traces.json`,
+is sliced from that file. The first jq command keeps the first resource group
+whose scope contains an `ai.streamText` subtree (its Effect-noise siblings come
+along, which the replay test needs); the second keeps every `ai.*` span and
+samples at most 20 noise spans per scope so the fixture stays small:
+
+```bash
+jq -s '{resourceSpans: ([.[] | .resourceSpans[]?] | map(select(any(.scopeSpans[]?; any(.spans[]?; .name == "ai.streamText")))))[:1]}' \
+  .e2e-output/raw-traces.json > /tmp/opencode/fixture-full.json
+jq '.resourceSpans[0].scopeSpans |= map(.spans |= ((map(select(.name | startswith("ai.")))) + ([.[] | select((.name | startswith("ai.") | not))][:20])))' \
+  /tmp/opencode/fixture-full.json \
+  > connector/codingagentconnector/internal/opencode/testdata/opencode-native-traces.json
+```
+
+After slicing, rerun `go test ./internal/opencode/` from
+`connector/codingagentconnector/` to confirm the fixture still replays green.

@@ -44,6 +44,13 @@ func TestTracesRouterSendsEachGroupToExactlyOneNormalizer(t *testing.T) {
 	unknownGroup := input.ResourceSpans().AppendEmpty()
 	unknownGroup.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("startup")
 
+	opencodeGroup := input.ResourceSpans().AppendEmpty()
+	opencodeScope := opencodeGroup.ScopeSpans().AppendEmpty()
+	opencodeScope.Scope().SetName("opencode")
+	step := opencodeScope.Spans().AppendEmpty()
+	step.SetName("ai.streamText")
+	step.Attributes().PutStr("session.id", "ses_router")
+
 	sink := &routerSink{}
 	router := newTracesRouter(sink)
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
@@ -62,7 +69,8 @@ func TestTracesRouterSendsEachGroupToExactlyOneNormalizer(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, 2, total, "unknown groups stay out of the canonical edge")
+	require.Equal(t, 3, total, "unknown groups stay out of the canonical edge")
 	require.Equal(t, 1, names["invoke_agent claude_code"], "claude normalizer claimed its group once")
 	require.Equal(t, 1, names["chat glm-4.7"], "genai normalizer claimed its group once")
+	require.Equal(t, 1, names["invoke_agent opencode"], "opencode normalizer claimed its group once")
 }

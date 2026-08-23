@@ -10,6 +10,10 @@ OCB-built distribution for coding-agent traces:
   keyed on `cursor.conversation.id`. Chat spans carry per-request token
   usage; the wire reports tool calls only as metrics without correlation
   IDs, so canonical traces have no `execute_tool` children.
+- **OpenCode:** renames its native Vercel AI SDK spans (`ai.streamText`,
+  `ai.streamText.doStream`, `ai.toolCall`) into one `invoke_agent opencode`
+  canonical trace per model step, dropping internal instrumentation spans and
+  all content attributes.
 - **Claude Code:** preserves its native span hierarchy and normalizes the
   interaction, LLM, and tool span names and attributes into the same canonical
   vocabulary.
@@ -131,8 +135,8 @@ Configure Codex telemetry in the user-level `config.toml`; Codex
 ignores project-local `[otel]` configuration. Prompt logging should remain off.
 See the [official Codex observability documentation](https://developers.openai.com/codex/config-advanced#observability-and-telemetry).
 
-The traces edge auto-detects Claude Code and GenAI-semconv sources by
-instrumentation scope, so every source enters the same pipeline.
+The traces edge auto-detects Claude Code, OpenCode, and GenAI-semconv sources
+by instrumentation scope, so every source enters the same pipeline.
 
 Claude Code should export its native beta traces directly. See the
 [official Claude Code monitoring documentation](https://code.claude.com/docs/en/monitoring-usage#traces-beta).

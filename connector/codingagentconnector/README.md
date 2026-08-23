@@ -36,6 +36,11 @@ trace vocabulary. It exposes two edges under a single component type,
   server-side from Team Settings (OTLP/HTTP to `/v1/logs`) — see the
   [Cursor OpenTelemetry Export documentation](https://cursor.com/docs/enterprise/opentelemetry-export)
   and its [wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire).
+- **OpenCode (traces → traces):** renames native Vercel AI SDK spans
+  (`ai.streamText`, `ai.streamText.doStream`, `ai.toolCall`) into one
+  `invoke_agent opencode` canonical trace per model step, dropping internal
+  instrumentation spans and all content attributes. Claims groups whose
+  instrumentation scope is exactly named `opencode`.
 - **Claude Code (traces → traces):** preserves Claude Code's native span
   hierarchy and normalizes the interaction, LLM, and tool span names and
   attributes into the same vocabulary.

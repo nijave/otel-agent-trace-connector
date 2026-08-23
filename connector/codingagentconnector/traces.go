@@ -13,12 +13,14 @@ import (
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/genai"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
 )
 
 // tracesRouter fans the traces-to-traces edge across the stateless
 // normalizers. Each normalizer claims disjoint resource groups (the GenAI
-// edge defers to Claude via claude.ContainsClaudeSpans), so a group is
-// emitted at most once and unclaimed groups stay out of the canonical edge.
+// edge defers to Claude via claude.ContainsClaudeSpans and to OpenCode via
+// opencode.ContainsOpenCodeSpans), so a group is emitted at most once and
+// unclaimed groups stay out of the canonical edge.
 type tracesRouter struct {
 	edges []connector.Traces
 	component.StartFunc
@@ -26,7 +28,7 @@ type tracesRouter struct {
 }
 
 func newTracesRouter(next consumer.Traces) connector.Traces {
-	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next)}}
+	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next), opencode.New(next)}}
 }
 
 func (*tracesRouter) Capabilities() consumer.Capabilities {

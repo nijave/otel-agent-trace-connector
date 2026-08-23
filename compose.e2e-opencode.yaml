@@ -1,0 +1,26 @@
+# OpenCode e2e stack. The shared collector comes from compose.e2e-base.yaml;
+# only the OpenCode agent is defined here, so this stack requires just an
+# OpenCode Go API key.
+# Native telemetry: OTEL_EXPORTER_OTLP_ENDPOINT below switches on OpenCode's OTLP
+# exporter, which streams spans while `opencode run` executes.
+include:
+  - compose.e2e-base.yaml
+
+services:
+  agent:
+    build:
+      context: e2e/opencode
+      args:
+        OPENCODE_VERSION: "${OPENCODE_VERSION:-1.18.21}"
+    environment:
+      # scripts/e2e-opencode.sh checks this credential before Compose runs, so it is
+      # optional here; a required (:?) guard would only fire later and less clearly.
+      OPENCODE_API_KEY: "${OPENCODE_API_KEY:-}"
+      E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
+      E2E_OPENCODE_MODEL: "${E2E_OPENCODE_MODEL:-ox-alpha-free}"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-opencode.sh}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    depends_on:
+      collector:
+        condition: service_healthy

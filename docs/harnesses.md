@@ -323,6 +323,11 @@ noted.
 
 ## Relevance to the connector
 
+The native OpenCode path is now handled: the connector's traces edge claims
+groups whose instrumentation scope is exactly `opencode` and normalizes the
+Vercel AI SDK spans. Plugin surfaces (`felixti/opencode-otel-plugin` GenAI
+semconv, `@devtheops/opencode-plugin-otel` OpenInference) remain future work.
+
 The connector does not sort Cline, Pi, Kilo, Cursor, or Hermes today, and the
 approved GenAI semconv design (which claims by instrumentation scope:
 `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
