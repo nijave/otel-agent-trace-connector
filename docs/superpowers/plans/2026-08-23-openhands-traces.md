@@ -268,11 +268,15 @@ func TestClaimsMarkerGroupsOnly(t *testing.T) {
 	require.Empty(t, s3.batches)
 }
 
-func TestDelegateMetadataAloneClaims(t *testing.T) {
-	attrs := baseAttrs()
-	attrs[attrIsDelegate] = "true"
+func TestDelegateFlagAloneClaims(t *testing.T) {
+	// No conversation- or agent-family span anywhere: only the delegate
+	// metadata flag marks this group as OpenHands'.
+	attrs := map[string]any{
+		attrSessionID:  sessionID,
+		attrIsDelegate: "true",
+	}
 	delegated := makeTraces(makeSpan(traceB, spanSpec{
-		name: "conversation", spanID: "cccccccccccccccc", attrs: attrs,
+		name: "litellm.completion", spanID: "cccccccccccccccc", spanType: "LLM", attrs: attrs,
 	}))
 	out := normalizeOne(t, delegated)
 	require.Len(t, findByName(t, out, "invoke_agent openhands"), 1)
@@ -389,15 +393,23 @@ func TestStreamedCompletionKeepsBareChatWithoutUsage(t *testing.T) {
 }
 
 func TestFragmentWithoutConversationGetsSyntheticRoot(t *testing.T) {
-	traces := makeTraces(makeSpan(traceA, spanSpec{
-		name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee",
-		spanType: "LLM",
-		attrs: map[string]any{
-			attrSessionID:              sessionID,
-			"gen_ai.request.model":     "m",
-			"gen_ai.usage.input_tokens": int64(1),
-		},
-	}))
+	// Mid-conversation exports contain marker spans (agent.step) but not yet
+	// the long-lived conversation root, which only ends with the
+	// conversation itself.
+	traces := makeTraces(
+		makeSpan(traceA, spanSpec{
+			name: "agent.step", spanID: "dddddddddddddddd",
+		}),
+		makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee",
+			spanType: "LLM",
+			attrs: map[string]any{
+				attrSessionID:              sessionID,
+				"gen_ai.request.model":     "m",
+				"gen_ai.usage.input_tokens": int64(1),
+			},
+		}),
+	)
 	out := normalizeOne(t, traces)
 	roots := findByName(t, out, "invoke_agent openhands")
 	require.Len(t, roots, 1)
@@ -406,6 +418,7 @@ func TestFragmentWithoutConversationGetsSyntheticRoot(t *testing.T) {
 	var want pcommon.SpanID
 	copy(want[:], sum[:8])
 	require.Equal(t, want, roots[0].SpanID())
+	// The synthetic root inherits the conversation id from a child span.
 	require.Equal(t, sessionID, attrString(roots[0], "gen_ai.conversation.id"))
 }
 
@@ -783,9 +796,26 @@ func rootSpanID(g *traceGroup) pcommon.SpanID {
 }
 
 func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
+	// Root attributes read from the conversation span when present.
+	// Fragment groups exported before their root ends inherit the
+	// conversation-level attributes from their kept children instead —
+	// every OpenHands span carries the association properties.
 	src := pcommon.Map{}
 	if g.root != nil {
 		src = (*g.root).Attributes()
+	} else {
+		src = pcommon.NewMap()
+		for _, k := range g.children {
+			k.span.Attributes().Range(func(name string, v pcommon.Value) bool {
+				if _, exists := src.Get(name); !exists &&
+					(strings.HasPrefix(name, attrMetadata) ||
+						strings.HasPrefix(name, "lmnr.association.properties.") ||
+						strings.HasPrefix(name, tagPrefix)) {
+					v.CopyTo(src.PutEmpty(name))
+				}
+				return true
+			})
+		}
 	}
 	attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 	attrs.PutStr("gen_ai.agent.name", agentName)
