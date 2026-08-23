@@ -37,15 +37,20 @@ func validateTraceFile(path, runID string, validate func(ptrace.Traces, string) 
 	// later export than the children it parents. Merge every batch before
 	// validating rather than expecting a complete trace within a single line.
 	merged := ptrace.NewTraces()
+	batches := 0
 	for scanner.Scan() {
 		traces, err := unmarshaler.UnmarshalTraces(scanner.Bytes())
 		if err != nil {
 			continue
 		}
+		batches++
 		traces.ResourceSpans().MoveAndAppendTo(merged.ResourceSpans())
 	}
 	if err := scanner.Err(); err != nil {
 		return err
+	}
+	if batches == 0 {
+		return fmt.Errorf("no valid OTLP batches in %s: file is missing, empty, or corrupt", path)
 	}
 	return validate(merged, runID)
 }
@@ -118,6 +123,11 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 			return err
 		}
 		return validateStrandsSpans(spans)
+	case "copilot":
+		if err := rejectGenAIContent(spans); err != nil {
+			return err
+		}
+		return validateCopilotSpans(spans)
 	case "opencode":
 		if err := rejectGenAIContent(spans); err != nil {
 			return err
@@ -129,13 +139,7 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		if err := rejectGenAIContent(spans); err != nil {
 			return err
 		}
-	case "copilot":
-		if err := rejectGenAIContent(spans); err != nil {
-			return err
-		}
-		return validateCopilotSpans(spans)
-	}
-	if agent == "claude_code" {
+	case "claude_code":
 		if err := rejectClaudeTraceContent(spans); err != nil {
 			return err
 		}
