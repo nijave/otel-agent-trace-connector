@@ -162,6 +162,29 @@ func TestBuildTraceRootEvents(t *testing.T) {
 	require.Equal(t, "ev-5", event.Attributes().AsRaw()["coding_agent.cursor.event_id"])
 }
 
+func TestBuildTraceCloudAgentMCPAuthErrorLandsOnRoot(t *testing.T) {
+	burst := burstForTest()
+	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	burst.events = append(burst.events, Event{
+		Body: "cloud_agent_mcp_auth_error", EventID: "ev-6", ConversationID: testConversation,
+		Timestamp: base.Add(6 * time.Second), Resource: testResourceRaw(),
+		Attrs: map[string]any{"cursor.mcp.server.name": "github"},
+	})
+	traces := mustBuildTrace(t, burst, "quiet")
+	root := rootOf(t, traces)
+	var mcpEvents int
+	for i := 0; i < root.Events().Len(); i++ {
+		event := root.Events().At(i)
+		if event.Name() != "cloud_agent_mcp_auth_error" {
+			continue
+		}
+		mcpEvents++
+		require.Equal(t, "github", event.Attributes().AsRaw()["coding_agent.cursor.mcp.server.name"])
+		require.Equal(t, "ev-6", event.Attributes().AsRaw()["coding_agent.cursor.event_id"])
+	}
+	require.Equal(t, 1, mcpEvents)
+}
+
 func TestBuildTraceUnjoinedErrorAndCorrectionLandOnRoot(t *testing.T) {
 	burst := burstForTest()
 	// Drop the api_request carrying ue-2 so its error and correction have no

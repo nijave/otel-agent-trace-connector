@@ -94,6 +94,16 @@
               ]
             },
             {
+              "timeUnixNano": "1787306430000000000",
+              "body": { "stringValue": "cloud_agent_mcp_auth_error" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-mcpauth" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-mcpauth" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.mcp.server.name", "value": { "stringValue": "github" } }
+              ]
+            },
+            {
               "timeUnixNano": "1787306580000000000",
               "body": { "stringValue": "plugin_installed" },
               "attributes": [

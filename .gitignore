@@ -1,5 +1,7 @@
 /dist/
 /release-dist/
+/worktrees/
+/.worktrees/
 /.e2e-output/
 /.superpowers/
 __pycache__/

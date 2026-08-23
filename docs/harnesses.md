@@ -350,7 +350,12 @@ the approved GenAI semconv design (which claims by instrumentation scope:
 - **Kilo** emits `opencode.*`-namespaced spans and deliberately strips
   `gen_ai.*`; no match.
 - **Cursor**: the native metrics/logs surface already feeds the connector's
-  logs edge. Traces and repo identity come only from hook tooling
+  logs edge (re-verified against the 2026-08-22 wire reference: all ten log
+  events and three metrics are covered; `plugin.installed` carries no
+  conversation id and is declined by the standing no-conversation-id policy).
+  Correction records annotate the joined chat span with the correction kind
+  rather than dropping its token totals — downstream decides billing
+  semantics. Traces and repo identity come only from hook tooling
   (opentelemetry-hooks/cursorscope), whose `gen_ai.*` scopes would need the
   allowlist extension.
 - **Hermes** exposes neither token usage nor repo identity in-tree; both require
