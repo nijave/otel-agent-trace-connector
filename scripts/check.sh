@@ -19,10 +19,10 @@ fi
 
 step "shell syntax"
 bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/generate.sh scripts/lib-e2e.sh
-sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh
+sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh e2e/pi/run.sh
 
 step "shellcheck"
-shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh
+shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/e2e-pi.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh e2e/pi/run.sh
 
 step "golangci-lint (v2.11.4, the version CI pins)"
 golangci-lint run --timeout=5m
