@@ -787,9 +787,9 @@ make stale-output detection ineffective.
   annotate the joined chat span with the correction kind instead of dropping
   its token totals (deliberate; downstream decides billing semantics).
 - Copilot native traces are handled via the GenAI edge. A live Copilot E2E
-  stack is deferred until someone with a paid subscription validates
-  non-interactive CLI invocation; committed fixtures cover the documented
-  schema meanwhile. A renamed producer scope (`COPILOT_OTEL_SOURCE_NAME`)
+  stack runs the CLI against a BYOK provider (no GitHub auth or subscription
+  needed): provider type/base URL/key/model arrive via `COPILOT_PROVIDER_*`
+  environment variables. A renamed producer scope (`COPILOT_OTEL_SOURCE_NAME`)
   does not claim.
 - Generate committed OTLP fixtures from real Codex, Claude, and GenAI runs
   (sanitized) so trace building and validation can exercise against real data

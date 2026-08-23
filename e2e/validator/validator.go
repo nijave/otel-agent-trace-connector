@@ -129,6 +129,11 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		if err := rejectGenAIContent(spans); err != nil {
 			return err
 		}
+	case "copilot":
+		if err := rejectGenAIContent(spans); err != nil {
+			return err
+		}
+		return validateCopilotSpans(spans)
 	}
 	if agent == "claude_code" {
 		if err := rejectClaudeTraceContent(spans); err != nil {
@@ -432,6 +437,74 @@ func validateStrandsRawTraces(traces ptrace.Traces, runID string) error {
 		}
 	}
 	return errors.New("raw strands output holds no content events")
+}
+
+// validateCopilotSpans requires one valid invoke_agent root. Copilot roots
+// carry a producer-chosen subject (BYOK providers rename gen_ai.agent.name),
+// so candidates match the operation prefix rather than an exact name, and the
+// first valid candidate wins like every other agent path.
+func validateCopilotSpans(spans []ptrace.Span) error {
+	var lastErr error
+	for _, root := range spans {
+		if !strings.HasPrefix(root.Name(), "invoke_agent") {
+			continue
+		}
+		if err := validateCopilotTree(spans, root); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return errors.New("copilot root span was not found")
+}
+
+func validateCopilotTree(spans []ptrace.Span, root ptrace.Span) error {
+	if root.ParentSpanID() != [8]byte{} {
+		return errors.New("root span unexpectedly has a parent")
+	}
+	if stringAttr(root, "gen_ai.operation.name") != "invoke_agent" {
+		return errors.New("root operation is not invoke_agent")
+	}
+	if stringAttr(root, "gen_ai.conversation.id") == "" {
+		return errors.New("conversation id is missing")
+	}
+	if _, ok := root.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+		return errors.New("copilot root input usage is missing")
+	}
+	if _, ok := root.Attributes().Get("gen_ai.usage.output_tokens"); !ok {
+		return errors.New("copilot root output usage is missing")
+	}
+	if stringAttr(root, "telemetry.source") != "native" {
+		return errors.New("telemetry source is not native")
+	}
+	if stringAttr(root, "coding_agent.client.name") == "" {
+		return errors.New("client name is missing")
+	}
+	chat, tool := false, false
+	for _, child := range spans {
+		if child.ParentSpanID() != root.SpanID() || child.TraceID() != root.TraceID() {
+			continue
+		}
+		switch stringAttr(child, "gen_ai.operation.name") {
+		case "chat":
+			chat = true
+			if stringAttr(child, "gen_ai.request.model") == "" {
+				return errors.New("chat child span is missing its request model")
+			}
+		case "execute_tool":
+			tool = true
+		}
+	}
+	if !chat {
+		return errors.New("chat child span is missing")
+	}
+	if !tool {
+		return errors.New("execute_tool child span is missing")
+	}
+	return nil
 }
 
 func validateOpenCodeRawFile(path, runID string) error {

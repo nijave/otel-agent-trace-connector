@@ -292,6 +292,85 @@ func TestValidateStrandsRawFileParsesActualOTLPJSON(t *testing.T) {
 	require.Error(t, validateStrandsRawFile(path, "different-run"))
 }
 
+// TestValidateCopilotCanonicalRequiresTreeWithoutContent pins the canonical
+// shape the GenAI edge emits for Copilot CLI: one valid invoke_agent root whose
+// subject is producer-chosen (BYOK renames it), usage on both directions, and
+// chat plus execute_tool children without content.
+func TestValidateCopilotCanonicalRequiresTreeWithoutContent(t *testing.T) {
+	traces := validCopilotTraces()
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "copilot"))
+
+	// A different producer-chosen subject must still validate.
+	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	spans.At(0).SetName("invoke_agent byok-agent")
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "copilot"))
+
+	// Content events must fail canonical validation.
+	chat := spans.At(1)
+	chat.Events().AppendEmpty().SetName("gen_ai.user.message")
+	require.Error(t, validateCanonicalTraces(traces, "run-1", "copilot"))
+}
+
+func TestValidateCopilotCanonicalRejectsIncompleteTree(t *testing.T) {
+	traces := validCopilotTraces()
+	rootAttrs := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
+	rootAttrs.Remove("gen_ai.usage.output_tokens")
+	err := validateCanonicalTraces(traces, "run-1", "copilot")
+	require.ErrorContains(t, err, "output usage")
+
+	traces = validCopilotTraces()
+	chat := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(1)
+	chat.Attributes().Remove("gen_ai.request.model")
+	err = validateCanonicalTraces(traces, "run-1", "copilot")
+	require.ErrorContains(t, err, "request model")
+
+	traces = validCopilotTraces()
+	rootAttrs = traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
+	rootAttrs.Remove("coding_agent.client.name")
+	err = validateCanonicalTraces(traces, "run-1", "copilot")
+	require.ErrorContains(t, err, "client name")
+
+	traces = validCopilotTraces()
+	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	spans.RemoveIf(func(span ptrace.Span) bool { return stringAttr(span, "gen_ai.operation.name") == "execute_tool" })
+	err = validateCanonicalTraces(traces, "run-1", "copilot")
+	require.ErrorContains(t, err, "execute_tool")
+}
+
+func validCopilotTraces() ptrace.Traces {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	traceID := pcommon.TraceID{1}
+	root := spans.AppendEmpty()
+	root.SetName("invoke_agent copilot-cli")
+	root.SetTraceID(traceID)
+	root.SetSpanID(pcommon.SpanID{2})
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.agent.name", "copilot-cli")
+	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
+	root.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
+	root.Attributes().PutInt("gen_ai.usage.output_tokens", 7)
+	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.client.name", "github-copilot")
+
+	chat := spans.AppendEmpty()
+	chat.SetName("chat glm-4.7")
+	chat.SetTraceID(traceID)
+	chat.SetParentSpanID(pcommon.SpanID{2})
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
+
+	tool := spans.AppendEmpty()
+	tool.SetName("execute_tool shell")
+	tool.SetTraceID(traceID)
+	tool.SetParentSpanID(pcommon.SpanID{2})
+	tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	return traces
+}
+
 func validateFile(path, runID string) error {
 	return validateCanonicalFile(path, runID, "codex")
 }

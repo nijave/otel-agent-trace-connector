@@ -5,15 +5,16 @@ container, and check the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
 they are opt-in and never run in CI.
 
-All five stacks share `compose.e2e-base.yaml` (the collector); each defines only
+All seven stacks share `compose.e2e-base.yaml` (the collector); each defines only
 its own `agent` service. The stack writes output under `.e2e-output/`.
 
 The stacks use one of two model APIs. Claude Code runs against z.ai's
-Anthropic-compatible endpoint. The rest speak an OpenAI Completions-compatible
-API pointed at either [z.ai](https://docs.z.ai/)'s GLM models or OpenCode Go
-(the OpenCode stack). Nothing about the connector is provider-specific — these
-tests simply connect to whatever each stack points at. A single z.ai API key
-covers every stack except OpenCode, which needs its own `OPENCODE_API_KEY`.
+Anthropic-compatible endpoint (the Copilot CLI stack defaults there too). The
+rest speak an OpenAI Completions-compatible API pointed at either
+[z.ai](https://docs.z.ai/)'s GLM models or OpenCode Go (the OpenCode stack).
+Nothing about the connector is provider-specific — these tests simply connect
+to whatever each stack points at. A single z.ai API key covers every stack
+except OpenCode, which needs its own `OPENCODE_API_KEY`.
 
 ## Live Codex E2E
 
@@ -243,3 +244,54 @@ with `PI_CODING_AGENT_VERSION`:
 ```bash
 E2E_PI_MODEL=zai/glm-4.7 ./scripts/e2e-pi.sh
 ```
+
+## Live Copilot CLI E2E
+
+The Copilot stack builds the custom Collector and runs a real non-interactive
+`copilot -p` session against a BYOK provider configured through environment
+variables. No GitHub authentication or Copilot subscription is involved; only
+the provider account behind the key is billed. Native telemetry activates
+through `COPILOT_OTEL_ENABLED` plus `OTEL_EXPORTER_OTLP_ENDPOINT`, so spans
+stream to the collector while the CLI runs. The prompt forces one harmless
+shell tool call. Validation accepts any valid `invoke_agent` root (the
+agent-name subject is producer-chosen) carrying conversation id and token
+usage, plus chat and `execute_tool` children, and rejects GenAI content in
+canonical output.
+
+Prerequisites:
+
+- Docker with Compose v2;
+- a Go toolchain (validation runs as `go test` on the host);
+- a `COPILOT_PROVIDER_API_KEY` holding an API key for the configured provider;
+- network access to build images and call the model.
+
+Run it only when you intend to incur the model request:
+
+```bash
+export COPILOT_PROVIDER_API_KEY=...   # your z.ai key
+./scripts/e2e-copilot.sh
+```
+
+The default points at z.ai's Anthropic-compatible endpoint with model
+`glm-4.7`. Any OpenAI Completions-compatible provider works through the
+override variables, for example:
+
+```bash
+E2E_COPILOT_PROVIDER_TYPE=openai \
+E2E_COPILOT_BASE_URL=https://api.openai.com/v1 \
+E2E_COPILOT_MODEL=gpt-5.2 \
+./scripts/e2e-copilot.sh
+```
+
+Pin the CLI version with `COPILOT_CLI_VERSION`.
+
+### Fixture capture
+
+A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`, the
+same flow the OpenCode stack documents. Captured traces feed the committed
+connector fixtures: the GenAI edge's
+`internal/genai/testdata/copilot-native.otlp.json` was authored from the
+documented schema, and real captures are how that fixture gets refreshed
+against actual CLI output. After updating it, rerun
+`go test ./internal/genai/` from `connector/codingagentconnector/` to confirm
+the fixture still replays green.
