@@ -34,6 +34,65 @@ invoke_agent <agent>
 The raw vendor logs and traces export separately. Normalization never
 copies prompt text, tool arguments, or tool output into generated Codex spans.
 
+## Supported harnesses
+
+These are the sources the connector sorts today, and what each needs. The
+logs edge (`coding_agent` on a logs pipeline) correlates structured logs into
+canonical traces. The traces edge (`coding_agent/claude` on a traces
+pipeline) normalizes native traces in place. Detection within an edge is
+automatic. No per-source connector setting exists.
+
+| Harness | Edge | Connector detection | Harness-side configuration |
+| --- | --- | --- | --- |
+| Codex | logs | log records whose `event.name` starts with `codex.` | `[otel]` block in user-level `~/.codex/config.toml` |
+| Cursor | logs | instrumentation scope starting with `cursor.telemetry` | Team Settings → OpenTelemetry Export (Enterprise beta), OTLP/HTTP to `/v1/logs` |
+| Claude Code | traces | span names starting with `claude_code.` | telemetry env vars with beta trace flag (below) |
+| OpenCode | traces | instrumentation scope named exactly `opencode` | `experimental.openTelemetry: true` plus OTLP endpoint env vars |
+| openai-v2 / util-genai agents | traces | instrumentation scope starting with `opentelemetry.instrumentation.openai_v2`, `opentelemetry.instrumentation.genai`, or `opentelemetry.util.genai` | standard OpenTelemetry SDK env vars |
+| Strands Agents SDK | traces | instrumentation scope starting with `strands.telemetry` | standard OpenTelemetry SDK env vars |
+
+Minimal harness-side settings, as exercised by the e2e stacks:
+
+Codex reads `[otel]` only from the user-level `~/.codex/config.toml`.
+Project-local `[otel]` tables are ignored:
+
+```toml
+[otel]
+log_user_prompt = false
+exporter = { otlp-http = { endpoint = "http://collector:4318/v1/logs", protocol = "binary" } }
+```
+
+Cursor needs no client setting. An admin points Team Settings → OpenTelemetry
+Export at the Collector over OTLP/HTTP binary protobuf. Metrics and logs
+arrive server-side. The connector correlates the logs.
+
+Claude Code exports its native beta traces when these variables reach its
+process:
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://collector:4318/v1/traces
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
+```
+
+Leave Claude Code's content gates unset so prompt text, tool arguments, tool
+output, and raw API bodies stay out of the raw destination.
+
+OpenCode enables its tracer with `"experimental": {"openTelemetry": true}` in
+`opencode.json` and exports wherever `OTEL_EXPORTER_OTLP_ENDPOINT` points
+(set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`). Released versions without
+the native tracer emit nothing under the flag alone.
+
+GenAI-semconv sources need no keys beyond the standard SDK environment
+(`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`).
+
+No support yet: Cline, Pi, Kilo Code CLI, Hermes Agent, OpenHands, and
+hook- or plugin-based surfaces such as Cursor hooks and OpenCode plugins.
+[docs/harnesses.md](docs/harnesses.md) records what each exports and why it
+does not fit today.
+
 Repository layout:
 
 ```text
@@ -122,31 +181,13 @@ new prompt in the same conversation, or bounded-state eviction.
 
 One `coding_agent` instance on the logs pipeline claims both log sources:
 Codex records by their `codex.`-prefixed event names and Cursor records by
-their `cursor.telemetry` instrumentation scope. Cursor exports native OTLP
-logs server-side from Team Settings (OTLP/HTTP to `/v1/logs`; Enterprise
-beta) — see the
-[Cursor OpenTelemetry Export documentation](https://cursor.com/docs/enterprise/opentelemetry-export)
-and its [wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire).
-Cursor has no prompt or completion event on the wire, so each conversation's
-activity burst finalizes when `reorder_window` passes with no new record,
-by `turn_timeout`, at shutdown, or through bounded-state eviction.
+their `cursor.telemetry` instrumentation scope. Cursor has no prompt or
+completion event on the wire, so each conversation's activity burst finalizes
+when `reorder_window` passes with no new record, by `turn_timeout`, at
+shutdown, or through bounded-state eviction.
 
-Configure Codex telemetry in the user-level `config.toml`; Codex
-ignores project-local `[otel]` configuration. Prompt logging should remain off.
-See the [official Codex observability documentation](https://developers.openai.com/codex/config-advanced#observability-and-telemetry).
-
-The traces edge auto-detects Claude Code, OpenCode, and GenAI-semconv sources
-by instrumentation scope, so every source enters the same pipeline.
-
-Claude Code should export its native beta traces directly. See the
-[official Claude Code monitoring documentation](https://code.claude.com/docs/en/monitoring-usage#traces-beta).
-
-Ad-hoc Python agents can export through
-[`opentelemetry-instrumentation-openai-v2`](https://pypi.org/project/opentelemetry-instrumentation-openai-v2/)
-or `opentelemetry-util-genai`; Strands Agents SDK exports its
-[built-in traces](https://strandsagents.com/docs/user-guide/observability-evaluation/traces/)
-directly. All three enter the same `traces` pipeline as Claude Code — the
-connector detects each source by instrumentation scope.
+The traces edge auto-detects Claude Code, OpenCode, and GenAI-semconv
+sources, so every source enters the same pipeline.
 
 Strands captures prompt and completion content in span events by default and
 its redaction is opt-in, so the raw trace destination receives content under
