@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs every unpaid check CI runs, in the same shape, so a push never reds CI.
-# Requires: go, golangci-lint v2.11.4 (the version CI pins), shellcheck, jq,
+# Requires: go, golangci-lint v2.13.1 (the version CI pins), shellcheck, jq,
 # docker, goreleaser. Run it from anywhere; it operates on the repo root.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run
 step "shellcheck"
 shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/e2e-pi.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh e2e/pi/run.sh
 
-step "golangci-lint (v2.11.4, the version CI pins)"
+step "golangci-lint (v2.13.1, the version CI pins)"
 golangci-lint run --timeout=5m
 (cd connector/codingagentconnector && golangci-lint run --timeout=5m)
 

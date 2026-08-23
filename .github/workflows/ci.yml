@@ -21,7 +21,7 @@ jobs:
           cache-dependency-path: go.sum
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.4
+          version: v2.13.1
           args: --timeout=5m
 
   test:
@@ -127,5 +127,5 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: v2.17.0
+          version: v2.17.1
           args: check
