@@ -346,21 +346,40 @@ func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
 	return value.Int()
 }
 
+// legacyContentAttributeKeys is the denylist the allowlist replaced, kept as
+// a regression checklist: every key that once required manual denial — plus
+// the older indexed prompt/completion layouts — must still fail to reach
+// canonical output.
+var legacyContentAttributeKeys = []string{
+	"gen_ai.input.messages",
+	"gen_ai.output.messages",
+	"gen_ai.input.messages.ref",
+	"gen_ai.output.messages.ref",
+	"gen_ai.system_instructions",
+	"system_prompt",
+	"gen_ai.tool.call.arguments",
+	"gen_ai.tool.call.result",
+	"gen_ai.tool.definitions",
+	"gen_ai.agent.tools",
+	"gen_ai.user.message",
+	"gen_ai.assistant.message",
+	"gen_ai.system.message",
+	"gen_ai.tool.message",
+	"gen_ai.choice",
+	"gen_ai.choice.message",
+	"gen_ai.choice.tool.result",
+	"gen_ai.prompt.0",
+	"gen_ai.prompt.1",
+	"gen_ai.completion.0",
+	"gen_ai.completion.1.content",
+}
+
 func TestGenAINormalizerStripsContentAttributesAndEvents(t *testing.T) {
 	input := ptrace.NewTraces()
 	span := newGroup(input, "strands.telemetry.tracer", "execute_tool get_marker")
 	span.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
 	span.Attributes().PutStr("gen_ai.tool.name", "get_marker")
-	for _, key := range []string{
-		"gen_ai.input.messages", "gen_ai.output.messages",
-		"gen_ai.input.messages.ref", "gen_ai.output.messages.ref",
-		"gen_ai.system_instructions", "system_prompt",
-		"gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
-		"gen_ai.tool.definitions", "gen_ai.agent.tools",
-		"gen_ai.user.message", "gen_ai.assistant.message",
-		"gen_ai.system.message", "gen_ai.tool.message", "gen_ai.choice",
-		"gen_ai.choice.message", "gen_ai.choice.tool.result",
-	} {
+	for _, key := range legacyContentAttributeKeys {
 		span.Attributes().PutStr(key, "SENSITIVE")
 	}
 	for _, name := range []string{
@@ -375,18 +394,28 @@ func TestGenAINormalizerStripsContentAttributesAndEvents(t *testing.T) {
 	}
 	safeEvent := span.Events().AppendEmpty()
 	safeEvent.SetName("gen_ai.tool.decision")
+	// Unknown attributes on surviving events are stripped too.
+	safeEvent.Attributes().PutStr("decision.rationale", "SENSITIVE")
+	exceptionEvent := span.Events().AppendEmpty()
+	exceptionEvent.SetName("exception")
+	exceptionEvent.Attributes().PutStr("exception.type", "TimeoutError")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	for _, key := range contentAttributeKeys {
+	for _, key := range legacyContentAttributeKeys {
 		_, exists := out.Attributes().Get(key)
 		require.False(t, exists, "content attribute %q survived", key)
 	}
-	require.Equal(t, 1, out.Events().Len(), "only the non-content event survives")
+	require.Equal(t, 2, out.Events().Len(), "only non-content events survive")
 	require.Equal(t, "gen_ai.tool.decision", out.Events().At(0).Name())
+	require.Equal(t, 0, out.Events().At(0).Attributes().Len(), "unknown event attributes are stripped")
+	require.Equal(t, "exception", out.Events().At(1).Name())
+	require.Equal(t, "TimeoutError",
+		fixtureAttrString(t, out.Events().At(1).Attributes(), "exception.type"),
+		"allowlisted event attributes survive")
 	// The input keeps its content: raw fidelity is the raw pipeline's job.
-	require.Equal(t, 9, input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().Len())
+	require.Equal(t, 10, input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().Len())
 }
 
 func TestGenAINormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testing.T) {
@@ -494,7 +523,7 @@ func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
 			normalizedChat := 0
 			for _, output := range outputs {
 				eachFixtureSpan(t, output, func(span ptrace.Span) {
-					for _, key := range contentAttributeKeys {
+					for _, key := range legacyContentAttributeKeys {
 						_, exists := span.Attributes().Get(key)
 						require.False(t, exists, "content attribute %q survived", key)
 					}
@@ -537,7 +566,7 @@ func TestCapturedCanonicalFixturesHoldNoContent(t *testing.T) {
 			traces := loadFixtureLines(t, filepath.Join("testdata", fixture.name+"-canonical.otlp.json"))
 			require.NotZero(t, traces.SpanCount())
 			eachFixtureSpan(t, traces, func(span ptrace.Span) {
-				for _, key := range contentAttributeKeys {
+				for _, key := range legacyContentAttributeKeys {
 					_, exists := span.Attributes().Get(key)
 					require.False(t, exists, "content attribute %q in canonical capture", key)
 				}
@@ -562,7 +591,7 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	names := map[string]ptrace.Span{}
 	eachFixtureSpan(t, outputs[0], func(span ptrace.Span) {
-		for _, key := range contentAttributeKeys {
+		for _, key := range legacyContentAttributeKeys {
 			_, exists := span.Attributes().Get(key)
 			require.False(t, exists, "content attribute %q survived on %q", key, span.Name())
 		}
@@ -599,8 +628,13 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 	reasoning, ok := vsCodeRoot.Attributes().Get("gen_ai.usage.reasoning.output_tokens")
 	require.True(t, ok, "the reasoning-token key passes through unmapped")
 	require.Equal(t, int64(25), reasoning.Int())
-	require.Equal(t, "https://github.com/acme/widgets", fixtureAttrString(t, vsCodeRoot.Attributes(), "github.copilot.git.repository"))
-	require.Equal(t, "https://github.com/acme/widgets", fixtureAttrString(t, vsCodeRoot.Attributes(), "copilot_chat.repo.remote_url"), "legacy namespace rides along untouched")
+	// Canonical output is an allowlist: repository URLs identify
+	// infrastructure rather than carry operational signal, so both the
+	// current and the legacy namespace keys fail closed.
+	_, hasRepoURL := vsCodeRoot.Attributes().Get("github.copilot.git.repository")
+	require.False(t, hasRepoURL, "repository URL must not reach canonical output")
+	_, hasLegacyRepoURL := vsCodeRoot.Attributes().Get("copilot_chat.repo.remote_url")
+	require.False(t, hasLegacyRepoURL, "legacy namespace must not ride along into canonical output")
 
 	hook, ok := names["execute_hook PreToolUse"]
 	require.True(t, ok, "unknown operations keep their wire names")
