@@ -269,6 +269,34 @@ func TestPiTraceNormalizerReparentsModellessChatChildren(t *testing.T) {
 		"a chat child without a model suffix must attach to the agent root instead of dangling")
 }
 
+// TestPiTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups
+// covers a claimed group that also carries a sibling instrumentation scope:
+// the scope/sdk.name claim sweeps every instrumentation in the process into
+// this edge, so non-native spans keep their shape but lose
+// prompt/completion/tool content before canonical export.
+func TestPiTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testing.T) {
+	input, _ := piInput()
+	rs := input.ResourceSpans().At(0)
+	siblingScope := rs.ScopeSpans().AppendEmpty()
+	siblingScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	sibling := siblingScope.Spans().AppendEmpty()
+	sibling.SetName("plugin.chat")
+	sibling.Attributes().PutStr("gen_ai.output.messages", "SENSITIVE")
+	sibling.Events().AppendEmpty().SetName("gen_ai.user.message")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	findSpan(t, all, "invoke_agent pi")
+	outSibling := findSpan(t, all, "plugin.chat")
+	_, exists := outSibling.Attributes().Get("gen_ai.output.messages")
+	require.False(t, exists, "content must not ride along on non-native scopes in a claimed group")
+	require.Equal(t, 0, outSibling.Events().Len(), "content events are removed entirely")
+	// The input keeps its content: raw fidelity is the raw pipeline's job.
+	inSibling := rs.ScopeSpans().At(1).Spans().At(0)
+	require.Equal(t, "SENSITIVE", attrString(t, inSibling, "gen_ai.output.messages"))
+}
+
 // TestPiTraceNormalizerKeepsDanglingParentsInChildOnlyBatch covers a batch
 // carrying only canonical children: the chat-turn they ran under was exported
 // in an earlier batch. Zeroing their parent would destroy the join key, so

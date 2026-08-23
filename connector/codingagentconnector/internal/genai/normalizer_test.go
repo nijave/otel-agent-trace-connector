@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
+
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -162,30 +164,6 @@ func TestGenAINormalizerSkipsOpenCodeGroups(t *testing.T) {
 	sink := &traceSink{}
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all(), "the OpenCode normalizer owns this group")
-}
-
-func TestGenAINormalizerSkipsPiGroups(t *testing.T) {
-	input := ptrace.NewTraces()
-	// Pi group: the Pi normalizer owns it even when a GenAI scope is
-	// present; claiming here would emit the group twice.
-	piGroup := input.ResourceSpans().AppendEmpty()
-	piScope := piGroup.ScopeSpans().AppendEmpty()
-	piScope.Scope().SetName("@amaster.ai/pi-telemetry")
-	piScope.Spans().AppendEmpty().SetName("chat-turn")
-	genaiScope := piGroup.ScopeSpans().AppendEmpty()
-	genaiScope.Scope().SetName("strands.telemetry.tracer")
-	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
-	// Pi also claims groups by resource attribute; the marker alone defers
-	// the whole group.
-	sdkGroup := input.ResourceSpans().AppendEmpty()
-	sdkGroup.Resource().Attributes().PutStr("telemetry.sdk.name", "@amaster.ai/pi-telemetry")
-	openaiScope := sdkGroup.ScopeSpans().AppendEmpty()
-	openaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
-	openaiScope.Spans().AppendEmpty().SetName("chat gpt-5.2")
-
-	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
-	require.Empty(t, sink.all(), "the Pi normalizer owns these groups")
 }
 
 func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
@@ -507,7 +485,7 @@ func fixtureSpansWithContentEvidence(traces ptrace.Traces) bool {
 			for k := 0; k < spans.Len(); k++ {
 				events := spans.At(k).Events()
 				for e := 0; e < events.Len(); e++ {
-					if contentEventNames[events.At(e).Name()] {
+					if content.IsContentEvent(events.At(e).Name()) {
 						found = true
 						break
 					}
@@ -552,7 +530,7 @@ func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
 						require.False(t, exists, "content attribute %q survived", key)
 					}
 					for e := 0; e < span.Events().Len(); e++ {
-						require.False(t, contentEventNames[span.Events().At(e).Name()],
+						require.False(t, content.IsContentEvent(span.Events().At(e).Name()),
 							"content event %q survived", span.Events().At(e).Name())
 					}
 					if value, ok := span.Attributes().Get("telemetry.source"); ok && value.Str() == "native" {
@@ -595,7 +573,7 @@ func TestCapturedCanonicalFixturesHoldNoContent(t *testing.T) {
 					require.False(t, exists, "content attribute %q in canonical capture", key)
 				}
 				for e := 0; e < span.Events().Len(); e++ {
-					require.False(t, contentEventNames[span.Events().At(e).Name()],
+					require.False(t, content.IsContentEvent(span.Events().At(e).Name()),
 						"content event %q in canonical capture", span.Events().At(e).Name())
 				}
 			})
@@ -663,4 +641,28 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 	hook, ok := names["execute_hook PreToolUse"]
 	require.True(t, ok, "unknown operations keep their wire names")
 	require.Equal(t, "pass", fixtureAttrString(t, hook.Attributes(), "github.copilot.hook.decision"))
+}
+
+func TestGenAINormalizerSkipsPiGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	// Pi group: the Pi normalizer owns it even when a GenAI scope is
+	// present; claiming here would emit the group twice.
+	piGroup := input.ResourceSpans().AppendEmpty()
+	piScope := piGroup.ScopeSpans().AppendEmpty()
+	piScope.Scope().SetName("@amaster.ai/pi-telemetry")
+	piScope.Spans().AppendEmpty().SetName("chat-turn")
+	genaiScope := piGroup.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("strands.telemetry.tracer")
+	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+	// Pi also claims groups by resource attribute; the marker alone defers
+	// the whole group.
+	sdkGroup := input.ResourceSpans().AppendEmpty()
+	sdkGroup.Resource().Attributes().PutStr("telemetry.sdk.name", "@amaster.ai/pi-telemetry")
+	openaiScope := sdkGroup.ScopeSpans().AppendEmpty()
+	openaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	openaiScope.Spans().AppendEmpty().SetName("chat gpt-5.2")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Empty(t, sink.all(), "the Pi normalizer owns these groups")
 }

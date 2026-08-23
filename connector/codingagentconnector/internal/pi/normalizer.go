@@ -18,6 +18,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 )
 
 const (
@@ -42,6 +44,8 @@ func (*piTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
+// ConsumeTraces renames native Pi spans and strips content from non-native
+// sibling scopes that the scope/sdk.name claim sweeps into the group.
 func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
@@ -56,8 +60,17 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 			spans := rs.ScopeSpans().At(j).Spans()
 			children := make(map[pcommon.SpanID]bool, spans.Len())
 			for k := 0; k < spans.Len(); k++ {
-				if normalizePiSpan(spans.At(k), version) {
-					children[spans.At(k).SpanID()] = true
+				span := spans.At(k)
+				child, native := normalizePiSpan(span, version)
+				if !native {
+					// Foreign spans ride along under the process-wide claim;
+					// their exporter baggage and GenAI content must not.
+					stripPiBaggage(span)
+					content.Strip(span)
+					continue
+				}
+				if child {
+					children[span.SpanID()] = true
 				}
 			}
 			reparentOrphans(spans, children)
@@ -85,8 +98,9 @@ func ContainsPiSpans(resourceSpans ptrace.ResourceSpans) bool {
 }
 
 // normalizePiSpan rewrites one span into the canonical vocabulary and reports
-// whether it becomes a canonical child of an agent root.
-func normalizePiSpan(span ptrace.Span, version string) bool {
+// whether the span is native Pi and whether it becomes a canonical child of
+// an agent root.
+func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 	if toolName := firstSpanString(span, "toolName"); toolName != "" {
 		// Live captures show tool spans named after the bare tool with the
 		// identity in attributes, so the attribute is the discriminator.
@@ -101,11 +115,11 @@ func normalizePiSpan(span ptrace.Span, version string) bool {
 		}
 		putPiCommon(attrs, version)
 		stripPiBaggage(span)
-		return true
+		return true, true
 	}
-	child := false
 	switch name := span.Name(); {
 	case name == turnSpanName:
+		native = true
 		span.SetName("invoke_agent pi")
 		// Turn spans arrive as roots or referencing a parent absent from
 		// their batch, so each becomes a canonical agent root with any
@@ -121,6 +135,7 @@ func normalizePiSpan(span ptrace.Span, version string) bool {
 		putPiCommon(attrs, version)
 	case strings.HasPrefix(name, generation):
 		child = true
+		native = true
 		model := firstSpanString(span, "model")
 		span.SetName("chat" + optionalNameSuffix(model))
 		attrs := span.Attributes()
@@ -140,7 +155,7 @@ func normalizePiSpan(span ptrace.Span, version string) bool {
 		putPiCommon(attrs, version)
 	}
 	stripPiBaggage(span)
-	return child
+	return child, native
 }
 
 // reparentOrphans repairs hierarchy inside a batch: canonical children
