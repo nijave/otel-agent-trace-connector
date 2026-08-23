@@ -768,6 +768,8 @@ make stale-output detection ineffective.
   - Claude Code native-span normalization.
   - GenAI semconv normalization (openai-v2, util-genai, Strands).
   - OpenCode native-span normalization (Vercel AI SDK spans).
+  - GitHub Copilot native-span normalization (via the GenAI edge, scope
+    prefix `github.copilot`).
 - Opt-in root synthesis for rootless ad-hoc traces (explicitly deferred; a
   config flag behind which the connector synthesizes `invoke_agent` parents is
   future work if rootless traces prove common).
@@ -784,8 +786,11 @@ make stale-output detection ineffective.
   maps its server attribute onto the root event, and correction records
   annotate the joined chat span with the correction kind instead of dropping
   its token totals (deliberate; downstream decides billing semantics).
-- Add GitHub Copilot support: the same provider edge + live E2E for Copilot,
-  likewise pending confirmation of its telemetry format.
+- Copilot native traces are handled via the GenAI edge. A live Copilot E2E
+  stack is deferred until someone with a paid subscription validates
+  non-interactive CLI invocation; committed fixtures cover the documented
+  schema meanwhile. A renamed producer scope (`COPILOT_OTEL_SOURCE_NAME`)
+  does not claim.
 - Generate committed OTLP fixtures from real Codex, Claude, and GenAI runs
   (sanitized) so trace building and validation can exercise against real data
   as fast, unpaid unit tests, reducing reliance on the paid live E2E. The e2e

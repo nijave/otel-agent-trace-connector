@@ -14,6 +14,9 @@ OCB-built distribution for coding-agent traces:
   `ai.streamText.doStream`, `ai.toolCall`) into one `invoke_agent opencode`
   canonical trace per model step, dropping internal instrumentation spans and
   all content attributes.
+- **GitHub Copilot:** normalizes native GenAI-semconv traces from Copilot CLI
+  and VS Code Chat (`invoke_agent`/`chat`/`execute_tool`) through the shared
+  GenAI-semconv edge
 - **Claude Code:** preserves its native span hierarchy and normalizes the
   interaction, LLM, and tool span names and attributes into the same canonical
   vocabulary.
@@ -54,6 +57,7 @@ automatic. No per-source connector setting exists.
 | Cursor | logs | instrumentation scope starting with `cursor.telemetry` | Team Settings → OpenTelemetry Export (Enterprise beta), OTLP/HTTP to `/v1/logs` |
 | Claude Code | traces | span names starting with `claude_code.` | telemetry env vars with beta trace flag (below) |
 | OpenCode | traces | instrumentation scope named exactly `opencode` | `experimental.openTelemetry: true` plus OTLP endpoint env vars |
+| GitHub Copilot | traces | instrumentation scope starting with `github.copilot` (GenAI-semconv edge) | `COPILOT_OTEL_ENABLED=true` or set `OTEL_EXPORTER_OTLP_ENDPOINT`; OTLP/HTTP or file exporter |
 | openai-v2 / util-genai agents | traces | instrumentation scope starting with `opentelemetry.instrumentation.openai_v2`, `opentelemetry.instrumentation.genai`, or `opentelemetry.util.genai` | standard OpenTelemetry SDK env vars |
 | Strands Agents SDK | traces | instrumentation scope starting with `strands.telemetry` | standard OpenTelemetry SDK env vars |
 | Pi | traces | instrumentation scope starting with `@amaster.ai/pi-telemetry`, or resource `telemetry.sdk.name` with the same prefix | install the `@amaster.ai/pi-telemetry` extension and enable its exporter (below) |

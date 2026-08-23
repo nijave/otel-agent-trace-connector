@@ -41,6 +41,11 @@ trace vocabulary. It exposes two edges under a single component type,
   `invoke_agent opencode` canonical trace per model step, dropping internal
   instrumentation spans and all content attributes. Claims groups whose
   instrumentation scope is exactly named `opencode`.
+- **GitHub Copilot (traces → traces):** claims instrumentation scope
+  `github.copilot` through the shared GenAI-semconv edge; spans rename via
+  the standard operation table, capture-gated content never reaches output,
+  and vendor extras (`github.copilot.cost`, `.aiu`, `.turn_id`) pass through
+  untouched.
 - **Claude Code (traces → traces):** preserves Claude Code's native span
   hierarchy and normalizes the interaction, LLM, and tool span names and
   attributes into the same vocabulary.

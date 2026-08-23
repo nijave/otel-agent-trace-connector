@@ -33,6 +33,8 @@ var scopePrefixes = []string{
 	"opentelemetry.util.genai",
 	"opentelemetry.instrumentation.genai",
 	"strands.telemetry",
+	// GitHub Copilot CLI / VS Code Chat; prefix form tolerates sub-scopes.
+	"github.copilot",
 }
 
 type genAITraceNormalizer struct {
