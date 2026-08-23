@@ -9,8 +9,6 @@ if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   exit 2
 fi
 
-export E2E_CODEX_MODEL="${E2E_CODEX_MODEL:-glm-4.7}"
-
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib-e2e.sh
 . "${script_dir}/lib-e2e.sh"

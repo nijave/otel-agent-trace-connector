@@ -7,7 +7,6 @@ if [[ -z "${OPENCODE_API_KEY:-}" ]]; then
   exit 2
 fi
 
-export E2E_OPENCODE_MODEL="${E2E_OPENCODE_MODEL:-ox-alpha-free}"
 # Selects the OpenCode validation path in the shared validator.
 export E2E_AGENT=opencode
 

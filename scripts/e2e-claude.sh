@@ -8,7 +8,6 @@ if [[ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
   exit 2
 fi
 
-export E2E_CLAUDE_MODEL="${E2E_CLAUDE_MODEL:-glm-4.7}"
 # Selects the Claude validation path in the shared validator (see compose.e2e-base.yaml).
 export E2E_AGENT=claude_code
 

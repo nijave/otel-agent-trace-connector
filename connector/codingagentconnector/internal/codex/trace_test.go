@@ -203,7 +203,7 @@ func TestBuildTraceHugeDurationKeepsSpanBoundsSane(t *testing.T) {
 		events: []agentEvent{
 			testEvent("codex.tool_result", base.Add(time.Second), map[string]any{"tool_name": "shell", "duration_ms": "10000000000000000"}),
 		}}
-	spans := buildTrace(turn, "completed", DefaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	tool := findSpan(t, spans, "execute_tool shell")
 	require.False(t, tool.StartTimestamp().AsTime().After(tool.EndTimestamp().AsTime()),
 		"an overflowing duration_ms must not move the start past the end")

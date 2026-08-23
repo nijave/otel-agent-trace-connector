@@ -9,7 +9,6 @@ if [[ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
   exit 2
 fi
 
-export E2E_PI_MODEL="${E2E_PI_MODEL:-zai/glm-4.7}"
 # Selects the Pi validation path in the shared validator (see compose.e2e-base.yaml).
 export E2E_AGENT=pi
 
