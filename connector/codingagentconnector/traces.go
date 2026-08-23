@@ -19,9 +19,10 @@ import (
 
 // tracesRouter fans the traces-to-traces edge across the stateless
 // normalizers. Each normalizer claims disjoint resource groups (the GenAI
-// edge defers to Claude via claude.ContainsClaudeSpans and to OpenCode via
-// opencode.ContainsOpenCodeSpans), so a group is emitted at most once and
-// unclaimed groups stay out of the canonical edge.
+// edge defers to Claude via claude.ContainsClaudeSpans, to OpenCode via
+// opencode.ContainsOpenCodeSpans, and to Pi via pi.ContainsPiSpans), so a
+// group is emitted at most once and unclaimed groups stay out of the
+// canonical edge.
 type tracesRouter struct {
 	edges []connector.Traces
 	component.StartFunc

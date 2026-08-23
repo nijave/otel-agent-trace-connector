@@ -164,6 +164,30 @@ func TestGenAINormalizerSkipsOpenCodeGroups(t *testing.T) {
 	require.Empty(t, sink.all(), "the OpenCode normalizer owns this group")
 }
 
+func TestGenAINormalizerSkipsPiGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	// Pi group: the Pi normalizer owns it even when a GenAI scope is
+	// present; claiming here would emit the group twice.
+	piGroup := input.ResourceSpans().AppendEmpty()
+	piScope := piGroup.ScopeSpans().AppendEmpty()
+	piScope.Scope().SetName("@amaster.ai/pi-telemetry")
+	piScope.Spans().AppendEmpty().SetName("chat-turn")
+	genaiScope := piGroup.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("strands.telemetry.tracer")
+	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+	// Pi also claims groups by resource attribute; the marker alone defers
+	// the whole group.
+	sdkGroup := input.ResourceSpans().AppendEmpty()
+	sdkGroup.Resource().Attributes().PutStr("telemetry.sdk.name", "@amaster.ai/pi-telemetry")
+	openaiScope := sdkGroup.ScopeSpans().AppendEmpty()
+	openaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	openaiScope.Spans().AppendEmpty().SetName("chat gpt-5.2")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Empty(t, sink.all(), "the Pi normalizer owns these groups")
+}
+
 func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

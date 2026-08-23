@@ -80,3 +80,38 @@ func TestTracesRouterSendsEachGroupToExactlyOneNormalizer(t *testing.T) {
 	require.Equal(t, 1, names["invoke_agent opencode"], "opencode normalizer claimed its group once")
 	require.Equal(t, 1, names["invoke_agent pi"], "pi normalizer claimed its group once")
 }
+
+func TestTracesRouterEmitsMixedPiGenAIGroupOnce(t *testing.T) {
+	input := ptrace.NewTraces()
+	// One group carrying both a Pi scope and a GenAI-semconv scope (an agent
+	// SDK instrumented inside a Pi-extension process): only the Pi normalizer
+	// may claim it.
+	mixedGroup := input.ResourceSpans().AppendEmpty()
+	piScope := mixedGroup.ScopeSpans().AppendEmpty()
+	piScope.Scope().SetName("@amaster.ai/pi-telemetry")
+	piScope.Spans().AppendEmpty().SetName("chat-turn")
+	genaiScope := mixedGroup.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	chat := genaiScope.Spans().AppendEmpty()
+	chat.SetName("chat gpt-5.2")
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+
+	sink := &routerSink{}
+	router := newTracesRouter(sink)
+	require.NoError(t, router.ConsumeTraces(context.Background(), input))
+
+	names := map[string]int{}
+	for _, traces := range sink.traces {
+		for i := 0; i < traces.ResourceSpans().Len(); i++ {
+			rs := traces.ResourceSpans().At(i)
+			for j := 0; j < rs.ScopeSpans().Len(); j++ {
+				spans := rs.ScopeSpans().At(j).Spans()
+				for k := 0; k < spans.Len(); k++ {
+					names[spans.At(k).Name()]++
+				}
+			}
+		}
+	}
+	require.Equal(t, 1, names["invoke_agent pi"], "pi normalizer claimed the group once")
+	require.Equal(t, 1, names["chat gpt-5.2"], "the genai edge must defer Pi-owned groups")
+}
