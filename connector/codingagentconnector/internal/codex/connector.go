@@ -284,8 +284,16 @@ func (c *codingAgentConnector) emit(ctx context.Context, finalized []finalizedTu
 		if ft.turn == nil {
 			continue
 		}
-		if err := c.next.ConsumeTraces(ctx, buildTrace(ft.turn, ft.reason, c.scopeVersion)); err != nil {
+		traces, err := buildTrace(ft.turn, ft.reason, c.scopeVersion)
+		if err != nil {
+			// Deliver anyway: the spans are intact even when resource
+			// attributes fail to copy, and returning the error would make the
+			// upstream retry rebuild the finalized turn as a fresh turn.
+			c.set.Logger.Error("failed to fully reconstruct codex trace", zap.Error(err))
+		}
+		if err := c.next.ConsumeTraces(ctx, traces); err != nil {
 			errs = errors.Join(errs, err)
+			continue
 		}
 		c.telemetry.recordEmitted(ctx, ft.reason, ft.turn.truncated)
 	}

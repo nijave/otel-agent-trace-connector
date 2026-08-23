@@ -30,7 +30,7 @@ var tokenUsageAttrs = []struct{ source, dest string }{
 	{"reasoning_token_count", "coding_agent.usage.reasoning_tokens"},
 }
 
-func buildTrace(turn *turnState, reason, scopeVersion string) ptrace.Traces {
+func buildTrace(turn *turnState, reason, scopeVersion string) (ptrace.Traces, error) {
 	events := append([]agentEvent(nil), turn.events...)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
 	start, end := turnBounds(turn, events)
@@ -39,7 +39,7 @@ func buildTrace(turn *turnState, reason, scopeVersion string) ptrace.Traces {
 
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
-	_ = rs.Resource().Attributes().FromRaw(turn.resource)
+	resErr := rs.Resource().Attributes().FromRaw(turn.resource)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
 	ss.Scope().SetVersion(scopeVersion)
@@ -60,7 +60,10 @@ func buildTrace(turn *turnState, reason, scopeVersion string) ptrace.Traces {
 	appendChatSpans(ss.Spans(), traceID, rootID, events, start)
 	appendToolSpans(ss.Spans(), traceID, rootID, events)
 	appendRootEvents(root.Events(), events)
-	return traces
+	if resErr != nil {
+		return traces, fmt.Errorf("copy turn resource attributes: %w", resErr)
+	}
+	return traces, nil
 }
 
 func turnBounds(turn *turnState, events []agentEvent) (time.Time, time.Time) {

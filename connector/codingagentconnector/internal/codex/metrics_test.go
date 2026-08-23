@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -150,4 +151,31 @@ func TestTelemetryReportsActiveTurns(t *testing.T) {
 	)))
 	rm := collectMetrics(t, reader)
 	require.Equal(t, int64(2), gaugeValue(t, rm, "otelcol_coding_agent_active_turns", attribute.String("provider", "codex")))
+}
+
+// TestEmittedTurnMetricSkipsFailedDelivery mirrors the cursor edge's regression
+// test of the same name: a failed delivery still surfaces its error, but the
+// turn must not count as emitted.
+func TestEmittedTurnMetricSkipsFailedDelivery(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.Background())) })
+	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop(), MeterProvider: provider}}
+	instance := newTestConnector(t, NewDefaultConfig(), set, &traceSink{err: errors.New("downstream unavailable")})
+	// Start is never called, so Shutdown drains synchronously without a sweep loop.
+
+	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(
+		testEvent("codex.user_prompt", time.Now(), nil),
+	)))
+	require.Len(t, instance.turns, 1)
+
+	require.Error(t, instance.Shutdown(context.Background()))
+
+	rm := collectMetrics(t, reader)
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			require.NotEqual(t, "otelcol_coding_agent_turns_emitted", m.Name,
+				"a failed delivery must not count as an emitted turn")
+		}
+	}
 }

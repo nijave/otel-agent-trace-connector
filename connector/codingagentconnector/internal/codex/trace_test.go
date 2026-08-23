@@ -25,7 +25,7 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 		},
 	}
 
-	traces := buildTrace(turn, "completed", defaultScopeVersion)
+	traces := mustBuildTrace(t, turn, "completed")
 	require.Equal(t, 3, traces.SpanCount())
 	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	root := findSpan(t, spans, "invoke_agent codex")
@@ -53,8 +53,8 @@ func TestBuildTraceIDsAreDeterministic(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{conversationID: "c", first: base, last: base, promptSeen: true,
 		events: []agentEvent{testEvent("codex.user_prompt", base, nil)}}
-	first := buildTrace(turn, "shutdown", defaultScopeVersion)
-	second := buildTrace(turn, "shutdown", defaultScopeVersion)
+	first := mustBuildTrace(t, turn, "shutdown")
+	second := mustBuildTrace(t, turn, "shutdown")
 	require.Equal(t, first.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID(), second.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID())
 }
 
@@ -62,7 +62,7 @@ func TestBuildTraceMarksTimeout(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{conversationID: "c", first: base, last: base,
 		events: []agentEvent{testEvent("codex.api_request", base, nil)}}
-	root := buildTrace(turn, "timeout", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	root := mustBuildTrace(t, turn, "timeout").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
 	require.False(t, attrBool(t, root, "coding_agent.turn.complete"))
 }
@@ -77,7 +77,7 @@ func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 7, "output_token_count": 3}),
 		},
 	}
-	root := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	root := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, int64(12), attrInt(t, root, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(5), attrInt(t, root, "gen_ai.usage.output_tokens"))
 }
@@ -94,7 +94,7 @@ func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "ttft_ms": 10}),
 		},
 	}
-	spans := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	require.True(t, base.Add(1900*time.Millisecond).Equal(spans.At(1).StartTimestamp().AsTime()))
 	require.True(t, base.Equal(spans.At(2).StartTimestamp().AsTime()))
 }
@@ -113,7 +113,7 @@ func TestBuildTraceSkipsTimingOnlyCompletion(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "ttft_ms": 30, "input_token_count": 10, "output_token_count": 4}),
 		},
 	}
-	traces := buildTrace(turn, "completed", defaultScopeVersion)
+	traces := mustBuildTrace(t, turn, "completed")
 	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat gpt-test")
 	require.Equal(t, int64(10), attrInt(t, chat, "gen_ai.usage.input_tokens"))
@@ -134,7 +134,7 @@ func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{"event.kind": "response.completed", "model": "glm-test", "ttft_ms": 30}),
 		},
 	}
-	traces := buildTrace(turn, "completed", defaultScopeVersion)
+	traces := mustBuildTrace(t, turn, "completed")
 	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat glm-test")
 	_, ok := chat.Attributes().Get("gen_ai.usage.input_tokens")
@@ -154,7 +154,7 @@ func TestBuildTraceRecordsConfiguredModelProvider(t *testing.T) {
 			testEvent("codex.user_prompt", base.Add(time.Millisecond), nil),
 		},
 	}
-	root := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	root := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "z.ai via responses-proxy", attrString(t, root, "coding_agent.model_provider"))
 	// The wire protocol Codex speaks is still OpenAI's, and that is what this means.
 	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))
@@ -170,9 +170,23 @@ func TestBuildTraceOmitsModelProviderWithoutConversationStart(t *testing.T) {
 		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
 		events: []agentEvent{testEvent("codex.user_prompt", base, nil)},
 	}
-	root := buildTrace(turn, "completed", defaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	root := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	_, ok := root.Attributes().Get("coding_agent.model_provider")
 	require.False(t, ok, "a turn with no conversation_starts must not claim a provider")
+}
+
+func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{conversationID: "c", first: base, last: base,
+		// chan int cannot round-trip into pdata; FromRaw rejects it.
+		resource: map[string]any{"service.name": "codex_cli_rs", "poison": make(chan int)},
+		events:   []agentEvent{testEvent("codex.api_request", base, nil)}}
+	traces, err := buildTrace(turn, "shutdown", defaultScopeVersion)
+	require.Error(t, err)
+	require.NotNil(t, traces)
+	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 1, spans.Len())
+	require.Equal(t, "invoke_agent codex", spans.At(0).Name())
 }
 
 func testEvent(name string, timestamp time.Time, additional map[string]any) agentEvent {
@@ -181,6 +195,13 @@ func testEvent(name string, timestamp time.Time, additional map[string]any) agen
 		attrs[key] = value
 	}
 	return agentEvent{name: name, conversationID: "conversation-1", timestamp: timestamp, attrs: attrs}
+}
+
+func mustBuildTrace(t *testing.T, turn *turnState, reason string) ptrace.Traces {
+	t.Helper()
+	traces, err := buildTrace(turn, reason, defaultScopeVersion)
+	require.NoError(t, err)
+	return traces
 }
 
 func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
