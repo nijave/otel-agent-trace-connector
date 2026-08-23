@@ -6,6 +6,7 @@ package cursor
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -145,7 +146,7 @@ func Int64Value(v any) (int64, bool) {
 	case int64:
 		return value, true
 	case uint64:
-		if value <= 1<<62 {
+		if value <= math.MaxInt64 {
 			return int64(value), true
 		}
 	case float64:

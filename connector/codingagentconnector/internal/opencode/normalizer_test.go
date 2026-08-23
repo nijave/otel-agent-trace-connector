@@ -204,6 +204,8 @@ func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
 	tool.SetParentSpanID([8]byte{2})
 	tool.Attributes().PutStr("ai.toolCall.name", "bash")
 	tool.Attributes().PutStr("ai.toolCall.id", "call_1")
+	// An empty wire provider must stay absent, not become an empty canonical one.
+	tool.Attributes().PutStr("ai.model.provider", "")
 	tool.Attributes().PutStr("ai.toolCall.args", "SECRET ARGS")
 	tool.Attributes().PutStr("ai.toolCall.result", "SECRET RESULT")
 
@@ -223,6 +225,8 @@ func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
 	name, ok := toolAttrs.Get("gen_ai.tool.name")
 	require.True(t, ok)
 	require.Equal(t, "bash", name.Str())
+	_, hasProvider := toolAttrs.Get("gen_ai.provider.name")
+	require.False(t, hasProvider, "an empty wire provider must not be copied")
 	op, ok := toolAttrs.Get("gen_ai.operation.name")
 	require.True(t, ok)
 	require.Equal(t, "execute_tool", op.Str())
@@ -271,6 +275,14 @@ func anySpanNameWithPrefix(names map[string]bool, prefix string) bool {
 	return false
 }
 
+func stringAttrOf(span ptrace.Span, key string) string {
+	value, ok := span.Attributes().Get(key)
+	if !ok {
+		return ""
+	}
+	return value.Str()
+}
+
 func TestNormalizerFixtureReplay(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("testdata", "opencode-native-traces.json"))
 	require.NoError(t, err, "run scripts/e2e-opencode.sh and capture the fixture first")
@@ -295,9 +307,17 @@ func TestNormalizerFixtureReplay(t *testing.T) {
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
 				names[span.Name()] = true
-				for _, secret := range []string{"ai.response.text", "ai.toolCall.args", "ai.toolCall.result"} {
+				for _, secret := range []string{"ai.response.text", "ai.toolCall.args", "ai.toolCall.result", "ai.model.provider"} {
 					_, leaked := span.Attributes().Get(secret)
 					require.False(t, leaked, "%s must not survive normalization", secret)
+				}
+				switch stringAttrOf(span, "gen_ai.operation.name") {
+				case "invoke_agent", "chat":
+					require.Equal(t, "oclaude.chat", stringAttrOf(span, "gen_ai.provider.name"),
+						"the wire names the provider on every model-call span")
+				case "execute_tool":
+					_, hasProvider := span.Attributes().Get("gen_ai.provider.name")
+					require.False(t, hasProvider, "tool spans carry no wire provider")
 				}
 				if strings.HasPrefix(span.Name(), "invoke_agent") {
 					roots++

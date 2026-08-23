@@ -20,6 +20,28 @@ func TestValidateFileParsesActualOTLPJSON(t *testing.T) {
 	require.Error(t, validateFile(path, "different-run"))
 }
 
+// TestValidateFileRejectsFileWithNoValidBatches pins that a corrupt or
+// truncated exporter file is reported as such: skipping unparseable lines must
+// not surface as the misleading "run id was not found".
+func TestValidateFileRejectsFileWithNoValidBatches(t *testing.T) {
+	path := t.TempDir() + "/corrupt.json"
+	require.NoError(t, os.WriteFile(path, []byte("{\"resourceSpans\": [\nnot-json\n"), 0o600))
+	err := validateFile(path, "run-1")
+	require.ErrorContains(t, err, "no valid OTLP batches")
+	require.NotContains(t, err.Error(), "run id was not found")
+}
+
+// TestValidateFileSkipsCorruptLinesAmongValidOnes keeps the per-line
+// tolerance: individual bad lines never fail an otherwise valid export.
+func TestValidateFileSkipsCorruptLinesAmongValidOnes(t *testing.T) {
+	encoded, err := (&ptrace.JSONMarshaler{}).MarshalTraces(validTraces("run-1"))
+	require.NoError(t, err)
+	path := t.TempDir() + "/mixed.json"
+	content := "garbage\n" + string(encoded) + "\n{\"trunc"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	require.NoError(t, validateFile(path, "run-1"))
+}
+
 func TestValidateTracesRejectsMissingToolAndSensitiveData(t *testing.T) {
 	traces := validTraces("run-1")
 	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()

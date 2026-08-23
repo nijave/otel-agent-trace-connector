@@ -76,7 +76,7 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 	}
 	scopeVersion := set.BuildInfo.Version
 	if scopeVersion == "" {
-		scopeVersion = defaultScopeVersion
+		scopeVersion = DefaultScopeVersion
 	}
 	c := &codingAgentConnector{
 		config: cfg, set: set, next: next, scopeVersion: scopeVersion,

@@ -6,6 +6,7 @@ package codex
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -16,9 +17,9 @@ import (
 
 const instrumentationScope = "github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector"
 
-// defaultScopeVersion is used for the emitted instrumentation scope when the
+// DefaultScopeVersion is used for the emitted instrumentation scope when the
 // Collector build info does not carry a version (for example in unit tests).
-const defaultScopeVersion = "0.1.0"
+const DefaultScopeVersion = "0.1.0"
 
 // tokenUsageAttrs maps Codex completion token counts to their canonical
 // destination attributes. It is the single source of truth for both per-chat-span
@@ -268,7 +269,10 @@ func deterministicSpanID(traceID pcommon.TraceID, discriminator string) pcommon.
 
 func durationFromAttrs(attrs map[string]any) time.Duration {
 	ms, ok := int64Value(attrs["duration_ms"])
-	if !ok || ms < 0 {
+	// A milliseconds value too large for time.Duration would wrap on the
+	// multiply and could move a span's start past its end; treat it like any
+	// other malformed value and report no duration.
+	if !ok || ms < 0 || ms > math.MaxInt64/int64(time.Millisecond) {
 		return 0
 	}
 	return time.Duration(ms) * time.Millisecond
