@@ -143,12 +143,13 @@ func normalizePiSpan(span ptrace.Span, version string) bool {
 	return child
 }
 
-// reparentOrphans repairs hierarchy across batch boundaries: canonical
-// children reference the chat-turn span they ran under, and when a batch
-// arrives without it they would dangle. Children attach to the slice's first
-// invoke_agent span, or become roots when the batch carries none (children
-// can land in a batch of their own, mirroring the Claude Code export
-// behavior).
+// reparentOrphans repairs hierarchy inside a batch: canonical children
+// reference the chat-turn span they ran under, and when a batch arrives
+// without it they would dangle. Children attach to the slice's first
+// invoke_agent span; when the batch carries none, children keep their
+// original parent so backends can reattach them once the chat-turn arrives
+// (children can land in a batch of their own, mirroring the Claude Code
+// export behavior).
 func reparentOrphans(spans ptrace.SpanSlice, children map[pcommon.SpanID]bool) {
 	exported := make(map[pcommon.SpanID]bool, spans.Len())
 	var agentRoot pcommon.SpanID
@@ -168,8 +169,6 @@ func reparentOrphans(spans ptrace.SpanSlice, children map[pcommon.SpanID]bool) {
 		}
 		if foundRoot && span.ParentSpanID() != agentRoot {
 			span.SetParentSpanID(agentRoot)
-		} else if !foundRoot {
-			span.SetParentSpanID(pcommon.SpanID{})
 		}
 	}
 }
