@@ -478,6 +478,7 @@ func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
 	}{
 		{name: "openai-adhoc"},
 		{name: "strands", expectContentEvidence: true},
+		{name: "copilot-cli"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			input := loadFixtureLines(t, filepath.Join("testdata", fixture.name+"-raw.otlp.json"))
@@ -530,6 +531,7 @@ func TestCapturedCanonicalFixturesHoldNoContent(t *testing.T) {
 	for _, fixture := range []struct{ name string }{
 		{name: "openai-adhoc"},
 		{name: "strands"},
+		{name: "copilot-cli"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			traces := loadFixtureLines(t, filepath.Join("testdata", fixture.name+"-canonical.otlp.json"))

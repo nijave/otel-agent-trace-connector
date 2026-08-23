@@ -1,0 +1,31 @@
+# GitHub Copilot CLI e2e stack. The shared collector comes from
+# compose.e2e-base.yaml; only the Copilot agent is defined here, so this stack
+# requires just a COPILOT_PROVIDER_API_KEY.
+# Native telemetry: COPILOT_OTEL_ENABLED plus OTEL_EXPORTER_OTLP_ENDPOINT below
+# switch on Copilot CLI's OTLP exporter, which streams spans while `copilot -p`
+# executes. Never set COPILOT_OFFLINE here: it disables all network activity,
+# including telemetry export.
+include:
+  - compose.e2e-base.yaml
+
+services:
+  agent:
+    build:
+      context: e2e/copilot
+      args:
+        COPILOT_CLI_VERSION: "${COPILOT_CLI_VERSION:-1.0.80}"
+    environment:
+      # scripts/e2e-copilot.sh checks this credential before Compose runs, so it is
+      # optional here; a required (:?) guard would only fire later and less clearly.
+      COPILOT_PROVIDER_API_KEY: "${COPILOT_PROVIDER_API_KEY:-}"
+      COPILOT_PROVIDER_TYPE: "${E2E_COPILOT_PROVIDER_TYPE:-anthropic}"
+      COPILOT_PROVIDER_BASE_URL: "${E2E_COPILOT_BASE_URL:-https://api.z.ai/api/anthropic}"
+      COPILOT_MODEL: "${E2E_COPILOT_MODEL:-glm-4.7}"
+      COPILOT_OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-copilot.sh}"
+    depends_on:
+      collector:
+        condition: service_healthy
