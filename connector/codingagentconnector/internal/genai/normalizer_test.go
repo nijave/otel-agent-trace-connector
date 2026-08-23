@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/consumer"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -53,6 +54,7 @@ func TestGenAINormalizerClaimsKnownScopes(t *testing.T) {
 		"opentelemetry.util.genai.handler",
 		"opentelemetry.instrumentation.genai_openai",
 		"strands.telemetry.tracer",
+		"github.copilot",
 	} {
 		input := ptrace.NewTraces()
 		newGroup(input, scope, "chat glm-4.7")
@@ -60,6 +62,73 @@ func TestGenAINormalizerClaimsKnownScopes(t *testing.T) {
 		require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 		require.Len(t, sink.all(), 1, "scope %q must be claimed", scope)
 	}
+}
+
+func TestGenAINormalizerClaimsCopilotScope(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "github-copilot")
+	rs.Resource().Attributes().PutStr("service.version", "1.0.64")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("github.copilot")
+
+	root := ss.Spans().AppendEmpty()
+	root.SetName("invoke_agent")
+	root.SetKind(ptrace.SpanKindInternal)
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.agent.name", "copilot-cli")
+	root.Attributes().PutStr("gen_ai.conversation.id", "11111111-2222-3333-4444-555555555555")
+	root.Attributes().PutInt("gen_ai.usage.input_tokens", 120)
+	root.Attributes().PutInt("gen_ai.usage.output_tokens", 80)
+	root.Attributes().PutDouble("github.copilot.cost", 0.15)
+	root.Attributes().PutInt("github.copilot.aiu", 1)
+	// Capture-gated content must never survive on claimed spans.
+	root.Attributes().PutStr("gen_ai.system_instructions", "secret system prompt")
+
+	chat := ss.Spans().AppendEmpty()
+	chat.SetName("chat")
+	chat.SetKind(ptrace.SpanKindClient)
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutStr("gen_ai.request.model", "gpt-5.2")
+
+	hook := ss.Spans().AppendEmpty()
+	hook.SetName("execute_hook PreToolUse")
+	hook.Attributes().PutStr("gen_ai.operation.name", "execute_hook")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+
+	require.Equal(t, "invoke_agent copilot-cli", spans.At(0).Name())
+	require.Equal(t, "chat gpt-5.2", spans.At(1).Name())
+	// Operations outside the rename table keep their wire names.
+	require.Equal(t, "execute_hook PreToolUse", spans.At(2).Name())
+
+	attrs := spans.At(0).Attributes()
+	require.Equal(t, "native", fixtureAttrString(t, attrs, "telemetry.source"))
+	require.Equal(t, "github.copilot", fixtureAttrString(t, attrs, "coding_agent.source.scope"))
+	require.Equal(t, "github-copilot", fixtureAttrString(t, attrs, "coding_agent.client.name"))
+	require.Equal(t, "1.0.64", fixtureAttrString(t, attrs, "coding_agent.client.version"))
+	cost, ok := attrs.Get("github.copilot.cost")
+	require.True(t, ok, "vendor extras pass through untouched")
+	require.Equal(t, 0.15, cost.Double())
+	aiu, ok := attrs.Get("github.copilot.aiu")
+	require.True(t, ok)
+	require.Equal(t, int64(1), aiu.Int())
+	_, ok = attrs.Get("gen_ai.system_instructions")
+	require.False(t, ok, "capture-gated content must be stripped")
+
+	// The input handed to the connector is never mutated.
+	_, ok = input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes().Get("gen_ai.system_instructions")
+	require.True(t, ok)
+}
+
+func fixtureAttrString(t *testing.T, attrs pcommon.Map, key string) string {
+	t.Helper()
+	value, ok := attrs.Get(key)
+	require.True(t, ok, "attribute %q missing", key)
+	return value.Str()
 }
 
 func TestGenAINormalizerSkipsUnknownScopesAndClaudeGroups(t *testing.T) {
