@@ -4,6 +4,7 @@
 package cursor
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -145,6 +146,22 @@ func TestParseRecordCoercesTokenStringsAndFloats(t *testing.T) {
 	value, ok := Int64Value(event.Attrs["cursor.api.request.input_tokens"])
 	require.True(t, ok)
 	require.Equal(t, int64(300), value)
+}
+
+func TestInt64ValueAcceptsTokenCountsUpToMaxInt64(t *testing.T) {
+	// Same deliberate coercion family as the codex edge, so the same bound:
+	// uint64 token counts in (1<<62, MaxInt64] are valid and must not be
+	// silently dropped.
+	value, ok := Int64Value(uint64(1<<62) + 1)
+	require.True(t, ok)
+	require.Equal(t, int64(1<<62)+1, value)
+
+	value, ok = Int64Value(uint64(math.MaxInt64))
+	require.True(t, ok)
+	require.Equal(t, int64(math.MaxInt64), value)
+
+	_, ok = Int64Value(uint64(1) << 63)
+	require.False(t, ok)
 }
 
 func TestBodyClassification(t *testing.T) {

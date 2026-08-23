@@ -197,6 +197,18 @@ func testEvent(name string, timestamp time.Time, additional map[string]any) agen
 	return agentEvent{name: name, conversationID: "conversation-1", timestamp: timestamp, attrs: attrs}
 }
 
+func TestBuildTraceHugeDurationKeepsSpanBoundsSane(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{conversationID: "c", first: base, last: base.Add(time.Second),
+		events: []agentEvent{
+			testEvent("codex.tool_result", base.Add(time.Second), map[string]any{"tool_name": "shell", "duration_ms": "10000000000000000"}),
+		}}
+	spans := buildTrace(turn, "completed", DefaultScopeVersion).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	tool := findSpan(t, spans, "execute_tool shell")
+	require.False(t, tool.StartTimestamp().AsTime().After(tool.EndTimestamp().AsTime()),
+		"an overflowing duration_ms must not move the start past the end")
+}
+
 func mustBuildTrace(t *testing.T, turn *turnState, reason string) ptrace.Traces {
 	t.Helper()
 	traces, err := buildTrace(turn, reason, DefaultScopeVersion)
