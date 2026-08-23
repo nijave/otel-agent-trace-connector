@@ -5,8 +5,9 @@ package codingagentconnector
 
 import "github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 
-// Config controls Codex log correlation. It is an alias so OCB decoding,
-// validation, and public configuration documentation stay on the component.
+// Config configures the logs edge's stateful correlators: Codex turns and
+// Cursor bursts. It is an alias so OCB decoding, validation, and public
+// configuration documentation stay on the component.
 type Config = codex.Config
 
 func createDefaultConfig() *Config { return codex.NewDefaultConfig() }
