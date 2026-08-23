@@ -5,8 +5,8 @@ container, and check the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
 they are opt-in and never run in CI.
 
-All seven stacks share `compose.e2e-base.yaml` (the collector); each defines only
-its own `agent` service. The stack writes output under `.e2e-output/`.
+The stacks share `compose.e2e-base.yaml` (the collector); each defines only
+its own `agent` service. Each stack writes output under `.e2e-output/`.
 
 The stacks use one of two model APIs. Claude Code runs against z.ai's
 Anthropic-compatible endpoint (the Copilot CLI stack defaults there too). The

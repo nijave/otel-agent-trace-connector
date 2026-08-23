@@ -1,6 +1,4 @@
-# Shared collector for all four e2e stacks. Included by compose.e2e-codex.yaml
-# (Codex), compose.e2e-claude.yaml (Claude), compose.e2e-openai.yaml
-# (OpenAI-SDK ad-hoc), and compose.e2e-strands.yaml (Strands); each of those
+# Shared collector included by every compose.e2e-*.yaml stack; each of those
 # defines only its own `agent` service, which keeps the required-credential env
 # isolated per stack. The exported traces are validated on the host by
 # `go test -tags=e2e ./e2e/validator` (see scripts/lib-e2e.sh), not by a

@@ -135,7 +135,7 @@ Repository layout:
 │   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
-├── compose.e2e-base.yaml            # shared collector for both e2e stacks
+├── compose.e2e-base.yaml            # shared collector included by every e2e stack
 └── collector-config.yaml            # raw and canonical pipelines
 ```
 
@@ -267,9 +267,10 @@ Claude native-tree normalization, GenAI semconv normalization, and the e2e
 trace-validation assertions in `e2e/validator`.
 
 The live, paid end-to-end tests (real Codex and Claude runs) are opt-in and
-documented separately in [`e2e/README.md`](e2e/README.md). Two more
-opt-in E2Es exercise GenAI-semconv sources (openai-v2 ad-hoc agent and
-Strands agent) and share the same collector stack.
+documented separately in [`e2e/README.md`](e2e/README.md). More opt-in
+stacks exercise the remaining harnesses — the openai-v2 ad-hoc agent,
+Strands, OpenCode, Pi, and Copilot CLI — and every stack shares the same
+collector base.
 
 ## CI and releases
 
