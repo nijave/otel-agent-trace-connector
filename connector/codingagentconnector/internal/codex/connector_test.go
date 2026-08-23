@@ -134,6 +134,77 @@ func TestConnectorBoundsStateAndEvents(t *testing.T) {
 	}
 }
 
+// TestTruncatedTurnStillFinalizesUnderRedeliveryStorm pins the fix for deferred
+// finalization: once a turn is full, redelivered overflow events must not
+// refresh lastSeen. Before the fix their fingerprints were never recorded, so
+// every at-least-once resend re-entered add() and pushed the quiet window and
+// the timeout clock out again -- an OTLP retry storm could keep the turn alive
+// indefinitely.
+func TestTruncatedTurnStillFinalizesUnderRedeliveryStorm(t *testing.T) {
+	cfg := NewDefaultConfig()
+	cfg.MaxEvents = 2
+	cfg.ReorderWindow = 25 * time.Millisecond
+	cfg.TurnTimeout = 150 * time.Millisecond
+	sink := &traceSink{}
+	set := connector.Settings{ID: component.NewID(component.MustNewType("coding_agent")), TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
+	instance := newTestConnector(t, cfg, set, sink)
+	require.NoError(t, instance.Start(context.Background(), nil))
+	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
+
+	base := time.Now().Add(-time.Second)
+	fill := makeLogs(
+		testEvent("codex.user_prompt", base, nil),
+		testEvent("codex.api_request", base.Add(time.Millisecond), map[string]any{"duration_ms": int64(10)}),
+	)
+	overflow := makeLogs(
+		testEvent("codex.tool_result", base.Add(2*time.Millisecond), map[string]any{"tool_name": "shell", "call_id": "call-1", "success": true}),
+	)
+	require.NoError(t, instance.ConsumeLogs(context.Background(), fill))
+	deadline := time.Now().Add(3 * time.Second)
+	for len(sink.all()) == 0 && time.Now().Before(deadline) {
+		require.NoError(t, instance.ConsumeLogs(context.Background(), overflow))
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.Len(t, sink.all(), 1)
+	root := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "timeout", attrString(t, root, "coding_agent.turn.finish_reason"))
+}
+
+// TestPostTruncationCompletionDoesNotMutateTurnState pins that an event arriving
+// after truncation leaves no trace in turn state: a response.completed that is
+// dropped must not flip completeSeen (which would finalize the turn as
+// "completed" with the completion absent from the emitted trace) nor refresh
+// first/last/lastSeen -- but its fingerprint must be recorded so redeliveries
+// deduplicate exactly.
+func TestPostTruncationCompletionDoesNotMutateTurnState(t *testing.T) {
+	cfg := NewDefaultConfig()
+	base := time.Unix(100, 0)
+	now := time.Now()
+	turn := &turnState{conversationID: "conversation-1", first: base, last: base}
+	turn.add(testEvent("codex.user_prompt", base, nil), now, 2)
+	turn.add(testEvent("codex.api_request", base.Add(time.Millisecond), map[string]any{"duration_ms": int64(10)}), now, 2)
+	require.False(t, turn.truncated)
+
+	completion := testEvent("codex.sse_event", base.Add(time.Hour), map[string]any{"event.kind": "response.completed", "input_token_count": int64(5)})
+	turn.add(completion, now.Add(time.Hour), 2)
+	require.True(t, turn.truncated)
+	require.Len(t, turn.events, 2)
+	require.True(t, turn.seenEvent(completion))
+	require.False(t, turn.completeSeen)
+	require.True(t, turn.completionAt.IsZero())
+	require.True(t, turn.lastSeen.Equal(now))
+	require.True(t, turn.last.Equal(base.Add(time.Millisecond)))
+
+	// The dropped completion must not change the emitted finish_reason: with
+	// only stored events considered, the turn finalizes as a timeout.
+	sink := &traceSink{}
+	instance := newTestConnector(t, cfg, connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}, sink)
+	instance.turns[turn.conversationID] = turn
+	finalized := instance.collectReady(now.Add(cfg.TurnTimeout))
+	require.Len(t, finalized, 1)
+	require.Equal(t, "timeout", finalized[0].reason)
+}
+
 func TestZeroReorderWindowFinalizesPromptly(t *testing.T) {
 	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 0

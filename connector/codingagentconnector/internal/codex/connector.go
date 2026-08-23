@@ -191,6 +191,19 @@ func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
 	if _, duplicate := t.seen[fingerprint]; duplicate {
 		return
 	}
+	if len(t.events) >= maxEvents {
+		// The turn is full: record the fingerprint so at-least-once redeliveries
+		// of this event stay deduplicated, flag the turn, and stop. Timestamps,
+		// prompt tracking, and the completion state machine must track stored
+		// events only -- otherwise events missing from the emitted trace decide
+		// finish_reason and keep refreshing the finalization clock.
+		t.truncated = true
+		if t.seen == nil {
+			t.seen = make(map[[sha256.Size]byte]struct{})
+		}
+		t.seen[fingerprint] = struct{}{}
+		return
+	}
 	if event.timestamp.Before(t.first) {
 		t.first = event.timestamp
 	}
@@ -209,15 +222,11 @@ func (t *turnState) add(event agentEvent, now time.Time, maxEvents int) {
 	} else if t.completeSeen && !event.timestamp.Before(t.completionAt) && continuesTurn(event.name) {
 		t.completeSeen = false
 	}
-	if len(t.events) < maxEvents {
-		t.events = append(t.events, event)
-		if t.seen == nil {
-			t.seen = make(map[[sha256.Size]byte]struct{})
-		}
-		t.seen[fingerprint] = struct{}{}
-	} else {
-		t.truncated = true
+	t.events = append(t.events, event)
+	if t.seen == nil {
+		t.seen = make(map[[sha256.Size]byte]struct{})
 	}
+	t.seen[fingerprint] = struct{}{}
 }
 
 func continuesTurn(eventName string) bool {
