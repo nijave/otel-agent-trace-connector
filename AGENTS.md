@@ -44,7 +44,10 @@ tests cover it — before cleverness, flexibility, or feature breadth.
   and race tests in both modules, Collector build and config validation, Compose
   checks with the credential-split assertions, image builds, and
   `goreleaser check`. Only push working code. Skipping the check requires a
-  compelling, human-made reason.
+  compelling, human-made reason. Stack coverage in these checks is structural:
+  globs discover `scripts/*.sh`, `e2e/*/run.sh`, `compose.e2e-*.yaml`, and every
+  `e2e/*/Dockerfile` automatically — adding a stack needs no CI or check.sh
+  edits; the only per-stack work is its credential-split assertion.
 - **Commit atomic, related units of work and push them promptly.** Do not let a
   large pile of unrelated changes accumulate into one commit.
 - **If you push something broken, fix it** — forward, or by amending and (only

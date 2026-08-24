@@ -7,6 +7,9 @@ they are opt-in and never run in CI.
 
 The stacks share `compose.e2e-base.yaml` (the collector); each defines only
 its own `agent` service. Each stack writes output under `.e2e-output/`.
+Adding a stack is automatic in CI and `scripts/check.sh` (globs cover the
+scripts, run.sh files, compose files, and Dockerfiles); the only per-stack
+work is its credential-split assertion.
 
 The stacks use one of two model APIs. Claude Code runs against z.ai's
 Anthropic-compatible endpoint (the Copilot CLI stack defaults there too). The

@@ -18,11 +18,11 @@ if [ -n "$unformatted" ]; then
 fi
 
 step "shell syntax"
-bash -n scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/e2e-copilot.sh scripts/e2e-openhands.sh scripts/e2e-pi.sh scripts/generate.sh scripts/lib-e2e.sh
-sh -n e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh e2e/pi/run.sh e2e/copilot/run.sh e2e/openhands/run.sh
+bash -n scripts/*.sh
+sh -n e2e/*/run.sh
 
 step "shellcheck"
-shellcheck scripts/e2e.sh scripts/e2e-claude.sh scripts/e2e-openai.sh scripts/e2e-strands.sh scripts/e2e-opencode.sh scripts/e2e-copilot.sh scripts/e2e-openhands.sh scripts/e2e-pi.sh scripts/generate.sh scripts/lib-e2e.sh e2e/codex/run.sh e2e/claude/run.sh e2e/openai-adhoc/run.sh e2e/strands/run.sh e2e/opencode/run.sh e2e/pi/run.sh e2e/copilot/run.sh e2e/openhands/run.sh
+shellcheck scripts/[a-z]*.sh e2e/*/run.sh
 
 step "golangci-lint (v2.13.1, the version CI pins)"
 golangci-lint run --timeout=5m
@@ -65,8 +65,12 @@ OTEL_S3_BUCKET=validation-only \
   ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
 
 step "compose configurations"
-export E2E_RUN_ID=ci-validation OPENAI_API_KEY=validation-only OPENCODE_API_KEY=validation-only COPILOT_PROVIDER_API_KEY=validation-only ANTHROPIC_AUTH_TOKEN=validation-only
-docker compose -f compose.e2e-codex.yaml config --quiet
+export E2E_RUN_ID=ci-validation OPENAI_API_KEY=validation-only OPENCODE_API_KEY=validation-only COPILOT_PROVIDER_API_KEY=validation-only ANTHROPIC_AUTH_TOKEN=validation-only LLM_API_KEY=validation-only
+# Every stack file must parse; the per-stack assertions below encode each
+# stack's credential contract.
+for f in compose.e2e-*.yaml; do
+  docker compose -f "$f" config --quiet
+done
 # The real key reaches responses-proxy only; the Codex agent gets a placeholder,
 # because config.toml's env_key just needs a value the proxy will ignore.
 docker compose -f compose.e2e-codex.yaml config --format json \
@@ -78,14 +82,12 @@ docker compose -f compose.e2e-claude.yaml config --format json \
 # Each of the remaining stacks receives exactly one credential: the z.ai key as
 # OPENAI_API_KEY. No Anthropic credential may leak in.
 for stack in openai strands; do
-  docker compose -f "compose.e2e-$stack.yaml" config --quiet
   docker compose -f "compose.e2e-$stack.yaml" config --format json \
     | jq -e '.services.agent.environment.OPENAI_API_KEY == "validation-only"
              and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
 done
 # The OpenCode e2e stack receives exactly one credential: an OpenCode Go key
 # as OPENCODE_API_KEY. No Anthropic or z.ai credential may leak in.
-docker compose -f compose.e2e-opencode.yaml config --quiet
 docker compose -f compose.e2e-opencode.yaml config --format json \
   | jq -e '.services.agent.environment.OPENCODE_API_KEY == "validation-only"
            and (.services.agent.environment | has("OPENAI_API_KEY") | not)
@@ -93,7 +95,6 @@ docker compose -f compose.e2e-opencode.yaml config --format json \
 # The Copilot e2e stack receives exactly one credential: the BYOK provider key
 # as COPILOT_PROVIDER_API_KEY, alongside the provider/model/OTEL configuration.
 # No OpenAI or Anthropic credential may leak in.
-docker compose -f compose.e2e-copilot.yaml config --quiet
 docker compose -f compose.e2e-copilot.yaml config --format json \
   | jq -e '.services.agent.environment.COPILOT_PROVIDER_API_KEY == "validation-only"
            and (.services.agent.environment
@@ -106,28 +107,34 @@ docker compose -f compose.e2e-copilot.yaml config --format json \
            and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)
            and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
 # The Pi e2e stack receives exactly one credential: the z.ai key as ANTHROPIC_AUTH_TOKEN; no other stack's credential may leak in.
-docker compose -f compose.e2e-pi.yaml config --quiet
 docker compose -f compose.e2e-pi.yaml config --format json \
   | jq -e '.services.agent.environment.ANTHROPIC_AUTH_TOKEN == "validation-only"
            and (.services.agent.environment | has("OPENAI_API_KEY") | not)
            and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)
            and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
            and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)'
+# The OpenHands e2e stack receives exactly one credential: the litellm key as
+# LLM_API_KEY. No other stack's credential may leak in.
+docker compose -f compose.e2e-openhands.yaml config --format json \
+  | jq -e '.services.agent.environment.LLM_API_KEY == "validation-only"
+           and (.services.agent.environment | has("OPENAI_API_KEY") | not)
+           and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)
+           and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)
+           and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
+           and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)'
 
 step "container images"
 docker build --tag otelcol-coding-agents:check .
-docker build --tag codex-e2e:check e2e/codex
-docker build --tag claude-e2e:check e2e/claude
-# The Codex stack cannot run without this one, and it is the only image built
-# from a git ref rather than an immutable registry artifact, so a vanished fork
-# branch or a broken dependency must fail here rather than during someone's
-# paid e2e run.
-docker build --tag responses-proxy-e2e:check e2e/responses-proxy
-docker build --tag openai-adhoc-e2e:check e2e/openai-adhoc
-docker build --tag strands-e2e:check e2e/strands
-docker build --tag opencode-e2e:check e2e/opencode
-docker build --tag copilot-e2e:check e2e/copilot
-docker build --tag pi-e2e:check e2e/pi
+# Every e2e directory with a Dockerfile gets built, so a new stack is covered
+# automatically. The Codex stack cannot run without the responses-proxy image,
+# and that image is the only one built from a git ref rather than an immutable
+# registry artifact, so a vanished fork branch or a broken dependency must fail
+# here rather than during someone's paid e2e run.
+for d in e2e/*/; do
+  if [ -f "${d}Dockerfile" ]; then
+    docker build --tag "$(basename "$d")-e2e:check" "$d"
+  fi
+done
 
 step "goreleaser"
 goreleaser check

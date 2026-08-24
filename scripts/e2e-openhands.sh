@@ -7,7 +7,6 @@ if [[ -z "${LLM_API_KEY:-}" ]]; then
   exit 2
 fi
 
-export LLM_MODEL="${LLM_MODEL:-anthropic/claude-sonnet-4-5}"
 # Selects the OpenHands validation path in the shared validator (see
 # compose.e2e-base.yaml).
 export E2E_AGENT=openhands
