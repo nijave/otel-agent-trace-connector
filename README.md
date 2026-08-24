@@ -88,8 +88,8 @@ automatic. No per-source connector setting exists.
 
 Minimal harness-side settings, as exercised by the e2e stacks:
 
-Codex reads `[otel]` only from the user-level `~/.codex/config.toml`.
-Project-local `[otel]` tables are ignored:
+Codex reads `[otel]` only from the user-level `~/.codex/config.toml` and
+ignores project-local `[otel]` tables:
 
 ```toml
 [otel]

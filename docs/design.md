@@ -231,8 +231,8 @@ when either targets a third-party endpoint. Neither agent logs the upstream
 host, so a proxied setup does not distinguish from a direct one.
 
 Codex's wire carries a `provider_name` display label on
-`codex.conversation_starts`, but it is an operator-authored label, not an
-identifier, and appears only once per session — so the connector drops it
+`codex.conversation_starts`, but the label holds operator-authored text, not
+an identifier, and appears only once per session — so the connector drops it
 rather than mapping it anywhere (see [docs/harnesses/codex.md](harnesses/codex.md)).
 Each edge sets `gen_ai.provider.name` itself from what the source reliably
 reports (`openai` for Codex; nothing for edges whose wire never names a
@@ -283,7 +283,7 @@ batch; source timestamps still drive span timing.
 - Each `codex.tool_result` becomes an `execute_tool` span; a failed result
   (`success=false`) sets the span's OTel error status without carrying a
   decision attribute.
-- `codex.tool_decision` records are dropped from canonical output.
+- The builder drops `codex.tool_decision` records from canonical output.
 - Other safe operational events become root span events (names and
   timestamps only).
 - Usage lives on chat spans only; the root carries no usage of its own.
@@ -377,8 +377,8 @@ timestamp. It carries `gen_ai.operation.name=invoke_agent`,
 `coding_agent.client.name=cursor`, `coding_agent.client.version` from
 resource `service.version`, and `coding_agent.source=normalized`. Cursor's
 vendor detail — resource-side surface/entrypoint/team/user attributes,
-billable flags, correction kinds, skill/hook/cloud-agent payloads — is
-dropped from canonical output; the full raw → canonical matrix lives in
+billable flags, correction kinds, skill/hook/cloud-agent payloads — stays
+out of canonical output; the full raw → canonical matrix lives in
 [docs/harnesses/cursor.md](harnesses/cursor.md).
 
 The root never sets `gen_ai.provider.name`: the wire never names the upstream
@@ -396,8 +396,9 @@ In-burst `cursor.usage_event.id` joins: an `api_error` sharing a request's
 usage-event id sets that chat span's status to Error; an `api_correction`
 attaching to the same id becomes an event on that span. When the counterpart
 arrived in an earlier, already-finalized burst — expected, since corrections
-trail their requests — the event lands on the root instead. The join key is
-consumed internally and does not survive onto emitted spans or events.
+trail their requests — the event lands on the root instead. The join key
+serves only internal correlation and does not survive onto emitted spans or
+events.
 
 Root span events hold every non-chat record the chat spans did not consume:
 unjoined `api_error` and `api_correction` records, `skill_activated`,
@@ -554,7 +555,7 @@ edge, so stripping matters for Strands defaults and openai-v2 experimental
 ## OpenCode normalization
 
 A third stateless package, `internal/opencode`, joins the traces edge. It
-claims a resource group iff any instrumentation scope is named exactly
+claims a resource group iff any instrumentation scope bears the exact name
 `opencode`. The match is exact rather than prefixed on purpose: `opencode.*`
 scopes belong to plugins and `com.opencode` to the Kilo fork — separate
 surfaces this edge must not claim — and exact naming keeps its claims disjoint
@@ -562,7 +563,7 @@ from the Claude and GenAI rules by construction.
 
 Inside a claimed group, three Vercel AI SDK span names rewrite in place and
 everything else — the internal Effect instrumentation making up most of the
-wire — is dropped from canonical output. `ai.streamText`, one per model step,
+wire — stays out of canonical output. `ai.streamText`, one per model step,
 becomes `invoke_agent opencode`, carrying `gen_ai.conversation.id` mapped from
 `session.id` on the span (falling back to the resource) and the step's usage
 totals: `ai.usage.inputTokens`/`outputTokens` map onto
@@ -598,13 +599,13 @@ The Pi coding agent has no native OTLP export; the
 [`@amaster.ai/pi-telemetry`](https://www.npmjs.com/package/@amaster.ai/pi-telemetry)
 extension (Apache-2.0) fills that gap. It emits OTLP/HTTP traces only — no
 logs or metrics — scoped to user-input boundaries: one trace per user
-message, containing every agentic iteration and tool call until the reply is
-published.
+message, containing every agentic iteration and tool call until the reply
+goes out.
 
-Groups are claimed by instrumentation-scope prefix
-(`@amaster.ai/pi-telemetry`) or the resource `telemetry.sdk.name` attribute.
-The wire shape was pinned from a live capture on 2026-08-22 (extension 0.1.9,
-pi 0.84.2), which ships as the golden fixture:
+The edge claims groups by instrumentation-scope prefix
+(`@amaster.ai/pi-telemetry`) or by the resource `telemetry.sdk.name`
+attribute. A live capture on 2026-08-22 (extension 0.1.9, pi 0.84.2) pinned
+the wire shape and ships as the golden fixture:
 
 | Native span | Canonical name | Notes |
 | --- | --- | --- |
@@ -618,17 +619,17 @@ pi 0.84.2), which ships as the golden fixture:
   `chat-turn` span they ran under, but a batch can arrive without the turn it
   references, and the pinned capture shows successive iterations reusing one
   turn span ID (so their children all attach to its first occurrence). Each
-  `chat-turn` therefore becomes a root with any dangling parent cleared,
+  `chat-turn` becomes a root with any dangling parent cleared,
   matching the plan-level rule that turn grouping relies on
   `gen_ai.conversation.id` rather than a long-lived session root. Orphaned
   `chat`/`execute_tool` spans re-attach to the first agent root in their
   batch; children arriving in a batch of their own become roots, mirroring
   the Claude Code sub-batch behavior.
-- Exporter-local metadata never reaches canonical output: `langfuse.*`
-  attribute baggage, the serialized `usage` JSON object (the flat per-field
-  source keys are renamed instead), cost totals, and diagnostic `status` /
-  `stopReason` fields are dropped. Payload capture stays off by default in
-  the extension (`includePayloads`).
+- Exporter-local metadata never reaches canonical output: the edge drops
+  `langfuse.*` attribute baggage, the serialized `usage` JSON object
+  (renaming the flat per-field source keys instead), cost totals, and
+  diagnostic `status` / `stopReason` fields. Payload capture stays off by
+  default in the extension (`includePayloads`).
 - Unknown span names pass through unchanged with Langfuse baggage stripped,
   so future extension events surface visibly instead of being silently
   dropped.
@@ -867,11 +868,11 @@ make stale-output detection ineffective.
   (no Enterprise access available); tool-call children would need Cursor to
   log tool calls with a conversation id — today they are metrics without
   correlation IDs. The wire surface was re-verified against the 2026-08-22
-  reference: all ten log events are covered, `cloud_agent.mcp_auth_error`
+  reference: the edge covers all ten log events, `cloud_agent.mcp_auth_error`
   maps its server attribute onto the root event, and correction records
   annotate the joined chat span with the correction kind instead of dropping
   its token totals (deliberate; downstream decides billing semantics).
-- Copilot native traces are handled via the GenAI edge. A live Copilot E2E
+- The GenAI edge handles Copilot native traces. A live Copilot E2E
   stack runs the CLI against a BYOK provider (no GitHub auth or subscription
   needed): provider type/base URL/key/model arrive via `COPILOT_PROVIDER_*`
   environment variables. A renamed producer scope (`COPILOT_OTEL_SOURCE_NAME`)
