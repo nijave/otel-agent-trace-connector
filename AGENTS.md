@@ -40,7 +40,7 @@ tests cover it — before cleverness, flexibility, or feature breadth.
 
 - **Run `./scripts/check.sh` before you push.** It runs every unpaid check CI
   runs, in the same shape: gofmt, shell syntax and shellcheck, golangci-lint
-  v2.11.4 (the version CI pins) on both modules, mdatagen freshness, vet, tests
+  v2.13.1 (the version CI pins) on both modules, mdatagen freshness, vet, tests
   and race tests in both modules, Collector build and config validation, Compose
   checks with the credential-split assertions, image builds, and
   `goreleaser check`. Only push working code. Skipping the check requires a

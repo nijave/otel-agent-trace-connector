@@ -37,7 +37,7 @@ OCB-built distribution for coding-agent traces:
   session id. Delegate subagents arrive as sibling traces sharing the
   conversation id. Streamed completions carry no token usage upstream.
   Enable export with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
-  `OTEL_EXPORTER=otlp_http`.
+  `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`.
 
 The canonical tree is:
 
@@ -74,7 +74,7 @@ automatic. No per-source connector setting exists.
 | openai-v2 / util-genai agents | traces | instrumentation scope starting with `opentelemetry.instrumentation.openai_v2`, `opentelemetry.instrumentation.genai`, or `opentelemetry.util.genai` | standard OpenTelemetry SDK env vars |
 | Strands Agents SDK | traces | instrumentation scope starting with `strands.telemetry` | standard OpenTelemetry SDK env vars |
 | Pi | traces | instrumentation scope starting with `@amaster.ai/pi-telemetry`, or resource `telemetry.sdk.name` with the same prefix | install the `@amaster.ai/pi-telemetry` extension and enable its exporter (below) |
-| OpenHands | traces | instrumentation scope `lmnr.tracer` whose spans carry OpenHands marker span names | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus `OTEL_EXPORTER=otlp_http` |
+| OpenHands | traces | instrumentation scope `lmnr.tracer` whose spans carry OpenHands marker span names or the `lmnr.association.properties.metadata.is_delegate=true` flag | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` |
 
 Minimal harness-side settings, as exercised by the e2e stacks:
 
@@ -284,8 +284,8 @@ trace-validation assertions in `e2e/validator`.
 The live, paid end-to-end tests (real Codex and Claude runs) are opt-in and
 documented separately in [`e2e/README.md`](e2e/README.md). More opt-in
 stacks exercise the remaining harnesses — the openai-v2 ad-hoc agent,
-Strands, OpenCode, Pi, and Copilot CLI — and every stack shares the same
-collector base.
+Strands, OpenCode, Pi, Copilot CLI, and OpenHands — and every stack shares
+the same collector base.
 
 ## CI and releases
 
@@ -300,8 +300,8 @@ Run the same unpaid checks locally before pushing:
 ./scripts/check.sh
 ```
 
-The script needs `go`, `golangci-lint` v2.11.4 (the version CI pins; install
-with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4`),
+The script needs `go`, `golangci-lint` v2.13.1 (the version CI pins; install
+with `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1`),
 `shellcheck`, `jq`, `docker`, and `goreleaser`. It covers gofmt, shell syntax
 and shellcheck, golangci-lint on both modules, mdatagen freshness, vet, tests
 and race tests in both modules, Collector build and config validation, Compose

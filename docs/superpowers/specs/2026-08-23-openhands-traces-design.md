@@ -7,7 +7,7 @@ system rather than proposals.
 ## Goal
 
 Extend the traces-to-traces edge so the canonical pipeline covers OpenHands
-(Anysphere's open-source agent SDK) native OpenTelemetry output by claiming
+(All Hands AI's open-source agent SDK) native OpenTelemetry output by claiming
 instrumentation scope `lmnr.tracer` groups that carry OpenHands markers. A new
 stateless normalizer package `internal/openhands` maps the SDK's span
 vocabulary — `conversation` roots, `litellm.completion` LLM calls, dynamic

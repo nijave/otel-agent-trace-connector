@@ -52,7 +52,7 @@ go test -race ./...
 (cd connector/codingagentconnector && go test -race ./...)
 
 step "collector build and config validation"
-go run go.opentelemetry.io/collector/cmd/builder@v0.156.0 --config builder-config.yaml
+go run go.opentelemetry.io/collector/cmd/builder@v0.159.0 --config builder-config.yaml
 AWS_REGION=us-east-1 \
 OTEL_QUEUE_DIRECTORY=/tmp/otelcol-queue \
 OTEL_QUEUE_MAX_SIZE_BYTES=10485760 \
