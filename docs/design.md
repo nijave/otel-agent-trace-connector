@@ -191,8 +191,14 @@ Common attributes include:
 - `coding_agent.client.name`
 - `coding_agent.client.version`
 - `coding_agent.source.event`
-- `coding_agent.model_provider`
 - `coding_agent.source`
+
+The complete emitted vocabulary is a closed list, tracked in
+[docs/canonical-attributes.md](canonical-attributes.md) alongside each
+harness's raw → canonical mapping matrix under
+[docs/harnesses/](harnesses/). Every edge remaps all attributes explicitly
+into that vocabulary; prefix pass-through is not permitted, and a
+cross-harness conformance test fails CI on drift.
 
 Custom attributes remain under `coding_agent.*` and migrate as the
 semantic conventions evolve.
@@ -202,15 +208,13 @@ served the request: it reads `openai` for Codex and `anthropic` for Claude Code 
 when either targets a third-party endpoint. Neither agent logs the upstream
 host, so a proxied setup does not distinguish from a direct one.
 
-What Codex does report is `provider_name` on `codex.conversation_starts`, copied to
-`coding_agent.model_provider`. Two limits are worth knowing before relying on it.
-The value is a display label authored by whoever wrote the provider block in
-`config.toml` — Codex's own default reads `OpenAI` — and is not an identifier and
-deliberately does not overwrite `gen_ai.provider.name`, whose consumers expect a
-known value. Codex emits `conversation_starts` once per session, so only a
-session's first turn carries it; later turns omit the attribute rather than
-inheriting a value, which would require per-conversation state the connector does
-not keep.
+Codex's wire carries a `provider_name` display label on
+`codex.conversation_starts`, but it is an operator-authored label, not an
+identifier, and appears only once per session — so the connector drops it
+rather than mapping it anywhere (see [docs/harnesses/codex.md](harnesses/codex.md)).
+Each edge sets `gen_ai.provider.name` itself from what the source reliably
+reports (`openai` for Codex; nothing for edges whose wire never names a
+provider).
 
 ## Codex correlation model
 
@@ -234,7 +238,9 @@ Other finalization reasons are:
 - `shutdown`: the Collector drains active state;
 - `evicted`: the active-turn bound admits a newer conversation.
 
-The emitted root records the finish reason and whether the turn is complete.
+The emitted root carries no turn-state attributes: the close reason survives
+only as the timeout span status and the `otelcol_coding_agent_turns_emitted`
+metric's `finish_reason` label (see [docs/harnesses/codex.md](harnesses/codex.md)).
 Timeout roots use OTel error status. Shutdown and superseded roots remain unset
 because they do not necessarily represent an agent failure.
 
@@ -252,10 +258,13 @@ batch; source timestamps still drive span timing.
   `response.completed` record; the timing-only duplicate skips. A call whose
   provider reported no usage still gets its span, just without `gen_ai.usage.*`.
 - The most recent preceding API request supplies the model-call start when present.
-- Each `codex.tool_result` becomes an `execute_tool` span.
-- Matching `codex.tool_decision` records become events on the tool span.
-- Other safe operational events become root span events.
-- Completion token counts sum across model calls for total root usage.
+- Each `codex.tool_result` becomes an `execute_tool` span; a failed result
+  (`success=false`) sets the span's OTel error status without carrying a
+  decision attribute.
+- `codex.tool_decision` records are dropped from canonical output.
+- Other safe operational events become root span events (names and
+  timestamps only).
+- Usage lives on chat spans only; the root carries no usage of its own.
 
 Trace IDs derive from SHA-256 of provider, conversation ID, and prompt
 timestamp. Span IDs add a stable role/event discriminator. This makes replay of
@@ -273,9 +282,9 @@ supersede its own turn. The fingerprint set bounds at `max_events_per_turn`.
 
 `max_active_turns` bounds concurrent correlation state. The least recently
 observed turn emits before admitting a new one. `max_events_per_turn`
-limits individual turn memory; excess events set
-`coding_agent.turn.events_truncated=true`. These controls are intentionally
-configuration-driven.
+limits individual turn memory; truncation surfaces through the
+`otelcol_coding_agent_turns_truncated` metric rather than a span attribute.
+These controls are intentionally configuration-driven.
 
 ## Cursor correlation model
 
@@ -327,8 +336,8 @@ else wall clock with `coding_agent.timestamp.inferred=true`, matching Codex.
 ### Bounds
 
 `max_active_turns` bounds concurrent bursts with LRU eviction;
-`max_events_per_turn` bounds per-burst memory and sets
-`coding_agent.turn.events_truncated=true` past the cap. Identical to Codex.
+`max_events_per_turn` bounds per-burst memory; truncation surfaces through
+the `otelcol_coding_agent_turns_truncated` metric, identical to Codex.
 
 ### Span construction
 
@@ -344,42 +353,42 @@ Root `invoke_agent cursor`: start = first event timestamp, end = last event
 timestamp. It carries `gen_ai.operation.name=invoke_agent`,
 `gen_ai.agent.name=cursor`, `gen_ai.conversation.id`,
 `coding_agent.client.name=cursor`, `coding_agent.client.version` from
-resource `service.version`, `coding_agent.source=normalized`, and resource-side
-`coding_agent.cursor.*` surface, entrypoint, team, and user attributes.
-Usage rollup sums the burst's `api_request` records into `gen_ai.usage.*`,
-with cache sums under `gen_ai.usage.cache_read.input_tokens` and
-`gen_ai.usage.cache_creation.input_tokens`.
+resource `service.version`, and `coding_agent.source=normalized`. Cursor's
+vendor detail — resource-side surface/entrypoint/team/user attributes,
+billable flags, correction kinds, skill/hook/cloud-agent payloads — is
+dropped from canonical output; the full raw → canonical matrix lives in
+[docs/harnesses/cursor.md](harnesses/cursor.md).
 
 The root never sets `gen_ai.provider.name`: the wire never names the upstream
-model provider and the connector does not guess one. It never sets
-`coding_agent.turn.complete`: quiet closing cannot distinguish a finished
-model turn from an abandoned one. `timeout` sets error status; shutdown and
-evicted leave status unset, mirroring Codex.
+model provider and the connector does not guess one. It carries no
+completion marker either: quiet closing cannot distinguish a finished model
+turn from an abandoned one. `timeout` sets error status; shutdown and evicted
+leave status unset, mirroring Codex.
 
 Each `api_request` record becomes one chat span named `chat <model>` (bare
 `chat` when the model attribute is absent). Point spans: the wire reports
 tokens at request grain with no timing, and the connector does not invent
-durations. Chat spans carry `gen_ai.request.model`, the four token counts,
-and `coding_agent.cursor.billable` when present.
+durations. Chat spans carry `gen_ai.request.model` and the four token counts.
 
 In-burst `cursor.usage_event.id` joins: an `api_error` sharing a request's
 usage-event id sets that chat span's status to Error; an `api_correction`
 attaching to the same id becomes an event on that span. When the counterpart
 arrived in an earlier, already-finalized burst — expected, since corrections
-trail their requests — the event lands on the root with the usage-event id
-preserved for downstream reconciliation.
+trail their requests — the event lands on the root instead. The join key is
+consumed internally and does not survive onto emitted spans or events.
 
 Root span events hold every non-chat record the chat spans did not consume:
 unjoined `api_error` and `api_correction` records, `skill_activated`,
 `hook_execution_complete`, `cloud_agent_*` lifecycle records, and unknown
-event bodies as generic events holding only the common id attributes.
+event bodies. Events carry names and timestamps only — a correction kind
+stays readable in the event name itself (`api_correction_<kind>`) — with no
+vendor attributes.
 
 Attribute policy is an allowlist: the builder copies only the fields named
 above from records into spans; everything else stays in the raw pipeline.
 This keeps canonical output content-free even if Cursor later adds fields,
-per the repo's allowlist-over-denylist rule. Skill and hook names —
-customer-authored labels — stay in canonical output, the same treatment
-Codex tool names get.
+per the repo's allowlist-over-denylist rule and the closed canonical
+vocabulary in [docs/canonical-attributes.md](canonical-attributes.md).
 
 ## Claude Code normalization
 

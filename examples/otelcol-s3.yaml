@@ -1,5 +1,12 @@
 # Production-oriented reference configuration. AWS credentials are deliberately
 # absent: use the standard AWS SDK credential chain (prefer a workload role).
+#
+# Raw-preservation branch: this configuration doubles as the documented
+# pre-normalization raw-preservation pattern (see docs/canonical-attributes.md).
+# Canonical output is deliberately lossy, so the logs/vendor and traces/native
+# pipelines fan original OTLP out to S3 before the connector normalizes it.
+# Dropped vendor detail can then be extracted case by case from the raw/
+# prefixes; without such a branch it is unrecoverable.
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
