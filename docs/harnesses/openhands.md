@@ -11,7 +11,8 @@ and the policy behind it.
 
 ## Attribute matrix
 
-Status is one of **mapped** (remapped onto the canonical key), **dropped**
+Status is one of **mapped** (remapped onto the canonical key; a parenthetical
+names any wire condition under which the key is absent), **dropped**
 (deliberately removed from canonical output; recoverable only via a raw
 preservation pipeline branch), or **not provided** (the source never emits a
 raw key that would map there).
@@ -20,21 +21,28 @@ raw key that would map there).
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `gen_ai.request.model` | `gen_ai.request.model` | mapped (also names the span) |
-| `gen_ai.system` | `gen_ai.provider.name` | mapped |
-| `gen_ai.usage.input_tokens` | `gen_ai.usage.input_tokens` | mapped |
-| `gen_ai.usage.output_tokens` | `gen_ai.usage.output_tokens` | mapped |
-| `llm.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped |
-| `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped |
-| `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_creation.input_tokens` | mapped |
+| `gen_ai.request.model` | `gen_ai.request.model` | mapped (also names the span; absent — and the span named bare `chat` — when the wire span carries no model) |
+| `gen_ai.system` | `gen_ai.provider.name` | mapped (absent when the wire omits `gen_ai.system`, as LiteLLM responses-style spans do) |
+| `gen_ai.usage.input_tokens` | `gen_ai.usage.input_tokens` | mapped (absent for streamed completions, which carry no usage upstream) |
+| `gen_ai.usage.output_tokens` | `gen_ai.usage.output_tokens` | mapped (absent for streamed completions, which carry no usage upstream) |
+| `llm.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (absent when the wire omits it; responses-style spans report only input/output) |
+| `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the request did no prompt caching) |
+| `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_creation.input_tokens` | mapped (absent when the request did no prompt caching) |
 | `gen_ai.input.messages`, `lmnr.span.input` | — | dropped (prompt/response content never leaves the edge) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
+
+### TOOL span → execute_tool
+
+| Raw key | Canonical key | Status |
+|---|---|---|
+| span name | `gen_ai.tool.name` (also names the span) | mapped |
+| `gen_ai.tool.description` | — | dropped |
 
 ### conversation span → invoke_agent root
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `lmnr.association.properties.session_id` | `gen_ai.conversation.id` | mapped |
+| `lmnr.association.properties.session_id` | `gen_ai.conversation.id` | mapped (a mid-conversation fragment's synthetic root inherits it from kept children, and lacks it when no kept child carries `session_id` — in the pinned wire only `conversation` spans do) |
 | `lmnr.association.properties.user_id` | (`enduser.pseudo.id`) | dropped (user identity outside the vocabulary) |
 | `lmnr.association.properties.tags` → `coding_agent.openhands.tags` | — | dropped |
 | `conversation.tags.<key>` → `coding_agent.openhands.tag.<key>` | — | dropped |
@@ -54,14 +62,14 @@ branch.
 
 ## Connector-written attributes
 
-These are written by the connector itself, not remapped from raw keys, and
-appear on every emitted span:
+The connector writes these itself rather than remapping them from raw keys;
+they appear on every emitted span except where noted:
 
 - `gen_ai.operation.name` = `invoke_agent` / `chat` / `execute_tool`
-- `gen_ai.agent.name` = `openhands` (invoke_agent root)
+- `gen_ai.agent.name` = `openhands` (invoke_agent root only)
 - `coding_agent.source` = `native`
 - `coding_agent.client.name` = `openhands`
-- `coding_agent.source.scope` = `lmnr.tracer`
+- `coding_agent.source.scope` = `lmnr.tracer` (invoke_agent root only)
 - `gen_ai.tool.name` (execute_tool children, from the wire span name)
 
 ## Canonical keys with no OpenHands source

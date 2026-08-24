@@ -10,24 +10,27 @@ Research refreshed 2026-08-20 against primary sources (official docs and the
 harnesses' own source trees). Provider schemas are not stable APIs; treat the
 attribute names below as snapshots, not contracts.
 
-What each supported harness emits after normalization is tracked separately:
-[docs/canonical-attributes.md](canonical-attributes.md) holds the closed
-canonical vocabulary, and [docs/harnesses/](harnesses/) holds one raw →
-canonical mapping matrix per harness.
+Separate documents track what each supported harness emits after
+normalization: [docs/canonical-attributes.md](canonical-attributes.md) holds
+the closed canonical vocabulary, and [docs/harnesses/](harnesses/) holds one
+raw → canonical mapping matrix per harness. The summary below describes the
+wire, not canonical output: a "yes" in the token-usage column means the
+harness can put usage on the wire, not that every emitted span carries it.
+Conditional availability lives in each harness's matrix file.
 
 ## Summary
 
 | Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics | Connector today |
 | --- | --- | --- | --- | --- | --- |
 | **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) | yes (traces edge) |
-| **Codex** | structured logs | yes (`response.completed`) | conversation ID, no repo path | yes (native) | yes (logs edge) |
+| **Codex** | structured logs | provider-dependent (`response.completed` relays what the provider returns) | conversation ID, no repo path | yes (native) | yes (logs edge) |
 | **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) | no |
 | **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions | yes (traces edge, `@amaster.ai/pi-telemetry`) |
 | **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) | no | no |
 | **Cursor** | metrics + logs (native, Enterprise beta) | yes (native) | no (hooks only) | yes (native) | yes (logs edge) |
 | **Hermes** | traces + metrics + logs (gateway health only) | no (plugin only) | no | yes, health gauges only | no |
 | **OpenCode** | traces + logs (native, new) | yes (native spans, no cost) | no (plugins add it) | via plugins | yes (traces edge) |
-| **OpenHands** | traces (native) | yes (LLM spans) | no (pass it yourself) | no | yes (traces edge) |
+| **OpenHands** | traces (native) | yes (LLM spans; streamed completions carry none) | no (pass it yourself) | no | yes (traces edge) |
 
 Codex, Cursor, Claude Code, OpenCode, Pi, OpenHands, and the GenAI-semconv
 scopes are the connector's supported edges; the root [README](../README.md)
@@ -343,15 +346,15 @@ groups whose instrumentation scope is exactly `opencode` and normalizes the
 Vercel AI SDK spans. Plugin surfaces (`felixti/opencode-otel-plugin` GenAI
 semconv, `@devtheops/opencode-plugin-otel` OpenInference) remain future work.
 
-GitHub Copilot native traces are handled the same way: the GenAI edge claims
+GitHub Copilot native traces follow the same path: the GenAI edge claims
 instrumentation scope `github.copilot` (CLI GA since v1.0.4; VS Code Chat
 speaks the identical vocabulary). The cloud coding agent has no OTLP export,
 so its hooks path stays out of scope; the JetBrains extension shows no
 telemetry at all. Research record: verified against primary sources on
 2026-08-22.
 
-Pi is handled too, through a different extension than this section's 2026-08-20
-research surveyed: the traces edge claims groups scoped
+Pi has support too, through a different extension than this section's
+2026-08-20 research surveyed: the traces edge claims groups scoped
 `@amaster.ai/pi-telemetry` (the only maintained open OTLP exporter found in the
 npm ecosystem on 2026-08-22) and normalizes its custom vocabulary. The other
 extensions below (`pi-otel-telemetry`, `@the-agency/pi-observability`,
@@ -361,7 +364,7 @@ repo/cwd identity these extensions carry is not yet mapped into canonical
 output — the connector drops nothing from the raw pipeline, so identity stays
 available there.
 
-OpenHands is handled too: the traces edge claims `lmnr.tracer` scope groups
+OpenHands has support too: the traces edge claims `lmnr.tracer` scope groups
 carrying OpenHands markers (the SDK's conversation/step span names or its
 delegate flag) and normalizes them into the canonical vocabulary. The
 2026-08-23 wire inspection found no cost and no reasoning-token counts on
@@ -380,8 +383,9 @@ the approved GenAI semconv design (which claims by instrumentation scope:
   `gen_ai.*`; no match.
 - **Cursor**: the native metrics/logs surface already feeds the connector's
   logs edge (re-verified against the 2026-08-22 wire reference: all ten log
-  events and three metrics are covered; `plugin.installed` carries no
-  conversation id and is declined by the standing no-conversation-id policy).
+  logs edge covers all ten log events and three metrics; `plugin.installed`
+  carries no conversation id, so the standing no-conversation-id policy
+  declines it).
   Correction records annotate the joined chat span with the correction kind
   rather than dropping its token totals — downstream decides billing
   semantics. Traces and repo identity come only from hook tooling

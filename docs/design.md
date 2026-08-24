@@ -353,7 +353,8 @@ replay-proof reads dedupe on trace ID.
 
 Records sort by record timestamp before feeding state (the wire guarantees no
 ordering). Timestamp resolution: record timestamp, else observed timestamp,
-else wall clock with `coding_agent.timestamp.inferred=true`, matching Codex.
+else wall clock, matching Codex; the internal inferred-timestamp marker
+never reaches emitted spans.
 
 ### Bounds
 
@@ -375,7 +376,8 @@ Root `invoke_agent cursor`: start = first event timestamp, end = last event
 timestamp. It carries `gen_ai.operation.name=invoke_agent`,
 `gen_ai.agent.name=cursor`, `gen_ai.conversation.id`,
 `coding_agent.client.name=cursor`, `coding_agent.client.version` from
-resource `service.version`, and `coding_agent.source=normalized`. Cursor's
+resource `service.version` when present (desktop/CLI clients only; cloud
+agents carry none), and `coding_agent.source=normalized`. Cursor's
 vendor detail — resource-side surface/entrypoint/team/user attributes,
 billable flags, correction kinds, skill/hook/cloud-agent payloads — stays
 out of canonical output; the full raw → canonical matrix lives in
@@ -579,8 +581,9 @@ other edges (`coding_agent.source=native`, `coding_agent.client.name`,
 original wire name), so content such as `ai.response.text` and
 `ai.toolCall.args`/`result` has no path into canonical output — removal is
 structural allowlisting, not a denylist that fails open as the wire evolves.
-The root carries no `gen_ai.provider.name`: the wire's `gen_ai.system` holds
-the SDK name, not a provider.
+Every claimed span copies a non-empty `ai.model.provider` onto
+`gen_ai.provider.name`; the wire's `gen_ai.system` holds the SDK name, not a
+provider, and drops.
 
 Granularity is per step: every `ai.streamText` span becomes its own canonical
 root inside one long-lived per-session trace — the wire keeps one TraceId per
@@ -630,9 +633,10 @@ the wire shape and ships as the golden fixture:
   (renaming the flat per-field source keys instead), cost totals, and
   diagnostic `status` / `stopReason` fields. Payload capture stays off by
   default in the extension (`includePayloads`).
-- Unknown span names pass through unchanged with Langfuse baggage stripped,
-  so future extension events surface visibly instead of being silently
-  dropped.
+- Unknown span names match no native shape, so they drop from canonical
+  output along with non-native sibling spans; the raw pipelines preserve
+  them, and a future extension event needs a new mapping here to reach
+  canonical output.
 - The extension's own telemetry contract differs from Pi's first-party
   `@earendil-works/pi-telemetry` package, which defines vocabulary but ships
   no exporter. Supporting the third-party extension here reflects what
@@ -665,24 +669,23 @@ group drops from canonical output, but still widens the root's time
 envelope for its trace ID. Kept children reparent under the root; a tool
 call and its result share a `tool_call_id` and dedupe to one span. The
 root maps `gen_ai.conversation.id` from
-`lmnr.association.properties.session_id`, copies `user_id` onto
-`enduser.pseudo.id`, and preserves conversation tags under
-`coding_agent.openhands.*`.
+`lmnr.association.properties.session_id`; `user_id` and conversation tags
+are vendor detail outside the vocabulary and stay in the raw pipeline.
 
 The normalizer stays stateless like the OpenCode edge: mid-conversation
 exports can arrive before their `conversation` root ends, so such fragments
 get a synthetic root whose span ID derives from SHA-256 of the trace ID.
 Delegates run their own sessions, so they arrive as sibling traces sharing
-the conversation id rather than as descendants; each delegate root carries
-`coding_agent.openhands.delegate=true` plus linkage attributes (task id,
-subagent type, parent session id, tool call id) so downstream consumers can
-reconstruct the delegation.
+the conversation id rather than as descendants. The delegate metadata flag
+serves claiming only, and the linkage detail (task id, subagent type,
+parent session id, tool call id) stays in the raw pipeline; downstream
+consumers reconstruct delegation through the shared conversation id.
 
 ### Usage and content
 
-Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*`,
-including cache read/creation input tokens; `llm.usage.total_tokens` is
-derivable and never copied. Streamed completions carry no token usage
+Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*` —
+input, output, total, and cache read/creation input tokens — each key only
+when the wire carries it. Streamed completions carry no token usage
 upstream, so a chat span may carry no usage at all. The wire reports no
 cost and no reasoning-token counts on spans.
 

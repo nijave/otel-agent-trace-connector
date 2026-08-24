@@ -59,9 +59,10 @@ before the strip.
 
 ## Vocabulary
 
-The block below is kept identical to `canonicalAttributeKeys` in
+`TestVocabularyDocsMirror` keeps the block below identical to
+`canonicalAttributeKeys` in
 [`connector/codingagentconnector/internal/canonical/vocabulary.go`](../connector/codingagentconnector/internal/canonical/vocabulary.go)
-by `TestVocabularyDocsMirror`, which fails CI on drift. Edit the vocabulary
+and fails CI on drift. Edit the vocabulary
 there, never here. Keys appear in declaration order:
 
 <!-- vocabulary:generated -->
@@ -106,7 +107,7 @@ there, never here. Keys appear in declaration order:
 `gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
 
 
-Beyond the enumerated keys, any key under the `exception.` prefix is allowed:
+Beyond the enumerated keys, any key under the `exception.` prefix may appear:
 exception details are standard OTel companions on error spans.
 
 That is the complete list. Everything else — vendor namespaces such as

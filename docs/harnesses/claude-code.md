@@ -3,12 +3,13 @@
 Claude Code emits native `claude_code.*` spans (scope
 `com.anthropic.claude_code.tracing`). The connector claims groups containing
 those spans, renames the three top-level span types, remaps their vendor
-attributes onto the canonical vocabulary, and strips every attribute outside
-that vocabulary. Spans in a claimed group whose names lack the `claude_code.`
-prefix (sibling instrumentation scopes swept in by the group claim) are
-dropped from canonical output; the raw pipelines preserve the originals.
-See [canonical attributes](../canonical-attributes.md) for the shared
-vocabulary and the policy behind it.
+attributes onto the canonical vocabulary, strips every attribute outside
+that vocabulary, and filters resource attributes down to the canonical
+resource identity keys. Spans in a claimed group whose names lack the
+`claude_code.` prefix (sibling instrumentation scopes swept in by the group
+claim) drop from canonical output; the raw pipelines preserve the
+originals. See [canonical attributes](../canonical-attributes.md) for the
+shared vocabulary and the policy behind it.
 
 Span-name renames:
 
@@ -21,7 +22,8 @@ Span-name renames:
 
 ## Attribute matrix
 
-Status is one of **mapped** (remapped onto the canonical key), **dropped**
+Status is one of **mapped** (remapped onto the canonical key; a parenthetical
+names any wire condition under which the key is absent), **dropped**
 (deliberately removed from canonical output; recoverable only via a raw
 preservation pipeline branch), or **not provided** (the source never emits a
 raw key that would map there).
@@ -30,7 +32,7 @@ raw key that would map there).
 
 | Raw key | Span type | Canonical key | Status |
 |---|---|---|---|
-| `session.id` | interaction | `gen_ai.conversation.id` | mapped |
+| `session.id` | interaction | `gen_ai.conversation.id` | mapped (interaction root only, from the span or resource `session.id` when present; Claude Code flushes spans as they end, so a batch without an interaction span emits no conversation id on any span) |
 | `user_prompt` | interaction | — | dropped |
 | `user_prompt_length` | interaction | — | dropped |
 | `interaction.sequence` | interaction | — | dropped |
@@ -43,13 +45,13 @@ raw key that would map there).
 
 | Raw key | Span type | Canonical key | Status |
 |---|---|---|---|
-| `input_tokens` | llm_request | `gen_ai.usage.input_tokens` | mapped |
-| `output_tokens` | llm_request | `gen_ai.usage.output_tokens` | mapped |
-| `cache_read_tokens` | llm_request | `gen_ai.usage.cache_read.input_tokens` | mapped |
-| `cache_creation_tokens` | llm_request | `gen_ai.usage.cache_creation.input_tokens` | mapped |
-| `ttft_ms` | llm_request | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double) |
-| `stop_reason` | llm_request | `gen_ai.response.finish_reasons` | mapped (appended if absent) |
-| `model` | llm_request | `gen_ai.request.model` | mapped (fallback when the canonical key is absent) |
+| `input_tokens` | llm_request | `gen_ai.usage.input_tokens` | mapped (each counter only when the native span carries it; a usage-less llm_request still emits its chat span) |
+| `output_tokens` | llm_request | `gen_ai.usage.output_tokens` | mapped (same condition) |
+| `cache_read_tokens` | llm_request | `gen_ai.usage.cache_read.input_tokens` | mapped (same condition; the wire reports zero as `0`, not by omission) |
+| `cache_creation_tokens` | llm_request | `gen_ai.usage.cache_creation.input_tokens` | mapped (same condition) |
+| `ttft_ms` | llm_request | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when the native span carries no `ttft_ms`) |
+| `stop_reason` | llm_request | `gen_ai.response.finish_reasons` | mapped (when present; appended only if the canonical key is absent) |
+| `model` | llm_request | `gen_ai.request.model` | mapped (fallback when the canonical key is absent; with neither, the span keeps the bare `chat` name and no key) |
 | `gen_ai.response.finish_reasons` | llm_request | `gen_ai.response.finish_reasons` | kept (already canonical) |
 | `duration_ms` | llm_request | — | dropped |
 | `speed` | llm_request | — | dropped |
@@ -73,9 +75,14 @@ raw key that would map there).
 | `session.id`, `user.id`, `terminal.type`, `span.type` | all tool spans | — | dropped |
 
 Unrenamed sub-spans (`claude_code.tool.execution`,
-`claude_code.tool.blocked_on_user`, hooks) receive the required provenance keys
-(`gen_ai.operation.name`, `coding_agent.source`, `coding_agent.client.name`)
-but are otherwise stripped like every other span.
+`claude_code.tool.blocked_on_user`, hooks) receive the shared provenance keys
+(`gen_ai.operation.name`, `gen_ai.provider.name`, `coding_agent.source`,
+`coding_agent.client.name`, plus `coding_agent.client.version` when the
+resource carries `service.version`) but keep nothing else outside the
+vocabulary. Their `gen_ai.operation.name` derives from the span name with the
+`claude_code.` prefix trimmed: names starting with `tool` collapse to
+`execute_tool`; anything else keeps the trimmed name as a non-semconv
+operation value (`claude_code.hook.pre_tool` → `hook.pre_tool`).
 
 ### Span events
 
@@ -95,14 +102,17 @@ but are otherwise stripped like every other span.
 | `gen_ai.request.stream` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `server.address` / `server.port` | not provided |
+| `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
+| `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
+| `coding_agent.source.scope` | not provided (this edge writes `coding_agent.source.event` instead) |
 
 ## Connector-written attributes
 
-These are written by the connector itself, not remapped from raw keys:
+The connector writes these itself rather than remapping them from raw keys:
 
 - `coding_agent.source` = `native`
 - `coding_agent.client.name` = `claude_code`
-- `coding_agent.client.version` = resource `service.version`
+- `coding_agent.client.version` = resource `service.version` (when present)
 - `coding_agent.source.event` = original `claude_code.*` span name on the
   three renamed types
 - `gen_ai.provider.name` = `anthropic`
