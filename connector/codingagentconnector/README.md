@@ -123,7 +123,7 @@ Attributes on a `chat <model>` span:
 | `gen_ai.operation.name` | Always `chat`. |
 | `gen_ai.request.model` | Model name; it also forms the `<model>` part of the span name. |
 | `gen_ai.provider.name` | Set when the source names the provider (`anthropic` for Claude Code, `openai` for Codex). |
-| `gen_ai.response.*`, `gen_ai.server.time_to_first_token` | Response metadata, copied when the source reports it. |
+| `gen_ai.response.*` (including `time_to_first_chunk`, seconds as a double) | Response metadata, copied when the source reports it. |
 | `gen_ai.usage.*` | Token counts for this call. |
 | `coding_agent.cursor.billable` | Cursor billing flag for the request. |
 

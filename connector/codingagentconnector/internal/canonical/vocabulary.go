@@ -24,7 +24,6 @@ var canonicalAttributeKeys = []string{
 	"gen_ai.response.id",
 	"gen_ai.response.model",
 	"gen_ai.response.time_to_first_chunk",
-	"gen_ai.server.time_to_first_token",
 	"gen_ai.agent.id",
 	"gen_ai.agent.name",
 	"gen_ai.agent.version",

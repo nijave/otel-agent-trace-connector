@@ -45,7 +45,7 @@ raw key that would map there).
 | `output_tokens` | llm_request | `gen_ai.usage.output_tokens` | mapped |
 | `cache_read_tokens` | llm_request | `gen_ai.usage.cache_read.input_tokens` | mapped |
 | `cache_creation_tokens` | llm_request | `gen_ai.usage.cache_creation.input_tokens` | mapped |
-| `ttft_ms` | llm_request | `gen_ai.response.time_to_first_chunk` | mapped (ms) |
+| `ttft_ms` | llm_request | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double) |
 | `stop_reason` | llm_request | `gen_ai.response.finish_reasons` | mapped (appended if absent) |
 | `model` | llm_request | `gen_ai.request.model` | mapped (fallback when the canonical key is absent) |
 | `gen_ai.response.finish_reasons` | llm_request | `gen_ai.response.finish_reasons` | kept (already canonical) |

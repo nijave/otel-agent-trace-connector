@@ -37,7 +37,7 @@ raw key that would map there).
 | `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped |
 | `tool_token_count` | `gen_ai.usage.total_tokens` | mapped |
 | `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
-| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (from the usage-bearing `response.completed`; also the discriminator that skips the timing-only duplicate) |
+| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; from the usage-bearing `response.completed`; also the discriminator that skips the timing-only duplicate) |
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
@@ -98,7 +98,6 @@ appear on every emitted span:
 | `gen_ai.usage.cache_creation.input_tokens` | not provided |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
-| `gen_ai.server.time_to_first_token` | not provided (`time_to_first_chunk` is used) |
 | `gen_ai.tool.call.id` / `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
 | `server.address` / `server.port` | not provided (proxied setups are indistinguishable) |
 | `exception.*` | not provided |

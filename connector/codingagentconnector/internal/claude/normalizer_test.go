@@ -141,12 +141,12 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	}
 	// Batches can arrive in any order, so latency/reason assertions collect
 	// across every chat span instead of pinning one.
-	var ttfts []int64
+	var ttfts []float64
 	finishReasons := map[string]bool{}
 	for i := 0; i < all.Len(); i++ {
 		span := all.At(i)
 		if value, ok := span.Attributes().Get("gen_ai.response.time_to_first_chunk"); ok {
-			ttfts = append(ttfts, value.Int())
+			ttfts = append(ttfts, value.Double())
 		}
 		if value, ok := span.Attributes().Get("gen_ai.response.finish_reasons"); ok {
 			for j := 0; j < value.Slice().Len(); j++ {
@@ -154,7 +154,7 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 			}
 		}
 	}
-	require.ElementsMatch(t, []int64{2188, 3084, 1197}, ttfts)
+	require.ElementsMatch(t, []float64{2.188, 3.084, 1.197}, ttfts)
 	require.True(t, finishReasons["end_turn"] && finishReasons["tool_use"], "stop reasons must be remapped: %v", finishReasons)
 	for _, raw := range []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
 		"ttft_ms", "stop_reason", "model", "duration_ms", "speed", "llm_request.context", "attempt",
@@ -174,6 +174,18 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	assertRequiredKeys(t, execution)
 	blocked := findSpan(t, all, "claude_code.tool.blocked_on_user")
 	assertRequiredKeys(t, blocked)
+}
+
+// TestRemapUsageConvertsTTFTToSeconds pins the canonical TTFT unit: the wire
+// carries integer milliseconds and canonical output stores fractional seconds.
+func TestRemapUsageConvertsTTFTToSeconds(t *testing.T) {
+	attrs := pcommon.NewMap()
+	attrs.PutInt("ttft_ms", 250)
+	remapUsage(attrs)
+	value, ok := attrs.Get(ttftCanonicalKey)
+	require.True(t, ok)
+	require.Equal(t, pcommon.ValueTypeDouble, value.Type())
+	require.InDelta(t, 0.25, value.Double(), 1e-9)
 }
 
 // TestClaudeTraceNormalizerKeepsSubToolOnlyBatch covers an export carrying only tool

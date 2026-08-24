@@ -66,7 +66,7 @@ raw key that would map there).
 | `ai.usage.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (falls back to `ai.usage.outputTokenDetails.reasoningTokens` when absent) |
 | `ai.usage.outputTokenDetails.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (fallback source only) |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | same key | kept (already canonical passthrough) |
-| `ai.response.msToFirstChunk` | `gen_ai.response.time_to_first_chunk` | mapped (fractional ms truncated to whole ms) |
+| `ai.response.msToFirstChunk` | `gen_ai.response.time_to_first_chunk` | mapped (fractional ms → seconds, double) |
 | `session.id` | `gen_ai.conversation.id` | not mapped on this span (the parent `invoke_agent` carries it) |
 | `gen_ai.system` | — | dropped (`gen_ai.provider.name` is remapped from `ai.model.provider`) |
 | `gen_ai.request.max_tokens` | — | dropped today; candidate future mapping (`ai.settings.maxOutputTokens` duplicates it) |
@@ -120,7 +120,6 @@ These are written by the connector itself, not remapped from raw keys:
 | Canonical key | Status |
 |---|---|
 | `gen_ai.usage.cache_creation.input_tokens` | not provided |
-| `gen_ai.server.time_to_first_token` | not provided (`time_to_first_chunk` is used) |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `gen_ai.request.stream` | not provided (all calls stream) |
 | `gen_ai.conversation.id` on chat/execute_tool spans | not mapped (parent carries it) |

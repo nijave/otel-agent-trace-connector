@@ -162,7 +162,10 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		for _, m := range tokenUsageAttrs {
 			copyIntAttr(span.Attributes(), event.attrs, m.source, m.dest)
 		}
-		copyIntAttr(span.Attributes(), event.attrs, "ttft_ms", "gen_ai.response.time_to_first_chunk")
+		if ms, ok := int64Value(event.attrs["ttft_ms"]); ok {
+			// Wire units are integer milliseconds; canonical stores seconds.
+			span.Attributes().PutDouble("gen_ai.response.time_to_first_chunk", float64(ms)/1000)
+		}
 		completionIndex++
 	}
 }

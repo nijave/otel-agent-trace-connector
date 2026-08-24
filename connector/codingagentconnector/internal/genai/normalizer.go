@@ -152,6 +152,7 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 	mapLegacyTokens(attrs, "gen_ai.usage.completion_tokens", "gen_ai.usage.output_tokens")
 	remapUsageKeys(attrs)
 	restrictUsageKeys(attrs)
+	mapTTFT(attrs)
 	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.source.scope", scopeName)
 	if serviceName != "" {
@@ -211,6 +212,21 @@ func remapUsageKeys(attrs pcommon.Map) {
 		}
 		attrs.Remove(remap.raw)
 	}
+}
+
+// mapTTFT remaps Strands' legacy server-side TTFT key onto the canonical
+// client key. The wire carries whole milliseconds; canonical stores fractional
+// seconds. The canonical key wins when an emitter already provided it.
+func mapTTFT(attrs pcommon.Map) {
+	const legacyKey = "gen_ai.server.time_to_first_token"
+	value, ok := attrs.Get(legacyKey)
+	if !ok {
+		return
+	}
+	if _, exists := attrs.Get("gen_ai.response.time_to_first_chunk"); !exists && value.Type() == pcommon.ValueTypeInt {
+		attrs.PutDouble("gen_ai.response.time_to_first_chunk", float64(value.Int())/1000)
+	}
+	attrs.Remove(legacyKey)
 }
 
 // restrictUsageKeys removes every gen_ai.usage.* attribute outside the

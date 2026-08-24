@@ -299,6 +299,26 @@ func TestGenAINormalizerMapsLegacyTokensWhenCurrentAbsent(t *testing.T) {
 	require.Equal(t, "chat", out.Name())
 }
 
+// TestGenAINormalizerMapsStrandsTTFTOntoCanonicalKey pins the one-key-one-unit
+// TTFT contract: Strands' legacy server key carries whole milliseconds and is
+// remapped onto the canonical client key as fractional seconds.
+func TestGenAINormalizerMapsStrandsTTFTOntoCanonicalKey(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("gen_ai.server.time_to_first_token", 250)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
+	require.True(t, ok, "the strands TTFT must land on the canonical key")
+	require.Equal(t, pcommon.ValueTypeDouble, value.Type())
+	require.InDelta(t, 0.25, value.Double(), 1e-9)
+	_, exists := out.Attributes().Get("gen_ai.server.time_to_first_token")
+	require.False(t, exists, "the legacy server key must not survive normalization")
+}
+
 func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
 	input := ptrace.NewTraces()
 	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")

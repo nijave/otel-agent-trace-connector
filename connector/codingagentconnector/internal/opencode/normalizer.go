@@ -148,10 +148,9 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 		if ok {
 			attrs.PutInt("gen_ai.usage.reasoning.output_tokens", reasoning)
 		}
-		if ttft, ok := intValue(wire.Attributes(), "ai.response.msToFirstChunk"); ok {
-			// Wire units are fractional milliseconds; canonical stores whole
-			// milliseconds like every other edge.
-			attrs.PutInt("gen_ai.response.time_to_first_chunk", ttft)
+		if ttft, ok := floatValue(wire.Attributes(), "ai.response.msToFirstChunk"); ok {
+			// Wire units are fractional milliseconds; canonical stores seconds.
+			attrs.PutDouble("gen_ai.response.time_to_first_chunk", ttft/1000)
 		}
 		span.SetName(name)
 	case wireToolCall:
@@ -226,6 +225,21 @@ func intValue(attrs pcommon.Map, key string) (int64, bool) {
 		return value.Int(), true
 	case pcommon.ValueTypeDouble:
 		return int64(value.Double()), true
+	}
+	return 0, false
+}
+
+// floatValue reads an attribute as a float64 without truncation.
+func floatValue(attrs pcommon.Map, key string) (float64, bool) {
+	value, ok := attrs.Get(key)
+	if !ok {
+		return 0, false
+	}
+	switch value.Type() {
+	case pcommon.ValueTypeInt:
+		return float64(value.Int()), true
+	case pcommon.ValueTypeDouble:
+		return value.Double(), true
 	}
 	return 0, false
 }

@@ -174,6 +174,23 @@ func TestNormalizerMissingUsageEmitsWithoutTokens(t *testing.T) {
 	require.False(t, hasInput, "missing wire usage must stay absent, not zero-filled")
 }
 
+// TestNormalizerConvertsTTFTToSeconds pins the canonical TTFT unit: the wire
+// carries fractional milliseconds and canonical output stores fractional
+// seconds as a double.
+func TestNormalizerConvertsTTFTToSeconds(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "opencode", "ai.streamText.doStream")
+	span.Attributes().PutDouble("ai.response.msToFirstChunk", 250)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
+	require.True(t, ok)
+	require.Equal(t, pcommon.ValueTypeDouble, value.Type())
+	require.InDelta(t, 0.25, value.Double(), 1e-9)
+}
+
 func TestNormalizerEmitsNothingWithoutClaimedGroups(t *testing.T) {
 	input := ptrace.NewTraces()
 	newGroup(input, "com.opencode", "opencode.llm")
@@ -373,8 +390,11 @@ func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
 	require.Equal(t, int64(48), usageInt("gen_ai.usage.output_tokens"))
 	require.Equal(t, int64(7184), usageInt("gen_ai.usage.total_tokens"))
 	require.Equal(t, int64(7), usageInt("gen_ai.usage.reasoning.output_tokens"))
-	// 3276.662537 ms truncates to whole milliseconds.
-	require.Equal(t, int64(3276), usageInt("gen_ai.response.time_to_first_chunk"))
+	// Canonical TTFT is fractional seconds: 3276.662537 ms on the wire.
+	ttft, ok := chat.Attributes().Get("gen_ai.response.time_to_first_chunk")
+	require.True(t, ok)
+	require.Equal(t, pcommon.ValueTypeDouble, ttft.Type())
+	require.InDelta(t, 3.276662537, ttft.Double(), 1e-9)
 
 	for _, dropped := range []string{
 		"ai.usage.totalTokens",
