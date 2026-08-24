@@ -150,9 +150,6 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		if root.ParentSpanID() != [8]byte{} {
 			return errors.New("root span unexpectedly has a parent")
 		}
-		if agent == "codex" && !boolAttr(root, "coding_agent.turn.complete") {
-			return errors.New("root turn is incomplete")
-		}
 		if stringAttr(root, "gen_ai.operation.name") != "invoke_agent" {
 			return errors.New("root operation is not invoke_agent")
 		}
@@ -552,11 +549,6 @@ func rejectOpenCodeContent(spans []ptrace.Span) error {
 	return nil
 }
 
-func boolAttr(span ptrace.Span, key string) bool {
-	value, ok := span.Attributes().Get(key)
-	return ok && value.Bool()
-}
-
 // allSpans flattens every span across all resource and scope groups, like
 // collectRunSpans without the run-id filter: fixture files carry no run id.
 func allSpans(traces ptrace.Traces) []ptrace.Span {
@@ -619,8 +611,8 @@ func validateCursorRoot(span ptrace.Span) error {
 	if got := stringAttr(span, "gen_ai.conversation.id"); got == "" {
 		return errors.New("cursor root missing gen_ai.conversation.id")
 	}
-	if got := stringAttr(span, "coding_agent.turn.finish_reason"); got == "" {
-		return errors.New("cursor root missing finish reason")
+	if _, ok := span.Attributes().Get("coding_agent.turn.finish_reason"); ok {
+		return errors.New("cursor root must not carry the connector-derived finish reason")
 	}
 	if _, ok := span.Attributes().Get("gen_ai.provider.name"); ok {
 		return errors.New("cursor root must not claim gen_ai.provider.name")

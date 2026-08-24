@@ -72,33 +72,6 @@ func TestValidateTracesRejectsSensitiveAttrOnGrandchild(t *testing.T) {
 // TestValidateTracesAcceptsRunWithAnIncompleteTurn covers a run that contains more
 // than one root: the Codex connector emits a root per turn, and a turn finalized by
 // inactivity timeout is incomplete by design. Validation must keep looking rather
-// than failing on whichever candidate comes first.
-func TestValidateTracesAcceptsRunWithAnIncompleteTurn(t *testing.T) {
-	// The timed-out turn is emitted first, so it is the first candidate the root
-	// scan encounters -- exactly the ordering that made this fail before.
-	incompleteOnly := ptrace.NewTraces()
-	rs := incompleteOnly.ResourceSpans().AppendEmpty()
-	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
-	incomplete := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
-	incomplete.SetName("invoke_agent codex")
-	incomplete.SetTraceID(pcommon.TraceID{7})
-	incomplete.SetSpanID(pcommon.SpanID{8})
-	incomplete.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
-	incomplete.Attributes().PutStr("gen_ai.conversation.id", "conversation-1")
-	incomplete.Attributes().PutBool("coding_agent.turn.complete", false)
-
-	// A run holding only the incomplete turn still fails, and says why.
-	require.ErrorContains(t, validateTraces(incompleteOnly, "run-1"), "incomplete")
-
-	// Append the complete turn after it: the incomplete root must not veto the run.
-	traces := ptrace.NewTraces()
-	incompleteOnly.ResourceSpans().CopyTo(traces.ResourceSpans())
-	validTraces("run-1").ResourceSpans().MoveAndAppendTo(traces.ResourceSpans())
-	spans := collectRunSpans(traces, "run-1")
-	require.False(t, boolAttr(spans[0], "coding_agent.turn.complete"), "incomplete root must be first")
-	require.NoError(t, validateTraces(traces, "run-1"))
-}
-
 func TestValidateClaudeRawAndCanonicalTraces(t *testing.T) {
 	raw := validClaudeTraces("run-claude", false)
 	canonical := validClaudeTraces("run-claude", true)
@@ -416,7 +389,6 @@ func validTraces(runID string) ptrace.Traces {
 	root.SetSpanID(rootID)
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.conversation.id", "conversation-1")
-	root.Attributes().PutBool("coding_agent.turn.complete", true)
 	chat := spans.AppendEmpty()
 	chat.SetName("chat test")
 	chat.SetTraceID(traceID)
