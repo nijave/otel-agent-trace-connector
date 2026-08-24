@@ -3,6 +3,7 @@ module github.com/nijave/otel-agent-trace-connector
 go 1.27.0
 
 require (
+	github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector v0.0.0
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/collector/pdata v1.65.0
 )
@@ -16,3 +17,5 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 )
+
+replace github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector => ./connector/codingagentconnector

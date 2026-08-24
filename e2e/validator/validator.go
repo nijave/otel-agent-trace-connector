@@ -10,7 +10,10 @@ import (
 	"os"
 	"strings"
 
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/contract"
 )
 
 func validateCanonicalFile(path, runID, agent string) error {
@@ -296,35 +299,29 @@ func stringAttr(span ptrace.Span, key string) string {
 	return value.Str()
 }
 
-// genAIContentAttributeKeys and genAIContentEventNames mirror the stripping
-// contract in internal/genai; canonical output must never carry them.
-var genAIContentAttributeKeys = []string{
-	"gen_ai.input.messages", "gen_ai.output.messages",
-	"gen_ai.system_instructions", "system_prompt",
-	"gen_ai.tool.call.arguments", "gen_ai.tool.call.result",
-	"gen_ai.user.message", "gen_ai.assistant.message", "gen_ai.choice",
-	"gen_ai.system",
-}
-
-var genAIContentEventNames = []string{
-	"gen_ai.client.inference.operation.details",
-	"gen_ai.user.message", "gen_ai.assistant.message",
-	"gen_ai.system.message", "gen_ai.tool.message", "gen_ai.choice",
-}
-
+// rejectGenAIContent fails if any content reached a canonical span: an
+// attribute outside the canonical allowlist or a content-bearing span event.
+// Both predicates delegate to the connector module's contract package, so the
+// live check cannot drift from what Strip actually removes.
 func rejectGenAIContent(spans []ptrace.Span) error {
 	for _, span := range spans {
-		for _, key := range genAIContentAttributeKeys {
-			if _, ok := span.Attributes().Get(key); ok {
-				return fmt.Errorf("attribute %q survived normalization on span %q", key, span.Name())
+		// Canonical output is allowlist-only, so any attribute outside the
+		// vocabulary — not just today's known content keys — is a leak.
+		var attrErr error
+		span.Attributes().Range(func(key string, _ pcommon.Value) bool {
+			if !contract.IsCanonicalAttribute(key) {
+				attrErr = fmt.Errorf("attribute %q survived normalization on span %q", key, span.Name())
+				return false
 			}
+			return true
+		})
+		if attrErr != nil {
+			return attrErr
 		}
 		for i := 0; i < span.Events().Len(); i++ {
 			name := span.Events().At(i).Name()
-			for _, banned := range genAIContentEventNames {
-				if name == banned {
-					return fmt.Errorf("content event %q survived normalization on span %q", name, span.Name())
-				}
+			if contract.IsContentEvent(name) {
+				return fmt.Errorf("content event %q survived normalization on span %q", name, span.Name())
 			}
 		}
 	}
@@ -645,8 +642,18 @@ func validateOpenHandsRawFile(path, _ string) error {
 	return validateTraceFile(path, "", validateOpenHandsRawTraces)
 }
 
-func validateOpenHandsCanonicalTraces(traces ptrace.Traces, _ string) error {
+// validateOpenHandsCanonicalTraces asserts the canonical OpenHands shape. A
+// non-empty runID restricts validation to that run's spans, so unrelated
+// traffic sharing a live export file is not held to the openhands shape;
+// committed fixtures carry no run id and validate every span.
+func validateOpenHandsCanonicalTraces(traces ptrace.Traces, runID string) error {
 	spans := allSpans(traces)
+	if runID != "" {
+		spans = collectRunSpans(traces, runID)
+		if len(spans) == 0 {
+			return errors.New("openhands run id was not found")
+		}
+	}
 	if err := validateOpenHandsSpans(spans); err != nil {
 		return err
 	}
