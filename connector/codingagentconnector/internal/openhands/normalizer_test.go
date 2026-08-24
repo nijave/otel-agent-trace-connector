@@ -185,11 +185,6 @@ func intValue(t *testing.T, span ptrace.Span, key string) int64 {
 	return value.Int()
 }
 
-func boolValue(span ptrace.Span, key string) bool {
-	value, _ := span.Attributes().Get(key)
-	return value.Bool()
-}
-
 func marshalT(t *testing.T, traces ptrace.Traces) string {
 	t.Helper()
 	data, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
@@ -258,7 +253,7 @@ func TestDelegateFlagAloneClaims(t *testing.T) {
 
 func TestConversationBecomesRootWithCanonicalAttrs(t *testing.T) {
 	attrs := baseAttrs()
-	attrs[attrUserID] = "42"
+	attrs["lmnr.association.properties.user_id"] = "42"
 	attrs["conversation.tags.team"] = "core"
 	conv := conversationSpec()
 	conv.attrs = attrs
@@ -282,8 +277,12 @@ func TestConversationBecomesRootWithCanonicalAttrs(t *testing.T) {
 	require.Equal(t, "native", attrString(r, "coding_agent.source"))
 	require.Equal(t, "openhands", attrString(r, "coding_agent.client.name"))
 	require.Equal(t, scopeName, attrString(r, "coding_agent.source.scope"))
-	require.Equal(t, "42", attrString(r, "enduser.pseudo.id"))
-	require.Equal(t, "core", attrString(r, "coding_agent.openhands.tag.team"))
+	// User identity and tags are outside the canonical vocabulary; the raw
+	// keys must not survive in any renamed form.
+	_, ok := r.Attributes().Get("enduser.pseudo.id")
+	require.False(t, ok)
+	_, ok = r.Attributes().Get("coding_agent.openhands.tag.team")
+	require.False(t, ok)
 	// The dropped agent.step timing folds into the root bounds; the
 	// conversation span ends one second after baseTime.
 	require.Equal(t, baseTime.Add(-30*time.Second), r.StartTimestamp().AsTime())
@@ -300,6 +299,7 @@ func TestLLMAndToolChildrenReparentAndRename(t *testing.T) {
 			name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", parentID: "00000000000000dd",
 			spanType: "LLM",
 			attrs: map[string]any{
+				"gen_ai.system":                            "openai",
 				"gen_ai.request.model":                     "anthropic/claude-sonnet-4-5",
 				"gen_ai.usage.input_tokens":                int64(100),
 				"gen_ai.usage.output_tokens":               int64(200),
@@ -330,14 +330,18 @@ func TestLLMAndToolChildrenReparentAndRename(t *testing.T) {
 	require.Equal(t, root.TraceID(), chat.TraceID())
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
 	require.Equal(t, "chat", attrString(chat, "gen_ai.operation.name"))
+	require.Equal(t, "openai", attrString(chat, "gen_ai.provider.name"))
+	_, hasSystem := chat.Attributes().Get("gen_ai.system")
+	require.False(t, hasSystem, "raw gen_ai.system must not survive")
 	require.Equal(t, "anthropic/claude-sonnet-4-5", attrString(chat, "gen_ai.request.model"))
 	require.Equal(t, int64(100), intValue(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(200), intValue(t, chat, "gen_ai.usage.output_tokens"))
+	require.Equal(t, int64(360), intValue(t, chat, "gen_ai.usage.total_tokens"))
 	require.Equal(t, int64(50), intValue(t, chat, "gen_ai.usage.cache_read.input_tokens"))
 	require.Equal(t, int64(10), intValue(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
-	_, ok := chat.Attributes().Get("llm.usage.total_tokens")
-	require.False(t, ok)
-	_, ok = chat.Attributes().Get("gen_ai.input.messages")
+	_, hasRawTotal := chat.Attributes().Get("llm.usage.total_tokens")
+	require.False(t, hasRawTotal, "raw total_tokens must be remapped")
+	_, ok := chat.Attributes().Get("gen_ai.input.messages")
 	require.False(t, ok)
 	_, ok = chat.Attributes().Get("lmnr.span.input")
 	require.False(t, ok)
@@ -398,33 +402,35 @@ func TestFragmentWithoutConversationGetsSyntheticRoot(t *testing.T) {
 	require.Equal(t, sessionID, attrString(roots[0], "gen_ai.conversation.id"))
 }
 
-func TestDelegateSiblingCarriesLinkage(t *testing.T) {
+func TestDelegateLinkageDropped(t *testing.T) {
+	// The delegate flag still claims the group, but linkage detail is
+	// outside the canonical vocabulary and must not reach output.
 	attrs := baseAttrs()
 	attrs[attrIsDelegate] = "true"
 	attrs[attrMetadata+"task_id"] = "task-9"
+	attrs[attrMetadata+"subagent_type"] = "bash_delegate"
 	attrs[attrMetadata+"parent_session_id"] = "parent-conversation-uuid"
 	delegated := makeTraces(makeSpan(traceB, spanSpec{
 		name: "conversation", spanID: "cccccccccccccccc", attrs: attrs,
 	}))
 	out := normalizeOne(t, delegated)
 	root := findByName(t, out, "invoke_agent openhands")[0]
-	require.True(t, boolValue(root, delegateFlag))
-	require.Equal(t, "task-9", attrString(root, delegatePrefix+"task_id"))
-	require.Equal(t, "parent-conversation-uuid", attrString(root, delegatePrefix+"parent_session_id"))
+	root.Attributes().Range(func(k string, _ pcommon.Value) bool {
+		require.NotContains(t, k, "coding_agent.openhands.delegate")
+		return true
+	})
 }
 
-func TestTagsAssociationPropertyCopied(t *testing.T) {
+func TestTagsAssociationPropertyDropped(t *testing.T) {
 	attrs := baseAttrs()
-	attrs[attrTags] = []string{"delegate"}
+	attrs["lmnr.association.properties.tags"] = []string{"delegate"}
 	delegated := makeTraces(makeSpan(traceB, spanSpec{
 		name: "conversation", spanID: "cccccccccccccccc", attrs: attrs,
 	}))
 	out := normalizeOne(t, delegated)
 	root := findByName(t, out, "invoke_agent openhands")[0]
-	tags, ok := root.Attributes().Get("coding_agent.openhands.tags")
-	require.True(t, ok)
-	require.Equal(t, 1, tags.Slice().Len())
-	require.Equal(t, "delegate", tags.Slice().At(0).Str())
+	_, ok := root.Attributes().Get("coding_agent.openhands.tags")
+	require.False(t, ok)
 }
 
 func TestOutputOrderStableUnderShuffledInput(t *testing.T) {
@@ -449,8 +455,14 @@ func TestOutputOrderStableUnderShuffledInput(t *testing.T) {
 }
 
 func TestNoLaminarBookkeepingInOutput(t *testing.T) {
+	conv := conversationSpec()
+	conv.attrs = map[string]any{
+		attrSessionID:                         sessionID,
+		"lmnr.association.properties.user_id": "42",
+		"conversation.tags.team":              "core",
+	}
 	out := normalizeOne(t, makeTraces(
-		makeSpan(traceA, conversationSpec()),
+		makeSpan(traceA, conv),
 		makeSpan(traceA, spanSpec{
 			name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM",
 			attrs: map[string]any{
@@ -459,10 +471,17 @@ func TestNoLaminarBookkeepingInOutput(t *testing.T) {
 			},
 		}),
 	))
+	droppedPrefixes := []string{
+		"lmnr.span.",
+		"enduser.pseudo.id",
+		"coding_agent.openhands.",
+	}
 	for _, span := range allSpansOf(out) {
 		span.Attributes().Range(func(k string, _ pcommon.Value) bool {
-			if strings.HasPrefix(k, "lmnr.span.") {
-				t.Errorf("bookkeeping attribute %q leaked onto %s", k, span.Name())
+			for _, prefix := range droppedPrefixes {
+				if strings.HasPrefix(k, prefix) {
+					t.Errorf("bookkeeping attribute %q leaked onto %s", k, span.Name())
+				}
 			}
 			return true
 		})
