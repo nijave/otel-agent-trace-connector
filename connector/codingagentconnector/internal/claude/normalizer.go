@@ -35,9 +35,10 @@ func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
-// ConsumeTraces renames native claude_code.* spans, remaps their attributes
-// onto the canonical vocabulary, and strips everything outside that vocabulary
-// from every span in claimed groups — native and sibling scopes alike.
+// ConsumeTraces renames native claude_code.* spans and remaps their attributes
+// onto the canonical vocabulary. Canonical output carries only coding-agent
+// spans: spans outside the claude_code.* namespace in claimed groups are
+// dropped here (the raw pipelines preserve the originals).
 func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
@@ -54,14 +55,19 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 		canonical.FilterResource(rs)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
+			foreign := make(map[pcommon.SpanID]bool, spans.Len())
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				if strings.HasPrefix(span.Name(), claudeSpanPrefix) {
-					normalizeClaudeSpan(span, version, resourceSessionID)
+				if !strings.HasPrefix(span.Name(), claudeSpanPrefix) {
+					foreign[span.SpanID()] = true
+					continue
 				}
+				normalizeClaudeSpan(span, version, resourceSessionID)
 				content.Strip(span)
 			}
+			spans.RemoveIf(func(s ptrace.Span) bool { return foreign[s.SpanID()] })
 		}
+		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool { return ss.Spans().Len() == 0 })
 	}
 	if output.SpanCount() == 0 {
 		return nil

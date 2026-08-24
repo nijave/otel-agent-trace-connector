@@ -3,10 +3,11 @@
 
 // Package content removes prompt/completion/tool content from spans so it
 // never reaches canonical output. Every normalizer edge runs it over every
-// span it emits, including spans from sibling instrumentation scopes swept
-// into a claimed resource group. Canonical output is restricted to the
-// allowlist of benign attributes owned by internal/canonical, so content
-// never reaches it — not even from unknown vendor namespaces.
+// span it emits. Canonical output carries only coding-agent spans — spans
+// from non-native scopes in a claimed resource group are dropped by their
+// edges, not stripped — and is restricted to the allowlist of benign
+// attributes owned by internal/canonical, so content never reaches it — not
+// even from unknown vendor namespaces.
 package content
 
 import (

@@ -212,11 +212,11 @@ func TestClaudeTraceNormalizerKeepsSubToolOnlyBatch(t *testing.T) {
 	assertRequiredKeys(t, blockedOut)
 }
 
-// TestClaudeTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups
-// covers a claimed group that also carries a sibling instrumentation scope:
-// only claude_code.* spans are native, so sibling spans keep their shape but
-// lose prompt/completion/tool content before canonical export.
-func TestClaudeTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testing.T) {
+// TestClaudeTraceNormalizerDropsNonNativeSiblingsInClaimedGroups covers a
+// claimed group that also carries a sibling instrumentation scope: only
+// claude_code.* spans are native, so sibling spans are dropped from canonical
+// output while the input keeps them untouched.
+func TestClaudeTraceNormalizerDropsNonNativeSiblingsInClaimedGroups(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
 	nativeScope := rs.ScopeSpans().AppendEmpty()
@@ -228,18 +228,19 @@ func TestClaudeTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t 
 	sibling.SetName("plugin.chat")
 	sibling.Attributes().PutStr("gen_ai.input.messages", "SENSITIVE")
 	sibling.Events().AppendEmpty().SetName("gen_ai.choice")
-	sibling.Events().AppendEmpty().SetName("plugin.step")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	findSpan(t, all, "invoke_agent claude_code")
-	outSibling := findSpan(t, all, "plugin.chat")
-	_, exists := outSibling.Attributes().Get("gen_ai.input.messages")
-	require.False(t, exists, "content must not ride along on non-native scopes in a claimed group")
-	require.Equal(t, 1, outSibling.Events().Len(), "content events are removed, non-content events survive")
-	// The input keeps its content: raw fidelity is the raw pipeline's job.
+	for i := 0; i < all.Len(); i++ {
+		require.NotEqual(t, "plugin.chat", all.At(i).Name(),
+			"non-native sibling spans must not reach canonical output")
+	}
+	// The input keeps the sibling span and its content: raw fidelity is the
+	// raw pipeline's job.
 	inSibling := input.ResourceSpans().At(0).ScopeSpans().At(1).Spans().At(0)
+	require.Equal(t, "plugin.chat", inSibling.Name())
 	require.Equal(t, "SENSITIVE", attrString(t, inSibling, "gen_ai.input.messages"))
 }
 

@@ -8,6 +8,8 @@
 // and status pass through; only names and attributes change, and canonical
 // output is restricted to an allowlist of benign attributes and events, so
 // content never reaches it — not even from unknown vendor namespaces.
+// Scopes outside the allowlist in a claimed group are dropped, so canonical
+// output carries only coding-agent spans.
 package genai
 
 import (
@@ -83,16 +85,19 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		inputResourceSpans.CopyTo(rs)
 		serviceName := resourceString(rs.Resource(), "service.name")
 		serviceVersion := resourceString(rs.Resource(), "service.version")
+		// Canonical output carries only coding-agent spans: scopes outside
+		// the allowlist in a claimed group are dropped here (the raw
+		// pipelines preserve the originals).
+		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool {
+			return !matchesGenAIScope(ss.Scope().Name())
+		})
 		canonical.FilterResource(rs)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			ss := rs.ScopeSpans().At(j)
-			matched := matchesGenAIScope(ss.Scope().Name())
 			spans := ss.Spans()
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				if matched {
-					normalizeSpan(span, ss.Scope().Name(), serviceName, serviceVersion)
-				}
+				normalizeSpan(span, ss.Scope().Name(), serviceName, serviceVersion)
 				content.Strip(span)
 			}
 		}

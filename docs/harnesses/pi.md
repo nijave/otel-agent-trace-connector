@@ -6,7 +6,9 @@ Turn spans arrive as `chat-turn`, generations as `llm-generation …`, and tools
 as spans named after the bare tool with the identity in attributes. The
 connector claims any group carrying that scope or sdk.name and rewrites each
 trace as an `invoke_agent pi` root with reparented `chat <model>` and
-`execute_tool <tool>` children. See
+`execute_tool <tool>` children. Non-native spans in a claimed group (sibling
+instrumentation scopes swept in by the process-wide claim) are dropped from
+canonical output; the raw pipelines preserve the originals. See
 [canonical attributes](../canonical-attributes.md) for the shared vocabulary
 and the policy behind it.
 
@@ -75,7 +77,7 @@ appear on every emitted span:
 - `coding_agent.source.event` (original native span/event name)
 
 Langfuse observation baggage (`langfuse.*`) is exporter-local metadata and is
-stripped everywhere.
+stripped from every native span.
 
 ## Canonical keys with no Pi source
 

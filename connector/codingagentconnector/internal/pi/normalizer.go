@@ -5,7 +5,8 @@
 // canonical coding-agent vocabulary. It is stateless: hierarchy, IDs, kinds,
 // and status pass through; only names and attributes change, and the raw
 // usage blob, Langfuse observation baggage, and flat usage source keys never
-// reach canonical output.
+// reach canonical output. Non-native spans in claimed groups are dropped, so
+// canonical output carries only coding-agent spans.
 package pi
 
 import (
@@ -20,7 +21,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 )
 
 const (
@@ -45,8 +45,10 @@ func (*piTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
-// ConsumeTraces renames native Pi spans and strips content from non-native
-// sibling scopes that the scope/sdk.name claim sweeps into the group.
+// ConsumeTraces renames native Pi spans into the canonical vocabulary.
+// Canonical output carries only coding-agent spans: non-native spans swept
+// into a claimed group by the scope/sdk.name claim are dropped here (the raw
+// pipelines preserve the originals).
 func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
@@ -61,22 +63,22 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			children := make(map[pcommon.SpanID]bool, spans.Len())
+			foreign := make(map[pcommon.SpanID]bool, spans.Len())
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
 				child, native := normalizePiSpan(span, version)
 				if !native {
-					// Foreign spans ride along under the process-wide claim;
-					// their exporter baggage and GenAI content must not.
-					stripPiBaggage(span)
-					content.Strip(span)
+					foreign[span.SpanID()] = true
 					continue
 				}
 				if child {
 					children[span.SpanID()] = true
 				}
 			}
+			spans.RemoveIf(func(s ptrace.Span) bool { return foreign[s.SpanID()] })
 			reparentOrphans(spans, children)
 		}
+		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool { return ss.Spans().Len() == 0 })
 	}
 	if output.SpanCount() == 0 {
 		return nil

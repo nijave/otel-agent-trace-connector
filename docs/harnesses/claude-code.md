@@ -4,9 +4,11 @@ Claude Code emits native `claude_code.*` spans (scope
 `com.anthropic.claude_code.tracing`). The connector claims groups containing
 those spans, renames the three top-level span types, remaps their vendor
 attributes onto the canonical vocabulary, and strips every attribute outside
-that vocabulary from every span in the group. See
-[canonical attributes](../canonical-attributes.md) for the shared vocabulary
-and the policy behind it.
+that vocabulary. Spans in a claimed group whose names lack the `claude_code.`
+prefix (sibling instrumentation scopes swept in by the group claim) are
+dropped from canonical output; the raw pipelines preserve the originals.
+See [canonical attributes](../canonical-attributes.md) for the shared
+vocabulary and the policy behind it.
 
 Span-name renames:
 
