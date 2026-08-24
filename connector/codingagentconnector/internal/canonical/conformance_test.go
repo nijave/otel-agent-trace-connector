@@ -4,6 +4,7 @@
 package canonical
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -210,5 +211,33 @@ func TestIsCanonicalAttribute(t *testing.T) {
 	}
 	if IsCanonicalResourceKey("cursor.surface") || IsCanonicalResourceKey("session.id") {
 		t.Error("vendor or raw keys must not pass the canonical resource check")
+	}
+}
+
+// TestVocabularyDocsMirror fails when the generated block in
+// docs/canonical-attributes.md drifts from canonicalAttributeKeys. The doc
+// claims to mirror vocabulary.go; this test makes that claim enforce itself.
+func TestVocabularyDocsMirror(t *testing.T) {
+	const docPath = "../../../../docs/canonical-attributes.md"
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", docPath, err)
+	}
+	const start = "<!-- vocabulary:generated -->"
+	const end = "<!-- /vocabulary:generated -->"
+	doc := string(data)
+	i := strings.Index(doc, start)
+	j := strings.Index(doc, end)
+	if i < 0 || j < i {
+		t.Fatalf("%s lost its %s ... %s block; restore it", docPath, start, end)
+	}
+	got := strings.Trim(doc[i+len(start):j], "\n")
+
+	var want strings.Builder
+	for _, key := range canonicalAttributeKeys {
+		want.WriteString("- `" + key + "`\n")
+	}
+	if got != strings.TrimRight(want.String(), "\n") {
+		t.Errorf("the vocabulary block in %s drifted from canonicalAttributeKeys;\nreplace everything between %s\nand %s with:\n\n%s", docPath, start, end, want.String())
 	}
 }
