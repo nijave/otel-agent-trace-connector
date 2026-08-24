@@ -164,6 +164,23 @@ func TestGenAINormalizerSkipsOpenCodeGroups(t *testing.T) {
 	require.Empty(t, sink.all(), "the OpenCode normalizer owns this group")
 }
 
+func TestGenAINormalizerSkipsOpenHandsGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	// OpenHands group: the OpenHands normalizer owns it even when a GenAI
+	// scope is present; claiming here would emit the group twice.
+	openHandsGroup := input.ResourceSpans().AppendEmpty()
+	lmnrScope := openHandsGroup.ScopeSpans().AppendEmpty()
+	lmnrScope.Scope().SetName("lmnr.tracer")
+	lmnrScope.Spans().AppendEmpty().SetName("conversation")
+	genaiScope := openHandsGroup.ScopeSpans().AppendEmpty()
+	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
+	genaiScope.Spans().AppendEmpty().SetName("chat gpt-5.2")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Empty(t, sink.all(), "the OpenHands normalizer owns this group")
+}
+
 func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

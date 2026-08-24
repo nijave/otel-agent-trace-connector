@@ -24,6 +24,7 @@ import (
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/openhands"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/pi"
 )
 
@@ -60,10 +61,9 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputResourceSpans := input.ResourceSpans().At(i)
-		// Claude, OpenCode, and Pi groups belong to their own normalizers
-		// even when they also carry GenAI scopes; claiming here would emit
-		// the group twice, and OpenCode's raw ai.* attributes would survive
-		// stripContent.
+		// Claude, OpenCode, Pi, and OpenHands groups belong to their own
+		// normalizers even when they also carry GenAI scopes; claiming here
+		// would emit each group twice.
 		if claude.ContainsClaudeSpans(inputResourceSpans) {
 			continue
 		}
@@ -71,6 +71,9 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 			continue
 		}
 		if pi.ContainsPiSpans(inputResourceSpans) {
+			continue
+		}
+		if openhands.ContainsOpenHandsSpans(inputResourceSpans) {
 			continue
 		}
 		if !containsGenAIScopes(inputResourceSpans) {
