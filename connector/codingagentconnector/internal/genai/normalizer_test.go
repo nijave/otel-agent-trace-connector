@@ -299,6 +299,74 @@ func TestGenAINormalizerMapsLegacyTokensWhenCurrentAbsent(t *testing.T) {
 	require.Equal(t, "chat", out.Name())
 }
 
+func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("gen_ai.usage.cache_read_input_tokens", 42)
+	span.Attributes().PutInt("gen_ai.usage.cache_write_input_tokens", 7)
+	// Unknown usage families are vendor keys and must not survive.
+	span.Attributes().PutInt("gen_ai.usage.vendor_extras", 3)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
+	require.Equal(t, int64(42), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
+		"gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(7), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
+		"gen_ai.usage.cache_creation.input_tokens"))
+	for _, key := range []string{
+		"gen_ai.usage.cache_read_input_tokens",
+		"gen_ai.usage.cache_write_input_tokens",
+		"gen_ai.usage.vendor_extras",
+	} {
+		_, exists := out.Get(key)
+		require.False(t, exists, "underscore/unknown usage key %q survived", key)
+	}
+}
+
+func TestGenAINormalizerKeepsDottedUsageOverUnderscoreVariant(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("gen_ai.usage.cache_read.input_tokens", 100)
+	span.Attributes().PutInt("gen_ai.usage.cache_read_input_tokens", 42)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, int64(100), attrInt(t, out, "gen_ai.usage.cache_read.input_tokens"),
+		"the dotted semconv key wins over the underscore variant")
+	_, exists := out.Attributes().Get("gen_ai.usage.cache_read_input_tokens")
+	require.False(t, exists)
+}
+
+func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "github.copilot", "invoke_agent copilot-cli")
+	span.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	span.Attributes().PutStr("enduser.pseudo.id", "user-42")
+	span.Attributes().PutDouble("github.copilot.cost", 0.15)
+	span.Attributes().PutStr("github.copilot.turn_id", "turn-1")
+	span.Attributes().PutStr("event_loop.cycle_id", "cycle-1")
+	span.Attributes().PutInt("gen_ai.usage.reasoning.output_tokens", 25)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	for _, key := range []string{
+		"enduser.pseudo.id",
+		"github.copilot.cost",
+		"github.copilot.turn_id",
+		"event_loop.cycle_id",
+	} {
+		_, exists := out.Attributes().Get(key)
+		require.False(t, exists, "vendor key %q must not reach canonical output", key)
+	}
+	require.Equal(t, int64(25), attrInt(t, out, "gen_ai.usage.reasoning.output_tokens"),
+		"the reasoning-token key survives normalization")
+}
+
 func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

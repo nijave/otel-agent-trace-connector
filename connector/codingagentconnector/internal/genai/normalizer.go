@@ -148,6 +148,8 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 	attrs.Remove("gen_ai.system")
 	mapLegacyTokens(attrs, "gen_ai.usage.prompt_tokens", "gen_ai.usage.input_tokens")
 	mapLegacyTokens(attrs, "gen_ai.usage.completion_tokens", "gen_ai.usage.output_tokens")
+	remapUsageKeys(attrs)
+	restrictUsageKeys(attrs)
 	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.source.scope", scopeName)
 	if serviceName != "" {
@@ -170,6 +172,58 @@ func mapLegacyTokens(attrs pcommon.Map, legacyKey, currentKey string) {
 		attrs.PutInt(currentKey, count)
 	}
 	attrs.Remove(legacyKey)
+}
+
+// usageRemaps maps emitter-specific usage spellings onto their canonical
+// dotted keys. Strands Agents SDK emits cache counters with underscores where
+// the semconv uses a nested segment.
+var usageRemaps = []struct{ raw, canonical string }{
+	{"gen_ai.usage.cache_read_input_tokens", "gen_ai.usage.cache_read.input_tokens"},
+	{"gen_ai.usage.cache_write_input_tokens", "gen_ai.usage.cache_creation.input_tokens"},
+}
+
+// allowedUsageKeys enumerates the entire canonical usage vocabulary. There is
+// deliberately no gen_ai.usage. wildcard: any other member of that namespace
+// is a vendor key and is removed here rather than relying on the strip.
+var allowedUsageKeys = map[string]bool{
+	"gen_ai.usage.input_tokens":                true,
+	"gen_ai.usage.output_tokens":               true,
+	"gen_ai.usage.total_tokens":                true,
+	"gen_ai.usage.cache_read.input_tokens":     true,
+	"gen_ai.usage.cache_creation.input_tokens": true,
+	"gen_ai.usage.reasoning.output_tokens":     true,
+}
+
+// remapUsageKeys copies Strands' underscore cache variants onto their dotted
+// counterparts (the dotted key wins when both are present) and removes the
+// raw keys.
+func remapUsageKeys(attrs pcommon.Map) {
+	for _, remap := range usageRemaps {
+		rawValue, ok := attrs.Get(remap.raw)
+		if !ok {
+			continue
+		}
+		if _, exists := attrs.Get(remap.canonical); !exists && rawValue.Type() == pcommon.ValueTypeInt {
+			count := rawValue.Int()
+			attrs.PutInt(remap.canonical, count)
+		}
+		attrs.Remove(remap.raw)
+	}
+}
+
+// restrictUsageKeys removes every gen_ai.usage.* attribute outside the
+// canonical enumeration so unknown vendor counters never reach output.
+func restrictUsageKeys(attrs pcommon.Map) {
+	var unknown []string
+	attrs.Range(func(key string, _ pcommon.Value) bool {
+		if strings.HasPrefix(key, "gen_ai.usage.") && !allowedUsageKeys[key] {
+			unknown = append(unknown, key)
+		}
+		return true
+	})
+	for _, key := range unknown {
+		attrs.Remove(key)
+	}
 }
 
 func resourceString(resource pcommon.Resource, key string) string {
