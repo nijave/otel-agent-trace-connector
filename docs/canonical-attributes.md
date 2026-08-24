@@ -18,13 +18,27 @@ for how to recover it.
 > into the canonical form. Prefix pass-through is not permitted.
 
 A normalizer may emit only attributes it writes explicitly under a canonical
-key. There is no `gen_ai.usage.` wildcard: unknown usage-family keys are vendor
+key. No `gen_ai.usage.` wildcard exists: unknown usage-family keys are vendor
 keys and never reach canonical output. Each emitted span must carry the three
 required keys: `gen_ai.operation.name`, `coding_agent.source`, and
 `coding_agent.client.name`. A cross-harness conformance test
 ([`connector/codingagentconnector/conformance_test.go`](../connector/codingagentconnector/conformance_test.go))
 enforces the contract per harness in CI, and each edge package carries its own
 conformance test against a captured native fixture.
+
+### Conditional coverage in the matrices
+
+The per-harness matrices in [docs/harnesses/](harnesses/) record presence,
+not just mapping. When a realistic wire condition omits a source field — a
+provider that reports no usage, a streamed completion without token counts,
+an optional wire attribute — the matrix row must say so inline:
+`mapped (absent when …)`, never bare `mapped`. Each harness's headline
+coverage caveats (conditional usage, missing tool spans, missing durations)
+must appear in its own matrix file even when the README or
+[docs/design.md](design.md) also state them; the matrix is where a reader
+checks what a harness can answer, and a caveat recorded only elsewhere goes
+unread. Derive statuses from the code's presence guards and the pinned
+fixtures, not from the happy path alone.
 
 ## Resource attributes
 
@@ -39,7 +53,7 @@ canonical resource vocabulary is the standard OTel identity keys:
 - `telemetry.sdk.version`
 
 Every other key — vendor resources such as `cursor.surface`, raw keys such as
-`session.id` — is stripped from canonical output. Edges that consume raw
+`session.id` — stays out of canonical output. Edges that consume raw
 resource values (for example `session.id` → `gen_ai.conversation.id`) read them
 before the strip.
 
@@ -98,7 +112,7 @@ exception details are standard OTel companions on error spans.
 That is the complete list. Everything else — vendor namespaces such as
 `github.copilot.*`, `ai.*`, `claude_code.*`, `lmnr.*`, `llm.usage.*`,
 `event_loop.*`, `coding_agent.cursor.*`, `coding_agent.openhands.*`, and raw
-pass-through leftovers — is stripped from canonical output. Nothing disappears
+pass-through leftovers — stays out of canonical output. Nothing disappears
 silently: each harness document records every dropped key and where it came
 from.
 

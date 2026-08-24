@@ -59,6 +59,13 @@ tests cover it — before cleverness, flexibility, or feature breadth.
   pass-through is not permitted. Any edge wired in `traces.go`/`logs.go`
   without an entry in
   `connector/codingagentconnector/conformance_test.go` fails CI.
+- **Matrix docs record conditional coverage.** In `docs/harnesses/<x>.md`, a
+  key the wire can omit under a realistic condition reads
+  `mapped (absent when …)`, never bare `mapped`, and a harness's headline
+  coverage caveats (conditional usage, missing tool spans) belong in its own
+  matrix file — not only in the README or docs/design.md. When adding or
+  changing an edge, derive matrix statuses from the code's presence guards,
+  not from the happy-path fixture.
 
 ## Layout notes
 
