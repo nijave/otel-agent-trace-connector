@@ -181,12 +181,13 @@ func TestGenAINormalizerSkipsOpenHandsGroups(t *testing.T) {
 	require.Empty(t, sink.all(), "the OpenHands normalizer owns this group")
 }
 
-func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
+func TestGenAINormalizerDropsUnmatchedScopesInClaimedGroups(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
 	appScope := rs.ScopeSpans().AppendEmpty()
 	appScope.Scope().SetName("my-agent")
-	appScope.Spans().AppendEmpty().SetName("run")
+	appSpan := appScope.Spans().AppendEmpty()
+	appSpan.SetName("run")
 	genaiScope := rs.ScopeSpans().AppendEmpty()
 	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
 	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
@@ -195,7 +196,16 @@ func TestGenAINormalizerKeepsWholeClaimedGroupAndInput(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	output := sink.all()[0].ResourceSpans().At(0)
-	require.Equal(t, 2, output.ScopeSpans().Len(), "application scope must survive")
+	native := output.ScopeSpans().At(0).Spans()
+	require.Equal(t, 1, native.Len(), "only the matched scope's spans survive")
+	require.Equal(t, "chat glm-4.7", native.At(0).Name())
+	for i := 0; i < output.ScopeSpans().Len(); i++ {
+		spans := output.ScopeSpans().At(i).Spans()
+		for j := 0; j < spans.Len(); j++ {
+			require.NotEqual(t, "run", spans.At(j).Name(),
+				"unmatched scopes in a claimed group must not reach canonical output")
+		}
+	}
 	// The input is not mutated because Collector fan-out may send it elsewhere.
 	require.Equal(t, "run", input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Name())
 }
@@ -406,21 +416,14 @@ func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
 
 func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	input := ptrace.NewTraces()
-	rs := input.ResourceSpans().AppendEmpty()
-	appScope := rs.ScopeSpans().AppendEmpty()
-	appScope.Scope().SetName("my-agent")
-	appSpan := appScope.Spans().AppendEmpty()
-	appSpan.SetName("run")
-	genaiScope := rs.ScopeSpans().AppendEmpty()
-	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
-	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+	newGroup(input, "opentelemetry.instrumentation.openai_v2", "run")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
-	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	require.Equal(t, "run", outApp.Name())
-	_, tagged := outApp.Attributes().Get("coding_agent.source")
-	require.False(t, tagged, "spans outside matched scopes stay untouched")
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "run", out.Name())
+	_, tagged := out.Attributes().Get("coding_agent.source")
+	require.False(t, tagged, "spans without an operation name stay untouched")
 }
 
 func TestGenAINormalizerPassesThroughInvokeWorkflow(t *testing.T) {
@@ -523,7 +526,7 @@ func TestGenAINormalizerStripsContentAttributesAndEvents(t *testing.T) {
 	require.Equal(t, 10, input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Events().Len())
 }
 
-func TestGenAINormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testing.T) {
+func TestGenAINormalizerDropsUnmatchedScopesWithContent(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
 	appScope := rs.ScopeSpans().AppendEmpty()
@@ -537,9 +540,19 @@ func TestGenAINormalizerStripsContentFromUnmatchedScopesInClaimedGroups(t *testi
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
-	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	_, exists := outApp.Attributes().Get("gen_ai.input.messages")
-	require.False(t, exists, "content must not ride along on unmatched scopes")
+	output := sink.all()[0].ResourceSpans().At(0)
+	for i := 0; i < output.ScopeSpans().Len(); i++ {
+		spans := output.ScopeSpans().At(i).Spans()
+		for j := 0; j < spans.Len(); j++ {
+			require.NotEqual(t, "run", spans.At(j).Name(),
+				"unmatched scopes in a claimed group must not reach canonical output")
+		}
+	}
+	// The input keeps its content: raw fidelity is the raw pipeline's job.
+	inApp := input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "run", inApp.Name())
+	_, exists := inApp.Attributes().Get("gen_ai.input.messages")
+	require.True(t, exists)
 }
 
 // loadFixtureLines reads a testdata file captured from a live e2e run. The

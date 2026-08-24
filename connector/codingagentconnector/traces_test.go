@@ -115,7 +115,8 @@ func TestTracesRouterEmitsMixedPiGenAIGroupOnce(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, names["invoke_agent pi"], "pi normalizer claimed the group once")
-	require.Equal(t, 1, names["chat gpt-5.2"], "the genai edge must defer Pi-owned groups")
+	require.Equal(t, 0, names["chat gpt-5.2"],
+		"the genai edge defers Pi-owned groups and pi drops non-native sibling scopes")
 }
 
 func TestTracesRouterEmitsMixedOpenHandsGenAIGroupOnce(t *testing.T) {
