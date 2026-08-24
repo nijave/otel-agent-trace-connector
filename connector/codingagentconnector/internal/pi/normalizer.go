@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 )
 
@@ -56,6 +57,7 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 		rs := output.ResourceSpans().AppendEmpty()
 		inputResourceSpans.CopyTo(rs)
 		version := resourceString(rs.Resource(), "service.version")
+		canonical.FilterResource(rs)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			children := make(map[pcommon.SpanID]bool, spans.Len())

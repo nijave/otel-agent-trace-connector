@@ -226,3 +226,22 @@ func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
 	require.True(t, ok)
 	return value.Int()
 }
+
+func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
+	base := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	turn := &turnState{
+		conversationID: "conversation-1",
+		first:          base, last: base, promptSeen: true,
+		resource: map[string]any{"service.name": "codex_cli_rs", "service.version": "0.1.0", "vendor.thing": "x"},
+	}
+
+	traces := mustBuildTrace(t, turn, "completed")
+	attrs := traces.ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	_, hasVendor := attrs.Get("vendor.thing")
+	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
+}

@@ -502,3 +502,28 @@ func attrSlice(t *testing.T, span ptrace.Span, key string) pcommon.Slice {
 	require.True(t, ok)
 	return value.Slice()
 }
+
+func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "pi-agent")
+	rs.Resource().Attributes().PutStr("service.version", "1.0.0")
+	rs.Resource().Attributes().PutStr("telemetry.sdk.name", "@amaster.ai/pi-telemetry")
+	rs.Resource().Attributes().PutStr("vendor.thing", "x")
+	root := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	root.SetName("chat-turn")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version", "telemetry.sdk.name"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	_, hasVendor := attrs.Get("vendor.thing")
+	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
+	normalizedRoot := findSpan(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent pi")
+	require.Equal(t, "invoke_agent", attrString(t, normalizedRoot, "gen_ai.operation.name"))
+}

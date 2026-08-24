@@ -386,3 +386,31 @@ func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
 		require.False(t, leaked, "%s must not reach canonical output", dropped)
 	}
 }
+
+func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "opencode")
+	rs.Resource().Attributes().PutStr("service.version", "1.18.21")
+	rs.Resource().Attributes().PutStr("session.id", "session-1")
+	rs.Resource().Attributes().PutStr("vendor.thing", "x")
+	root := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	rs.ScopeSpans().At(0).Scope().SetName("opencode")
+	root.SetName("ai.streamText")
+	root.SetTraceID([16]byte{1})
+	root.SetSpanID([8]byte{2})
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	for _, key := range []string{"session.id", "vendor.thing"} {
+		_, ok := attrs.Get(key)
+		require.False(t, ok, "raw key %s must not reach canonical output", key)
+	}
+}

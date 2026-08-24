@@ -316,3 +316,27 @@ func rootOf(t *testing.T, traces ptrace.Traces) ptrace.Span {
 	require.Len(t, roots, 1)
 	return roots[0]
 }
+
+func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
+	burst := &burstState{
+		conversationID: testConversation,
+		seen:           map[string]struct{}{},
+		resource:       map[string]any{"service.name": "cursor", "service.version": "1.16.5", "cursor.surface": "cli", "cursor.team.id": int64(4242)},
+	}
+
+	traces := mustBuildTrace(t, burst, "completed")
+	attrs := traces.ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	for _, key := range []string{"cursor.surface", "cursor.team.id"} {
+		_, ok := attrs.Get(key)
+		require.False(t, ok, "vendor resource key %s must not reach canonical output", key)
+	}
+	root := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	version, ok := root.Attributes().Get("coding_agent.client.version")
+	require.True(t, ok)
+	require.Equal(t, "1.16.5", version.Str())
+}

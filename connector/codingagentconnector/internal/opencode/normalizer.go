@@ -11,6 +11,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 )
 
 const (
@@ -52,7 +54,10 @@ func (n *opencodeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrac
 		rs := output.ResourceSpans().AppendEmpty()
 		inputResourceSpans.Resource().CopyTo(rs.Resource())
 		version := resourceString(rs.Resource(), "service.version")
+		// Read raw keys before the filter: session.id feeds conversation ids
+		// but is not part of the canonical resource vocabulary.
 		resourceSessionID := resourceString(rs.Resource(), "session.id")
+		canonical.FilterResource(rs)
 		for j := 0; j < inputResourceSpans.ScopeSpans().Len(); j++ {
 			inputScopeSpans := inputResourceSpans.ScopeSpans().At(j)
 			ss := rs.ScopeSpans().AppendEmpty()

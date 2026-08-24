@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 )
 
 const (
@@ -100,6 +102,7 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 		}
 		rs := output.ResourceSpans().AppendEmpty()
 		inputRS.Resource().CopyTo(rs.Resource())
+		canonical.FilterResource(rs)
 		ss := rs.ScopeSpans().AppendEmpty()
 		ss.Scope().SetName(scopeName)
 		for _, key := range order {
