@@ -61,6 +61,8 @@ func piInput() (ptrace.Traces, pcommon.SpanID) {
 	llm.Attributes().PutStr("model", "deepseek-v4-flash")
 	llm.Attributes().PutStr("provider", "opencode-go")
 	llm.Attributes().PutStr("sessionId", "session-1")
+	llm.Attributes().PutStr("llmGenerationId", "gen-1")
+	llm.Attributes().PutStr("responseId", "router-abc123")
 	llm.Attributes().PutStr("usage.input", "3335")
 	llm.Attributes().PutStr("usage.output", "3")
 	llm.Attributes().PutStr("usage.total_tokens", "3338")
@@ -104,6 +106,9 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 	// is zero, not dropped with the source key.
 	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_read.input_tokens"))
 	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
+	// Stop reason and response id land under their canonical keys.
+	require.Equal(t, "stop", attrStrSliceElem(t, chat, "gen_ai.response.finish_reasons"))
+	require.Equal(t, "router-abc123", attrString(t, chat, "gen_ai.response.id"))
 
 	for _, span := range []ptrace.Span{root, chat} {
 		for _, key := range []string{
@@ -116,6 +121,17 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 			"usage.cache_read",
 			"usage.cache_write",
 			"usage.cost.total",
+			"stopReason",
+			"status",
+			"model",
+			"provider",
+			"sessionId",
+			"durationMs",
+			"llmGenerationId",
+			"responseId",
+			"eventType",
+			"toolName",
+			"toolCallId",
 		} {
 			_, ok := span.Attributes().Get(key)
 			require.False(t, ok, "%s must not reach canonical output", key)
@@ -193,6 +209,10 @@ func TestPiTraceNormalizerMapsToolSpansByAttributeName(t *testing.T) {
 	require.Equal(t, "bash", attrString(t, normalizedTool, "gen_ai.tool.name"))
 	require.Equal(t, "execute_tool", attrString(t, normalizedTool, "gen_ai.operation.name"))
 	require.Equal(t, "call_9c4debe87115427c83aa8826", attrString(t, normalizedTool, "gen_ai.tool.call.id"))
+	for _, key := range []string{"toolName", "toolCallId", "sessionId", "status"} {
+		_, ok := normalizedTool.Attributes().Get(key)
+		require.False(t, ok, "%s must not reach canonical output", key)
+	}
 }
 
 // TestPiTraceNormalizerReparentsOrphansToFirstAgentRoot covers the observed
@@ -450,4 +470,35 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())
 	require.Equal(t, "bash", attrString(t, tool, "gen_ai.tool.name"))
 	require.NotEmpty(t, attrString(t, tool, "gen_ai.tool.call.id"))
+
+	// The capture's stop reasons and response IDs land under canonical keys:
+	// the first generation stopped on a tool call, the second on "stop".
+	require.Equal(t, "toolUse", attrStrSliceElem(t, chats[0], "gen_ai.response.finish_reasons"))
+	require.Equal(t, "stop", attrStrSliceElem(t, chats[1], "gen_ai.response.finish_reasons"))
+	require.NotEmpty(t, attrString(t, chats[0], "gen_ai.response.id"))
+	require.NotEmpty(t, attrString(t, chats[1], "gen_ai.response.id"))
+
+	// No raw wire key survives alongside its canonical counterpart.
+	for _, span := range []ptrace.Span{root, chats[0], chats[1], tool} {
+		for _, key := range []string{
+			"model", "provider", "sessionId", "durationMs", "llmGenerationId",
+			"responseId", "eventType", "toolName", "toolCallId", "status",
+			"stopReason",
+		} {
+			_, ok := span.Attributes().Get(key)
+			require.False(t, ok, "%s must not reach canonical output", key)
+		}
+	}
+}
+
+func attrStrSliceElem(t *testing.T, span ptrace.Span, key string) string {
+	t.Helper()
+	return attrSlice(t, span, key).At(0).Str()
+}
+
+func attrSlice(t *testing.T, span ptrace.Span, key string) pcommon.Slice {
+	t.Helper()
+	value, ok := span.Attributes().Get(key)
+	require.True(t, ok)
+	return value.Slice()
 }
