@@ -14,6 +14,7 @@ package genai
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/collector/component"
@@ -174,12 +175,11 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 // mapLegacyTokens copies a legacy usage attribute onto the current key when
 // the current key is absent, then drops the legacy key from canonical output.
 func mapLegacyTokens(attrs pcommon.Map, legacyKey, currentKey string) {
-	legacyValue, ok := attrs.Get(legacyKey)
+	count, ok := intAttr(attrs, legacyKey)
 	if !ok {
 		return
 	}
-	if _, exists := attrs.Get(currentKey); !exists && legacyValue.Type() == pcommon.ValueTypeInt {
-		count := legacyValue.Int()
+	if _, exists := attrs.Get(currentKey); !exists {
 		attrs.PutInt(currentKey, count)
 	}
 	attrs.Remove(legacyKey)
@@ -207,15 +207,16 @@ var allowedUsageKeys = map[string]bool{
 
 // remapUsageKeys copies Strands' underscore cache variants onto their dotted
 // counterparts (the dotted key wins when both are present) and removes the
-// raw keys.
+// raw keys. Values coerce through intAttr so a double- or string-typed
+// counter still lands on its canonical key instead of being deleted unmapped;
+// only genuinely malformed values drop.
 func remapUsageKeys(attrs pcommon.Map) {
 	for _, remap := range usageRemaps {
-		rawValue, ok := attrs.Get(remap.raw)
+		count, ok := intAttr(attrs, remap.raw)
 		if !ok {
 			continue
 		}
-		if _, exists := attrs.Get(remap.canonical); !exists && rawValue.Type() == pcommon.ValueTypeInt {
-			count := rawValue.Int()
+		if _, exists := attrs.Get(remap.canonical); !exists {
 			attrs.PutInt(remap.canonical, count)
 		}
 		attrs.Remove(remap.raw)
@@ -235,6 +236,26 @@ func mapTTFT(attrs pcommon.Map) {
 		attrs.PutDouble("gen_ai.response.time_to_first_chunk", float64(value.Int())/1000)
 	}
 	attrs.Remove(legacyKey)
+	attrs.Remove(legacyKey)
+}
+
+// intAttr coerces an attribute to int64 following the connector-wide
+// semantics: ints pass through, doubles truncate, strings parse as integers.
+func intAttr(attrs pcommon.Map, key string) (int64, bool) {
+	value, ok := attrs.Get(key)
+	if !ok {
+		return 0, false
+	}
+	switch value.Type() {
+	case pcommon.ValueTypeInt:
+		return value.Int(), true
+	case pcommon.ValueTypeDouble:
+		return int64(value.Double()), true
+	case pcommon.ValueTypeStr:
+		parsed, err := strconv.ParseInt(value.Str(), 10, 64)
+		return parsed, err == nil
+	}
+	return 0, false
 }
 
 // restrictUsageKeys removes every gen_ai.usage.* attribute outside the

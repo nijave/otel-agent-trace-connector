@@ -6,6 +6,7 @@ package canonical
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -32,6 +33,15 @@ type Signal struct {
 	RawKey       string     // native fixture attribute/log field
 	CanonicalKey string     // required counterpart in output
 	Kind         SignalKind // sum | presence
+	// RawSpanName optionally restricts the sum's raw-side total to native
+	// spans named exactly this; empty means every span and log record
+	// contributes. Use it when the wire duplicates one measurement across
+	// parent and child spans so a trace-wide total would double-count.
+	RawSpanName string
+	// OutputSpanPrefix optionally restricts the sum's output-side total to
+	// canonical spans whose name carries this prefix; empty means every span
+	// contributes.
+	OutputSpanPrefix string
 }
 
 // RawInput is the un-normalized telemetry an edge consumed.
@@ -197,9 +207,29 @@ func checkSignals(name string, raw RawInput, out ptrace.Traces, signals []Signal
 		}
 		switch sig.Kind {
 		case Sum:
-			if got := outTotals[sig.CanonicalKey]; got != rawTotals[sig.RawKey] {
+			rawTotal := rawTotals[sig.RawKey]
+			if sig.RawSpanName != "" {
+				rawTotal = 0
+				for _, span := range spans(raw.Traces) {
+					if span.Name() != sig.RawSpanName {
+						continue
+					}
+					rawTotal += spanNumericTotal(span, sig.RawKey)
+				}
+			}
+			outTotal := outTotals[sig.CanonicalKey]
+			if sig.OutputSpanPrefix != "" {
+				outTotal = 0
+				for _, span := range spans(out) {
+					if !strings.HasPrefix(span.Name(), sig.OutputSpanPrefix) {
+						continue
+					}
+					outTotal += spanNumericTotal(span, sig.CanonicalKey)
+				}
+			}
+			if outTotal != rawTotal {
 				errs = append(errs, fmt.Sprintf("harness %s: signal %s sum mismatch for %s: raw total %d, output total %d",
-					name, sig.RawKey, sig.CanonicalKey, rawTotals[sig.RawKey], got))
+					name, sig.RawKey, sig.CanonicalKey, rawTotal, outTotal))
 			}
 		case Presence:
 			if !outCount[sig.CanonicalKey] {
@@ -209,6 +239,21 @@ func checkSignals(name string, raw RawInput, out ptrace.Traces, signals []Signal
 		}
 	}
 	return errs
+}
+
+// spanNumericTotal returns the numericValue sum of one attribute across a
+// single span's attributes.
+func spanNumericTotal(span ptrace.Span, key string) int64 {
+	var total int64
+	span.Attributes().Range(func(k string, value pcommon.Value) bool {
+		if k == key {
+			if n, ok := numericValue(value); ok {
+				total += n
+			}
+		}
+		return true
+	})
+	return total
 }
 
 func spans(traces ptrace.Traces) []ptrace.Span {

@@ -68,6 +68,25 @@ func TestBuildTraceIDsAreDeterministic(t *testing.T) {
 	require.Equal(t, first.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID(), second.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID())
 }
 
+// TestBuildTraceIDsDistinguishSameTimestampPrompts pins that two turns in one
+// conversation whose user prompts share an identical timestamp get distinct
+// trace IDs (the prompt fingerprint discriminates them), while re-emitting
+// either turn reproduces its original ID.
+func TestBuildTraceIDsDistinguishSameTimestampPrompts(t *testing.T) {
+	base := time.Unix(100, 0)
+	newTurn := func(prompt string) *turnState {
+		return &turnState{conversationID: "c", first: base, last: base, promptSeen: true,
+			events: []agentEvent{testEvent("codex.user_prompt", base, map[string]any{"prompt": prompt})}}
+	}
+	firstTurn, secondTurn := newTurn("first"), newTurn("second")
+	firstID := mustBuildTrace(t, firstTurn, "shutdown").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID()
+	secondID := mustBuildTrace(t, secondTurn, "shutdown").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID()
+	require.NotEqual(t, firstID, secondID,
+		"identical prompt timestamps must not collapse two turns into one trace ID")
+	require.Equal(t, firstID, mustBuildTrace(t, firstTurn, "shutdown").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID())
+	require.Equal(t, secondID, mustBuildTrace(t, secondTurn, "shutdown").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).TraceID())
+}
+
 func TestBuildTraceMarksTimeout(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{conversationID: "c", first: base, last: base,

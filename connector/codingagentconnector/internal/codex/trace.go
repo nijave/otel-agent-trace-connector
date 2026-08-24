@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -215,17 +215,31 @@ func appendRootEvents(dst ptrace.SpanEventSlice, events []agentEvent) {
 	}
 }
 
+// deterministicTraceID derives a turn's trace ID from its conversation and
+// prompt anchor. The prompt event's fingerprint joins the hash so two turns
+// whose prompts share an identical timestamp still get distinct IDs; because
+// the fingerprint is content-derived, re-emitting the same turn reproduces
+// the same ID.
 func deterministicTraceID(turn *turnState, events []agentEvent) pcommon.TraceID {
 	anchor := turn.first
-	for _, event := range events {
-		if event.name == "codex.user_prompt" {
-			anchor = event.timestamp
+	var promptFingerprint *[sha256.Size]byte
+	for i := range events {
+		if events[i].name == "codex.user_prompt" {
+			anchor = events[i].timestamp
+			fingerprint := events[i].fingerprint()
+			promptFingerprint = &fingerprint
 			break
 		}
 	}
-	sum := sha256.Sum256([]byte(strings.Join([]string{turn.conversationID, fmt.Sprint(anchor.UnixNano())}, "\x00")))
+	h := sha256.New()
+	_, _ = h.Write([]byte(turn.conversationID))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(strconv.FormatInt(anchor.UnixNano(), 10)))
+	if promptFingerprint != nil {
+		_, _ = h.Write(promptFingerprint[:])
+	}
 	var id pcommon.TraceID
-	copy(id[:], sum[:16])
+	copy(id[:], h.Sum(nil))
 	return id
 }
 
