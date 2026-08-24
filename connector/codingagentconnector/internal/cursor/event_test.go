@@ -167,8 +167,6 @@ func TestInt64ValueAcceptsTokenCountsUpToMaxInt64(t *testing.T) {
 func TestBodyClassification(t *testing.T) {
 	require.True(t, IsCorrectionBody("api_correction_not_billed_errored"))
 	require.False(t, IsCorrectionBody("api_request"))
-	require.True(t, IsCloudAgentBody("cloud_agent_setup_completed"))
-	require.False(t, IsCloudAgentBody("hook_execution_complete"))
 }
 
 func TestParseRecordKeepsUnknownBody(t *testing.T) {

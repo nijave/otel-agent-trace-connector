@@ -33,7 +33,7 @@ func burstForTest() *burstState {
 		{Body: "api_correction_not_billed_errored", EventID: "ev-4", ConversationID: testConversation, UsageEventID: "ue-2",
 			Timestamp: base.Add(4 * time.Second), Resource: testResourceRaw(),
 			Attrs: map[string]any{"cursor.api.correction.kind": "not_billed_errored"}},
-		{Body: BodySkillActivated, EventID: "ev-5", ConversationID: testConversation,
+		{Body: "skill_activated", EventID: "ev-5", ConversationID: testConversation,
 			Timestamp: base.Add(5 * time.Second), Resource: testResourceRaw(),
 			Attrs: map[string]any{"cursor.skill.name": "code-review", "cursor.skill.trigger": "agent_read", "cursor.skill.source": "user"}},
 	}
@@ -86,21 +86,29 @@ func TestBuildTraceRoot(t *testing.T) {
 	require.Equal(t, "cursor", stringAttrOn(t, root, "coding_agent.client.name"))
 	require.Equal(t, "1.16.5", stringAttrOn(t, root, "coding_agent.client.version"))
 	require.Equal(t, "normalized", stringAttrOn(t, root, "coding_agent.source"))
-	require.Equal(t, "quiet", stringAttrOn(t, root, "coding_agent.turn.finish_reason"))
-	require.Equal(t, "cli", stringAttrOn(t, root, "coding_agent.cursor.surface"))
-	require.Equal(t, "cli", stringAttrOn(t, root, "coding_agent.cursor.entrypoint"))
-	require.Equal(t, int64(4242), intAttrOn(t, root, "coding_agent.cursor.team.id"))
-	require.Equal(t, int64(99), intAttrOn(t, root, "coding_agent.cursor.user.id"))
+	// The close reason survives only as timeout span status and metric labels;
+	// resource identity detail stays out of canonical output.
+	_, ok := root.Attributes().Get("coding_agent.turn.finish_reason")
+	require.False(t, ok)
+	_, ok = root.Attributes().Get("coding_agent.turn.events_truncated")
+	require.False(t, ok)
 	// The connector never claims completion and never guesses a provider.
-	_, ok := root.Attributes().Get("coding_agent.turn.complete")
+	_, ok = root.Attributes().Get("coding_agent.turn.complete")
 	require.False(t, ok)
 	_, ok = root.Attributes().Get("gen_ai.provider.name")
 	require.False(t, ok)
-	// Usage rollup sums both api_request records.
-	require.Equal(t, int64(107), intAttrOn(t, root, "gen_ai.usage.input_tokens"))
-	require.Equal(t, int64(209), intAttrOn(t, root, "gen_ai.usage.output_tokens"))
-	require.Equal(t, int64(50), intAttrOn(t, root, "gen_ai.usage.cache_read.input_tokens"))
-	require.Equal(t, int64(10), intAttrOn(t, root, "gen_ai.usage.cache_creation.input_tokens"))
+	for _, key := range []string{
+		"coding_agent.cursor.surface", "coding_agent.cursor.entrypoint",
+		"coding_agent.cursor.team.id", "coding_agent.cursor.user.id",
+	} {
+		_, ok := root.Attributes().Get(key)
+		require.False(t, ok, "root leaked %s", key)
+	}
+	// Usage lives on chat spans only; the root carries no rollup.
+	_, ok = root.Attributes().Get("gen_ai.usage.input_tokens")
+	require.False(t, ok)
+	_, ok = root.Attributes().Get("gen_ai.usage.output_tokens")
+	require.False(t, ok)
 	// Bounds cover first..last event timestamps.
 	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	require.Equal(t, base, root.StartTimestamp().AsTime())
@@ -115,9 +123,12 @@ func TestBuildTraceChatSpans(t *testing.T) {
 	require.Equal(t, "chat", stringAttrOn(t, chat, "gen_ai.operation.name"))
 	require.Equal(t, "claude-4.5-sonnet", stringAttrOn(t, chat, "gen_ai.request.model"))
 	require.Equal(t, BodyAPIRequest, stringAttrOn(t, chat, "coding_agent.source.event"))
+	require.Equal(t, "normalized", stringAttrOn(t, chat, "coding_agent.source"))
+	require.Equal(t, "cursor", stringAttrOn(t, chat, "coding_agent.client.name"))
 	require.Equal(t, int64(100), intAttrOn(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(200), intAttrOn(t, chat, "gen_ai.usage.output_tokens"))
-	require.Equal(t, true, boolAttrOn(t, chat, "coding_agent.cursor.billable"))
+	_, ok := chat.Attributes().Get("coding_agent.cursor.billable")
+	require.False(t, ok)
 	// Point span: the wire reports tokens at request grain with no timing.
 	require.Equal(t, chat.StartTimestamp(), chat.EndTimestamp())
 	require.Equal(t, rootOf(t, traces).SpanID(), chat.ParentSpanID())
@@ -134,13 +145,13 @@ func TestBuildTraceModellessChatKeepsBareName(t *testing.T) {
 
 func TestBuildTraceErrorJoinAndCorrectionJoin(t *testing.T) {
 	traces := mustBuildTrace(t, burstForTest(), "quiet")
-	// ev-2 (ue-2) has an api_error and a correction; both attach there.
+	// ev-2 (ue-2) has an api_error and a correction; both attach there. The
+	// correction's kind stays readable in the event name; no detail attrs.
 	chat := spansByName(traces)["chat"][0]
 	require.Equal(t, ptrace.StatusCodeError, chat.Status().Code())
 	require.Equal(t, 1, chat.Events().Len())
 	require.Equal(t, "api_correction_not_billed_errored", chat.Events().At(0).Name())
-	require.Equal(t, "not_billed_errored", chat.Events().At(0).Attributes().AsRaw()["coding_agent.cursor.correction.kind"])
-	require.Equal(t, "ue-2", chat.Events().At(0).Attributes().AsRaw()["coding_agent.cursor.usage_event_id"])
+	require.Equal(t, 0, chat.Events().At(0).Attributes().Len())
 	// The unjoined api_error/correction never land on the root in this burst.
 	root := rootOf(t, traces)
 	for i := 0; i < root.Events().Len(); i++ {
@@ -155,11 +166,9 @@ func TestBuildTraceRootEvents(t *testing.T) {
 	root := rootOf(t, traces)
 	require.Equal(t, 1, root.Events().Len())
 	event := root.Events().At(0)
-	require.Equal(t, BodySkillActivated, event.Name())
-	require.Equal(t, "code-review", event.Attributes().AsRaw()["coding_agent.cursor.skill.name"])
-	require.Equal(t, "agent_read", event.Attributes().AsRaw()["coding_agent.cursor.skill.trigger"])
-	require.Equal(t, "user", event.Attributes().AsRaw()["coding_agent.cursor.skill.source"])
-	require.Equal(t, "ev-5", event.Attributes().AsRaw()["coding_agent.cursor.event_id"])
+	// The skill activation survives as an event name; its detail attrs do not.
+	require.Equal(t, "skill_activated", event.Name())
+	require.Equal(t, 0, event.Attributes().Len())
 }
 
 func TestBuildTraceCloudAgentMCPAuthErrorLandsOnRoot(t *testing.T) {
@@ -179,8 +188,7 @@ func TestBuildTraceCloudAgentMCPAuthErrorLandsOnRoot(t *testing.T) {
 			continue
 		}
 		mcpEvents++
-		require.Equal(t, "github", event.Attributes().AsRaw()["coding_agent.cursor.mcp.server.name"])
-		require.Equal(t, "ev-6", event.Attributes().AsRaw()["coding_agent.cursor.event_id"])
+		require.Equal(t, 0, event.Attributes().Len())
 	}
 	require.Equal(t, 1, mcpEvents)
 }
@@ -282,7 +290,7 @@ func TestBuildTraceCopiesNothingOutsideAllowlist(t *testing.T) {
 		require.False(t, leaked)
 		if root.Events().At(i).Name() == "future_event_kind" {
 			generic = true
-			require.Len(t, raw, 1) // only the event id
+			require.Len(t, raw, 0) // name and timestamp only
 		}
 	}
 	require.True(t, generic)
@@ -300,13 +308,6 @@ func intAttrOn(t *testing.T, span ptrace.Span, key string) int64 {
 	value, ok := span.Attributes().Get(key)
 	require.True(t, ok, "attribute %s missing on %s", key, span.Name())
 	return value.Int()
-}
-
-func boolAttrOn(t *testing.T, span ptrace.Span, key string) bool {
-	t.Helper()
-	value, ok := span.Attributes().Get(key)
-	require.True(t, ok, "attribute %s missing on %s", key, span.Name())
-	return value.Bool()
 }
 
 func rootOf(t *testing.T, traces ptrace.Traces) ptrace.Span {
