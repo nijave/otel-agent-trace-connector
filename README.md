@@ -1,5 +1,14 @@
 # Coding-agent OpenTelemetry connector
 
+An organization adopting AI coding agents receives telemetry in as many
+shapes as it runs agents. This connector normalizes those shapes into one
+canonical trace vocabulary so the same queries measure token usage — and
+the cost derived from it — across every agent. Latency and tool
+activity ride the same spans. Prompt text, tool arguments, and tool output
+never enter canonical output, so usage visibility does not require
+collecting what developers type. [docs/design.md](docs/design.md) records
+the use case and design goals.
+
 This repository provides an external OpenTelemetry Collector connector and an
 OCB-built distribution for coding-agent traces:
 
@@ -48,7 +57,8 @@ invoke_agent <agent>
 ```
 
 The raw vendor logs and traces export separately. Normalization never
-copies prompt text, tool arguments, or tool output into generated Codex spans.
+copies prompt text, tool arguments, or tool output into canonical output,
+on any edge.
 
 Canonical output uses a closed attribute vocabulary documented in
 [docs/canonical-attributes.md](docs/canonical-attributes.md), with a raw →

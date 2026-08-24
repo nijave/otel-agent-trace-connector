@@ -3,13 +3,34 @@
 This document records the connector's current design and updates with the
 implementation rather than serving as a future proposal.
 
+## Use case
+
+The connector serves organization-level visibility into AI coding-agent
+usage while respecting developer privacy. Token usage, and the cost
+computed from it, is the primary measurement; performance (turn duration,
+time-to-first-token, error status) comes second. Privacy constrains both:
+canonical output answers what agent activity consumed and how it performed
+without carrying what developers typed, what tools received, or what tools
+returned.
+
+Cost computation happens downstream. Canonical spans carry token counts,
+including the cache and reasoning splits that price differently, and
+pricing joins happen at query time, so historical traces stay correct as
+provider prices change. The
+[canonical attribute vocabulary](canonical-attributes.md) scopes itself to
+exactly this: usage, cost, and performance, uniform across harnesses.
+
 ## Goals
 
-1. Produce a comparable trace per user turn across Codex and Claude Code.
+1. Produce a comparable trace per user turn — or the nearest boundary each
+   wire supports — across all supported harnesses, so usage and
+   performance questions span agents in one query.
 2. Keep vendor telemetry in a parallel raw pipeline.
 3. Keep provider mappings explicit and testable.
 4. Bound memory and latency under missing, duplicated, delayed, or malformed events.
-5. Avoid collecting prompt or tool content by default.
+5. Keep prompt text, tool arguments, and tool output out of canonical
+   output unconditionally; recommended harness defaults keep them off the
+   wire entirely.
 6. Package the component independently and compose it into a pinned Collector
    distribution with OCB.
 
