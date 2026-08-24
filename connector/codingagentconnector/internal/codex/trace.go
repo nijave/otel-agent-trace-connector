@@ -13,6 +13,8 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 )
 
 const instrumentationScope = "github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector"
@@ -42,6 +44,7 @@ func buildTrace(turn *turnState, reason, scopeVersion string) (ptrace.Traces, er
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
 	resErr := rs.Resource().Attributes().FromRaw(turn.resource)
+	canonical.FilterResource(rs)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
 	ss.Scope().SetVersion(scopeVersion)

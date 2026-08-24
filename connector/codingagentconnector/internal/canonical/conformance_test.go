@@ -56,6 +56,7 @@ func TestCheckAllowed(t *testing.T) {
 			"github.copilot.cost":       1.5,
 			"gen_ai.usage.totalTokens2": int64(1), // unknown usage key must fail
 		})
+		out.ResourceSpans().At(0).Resource().Attributes().PutStr("service.name", "x")
 		return out, nil
 	}}
 	errs := Check(e)
@@ -102,6 +103,7 @@ func TestCheckPresenceSignal(t *testing.T) {
 			"coding_agent.source":      "native",
 			"coding_agent.client.name": "x",
 		})
+		out.ResourceSpans().At(0).Resource().Attributes().PutStr("service.name", "x")
 		return out, nil
 	}
 	sig := Signal{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: Presence}
@@ -115,6 +117,64 @@ func TestCheckPresenceSignal(t *testing.T) {
 	e.LoadRaw = rawWithoutTTFT
 	if errs := Check(e); len(errs) != 0 {
 		t.Fatalf("raw signal absent: want signal skipped, got %v", errs)
+	}
+}
+
+func TestCheckResource(t *testing.T) {
+	e := Edge{Name: "t", Normalize: func(RawInput) (ptrace.Traces, error) {
+		out := ptrace.NewTraces()
+		rs := out.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "x")
+		rs.Resource().Attributes().PutStr("cursor.surface", "cli")
+		s := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		s.Attributes().PutStr("gen_ai.operation.name", "chat")
+		s.Attributes().PutStr("coding_agent.source", "native")
+		s.Attributes().PutStr("coding_agent.client.name", "x")
+		return out, nil
+	}}
+	errs := Check(e)
+	if len(errs) != 1 || !contains(errs, "forbidden resource attribute cursor.surface") {
+		t.Fatalf("want exactly the vendor-resource-key failure, got %v", errs)
+	}
+}
+
+func TestCheckResourceRequiresServiceName(t *testing.T) {
+	e := Edge{Name: "t", Normalize: func(RawInput) (ptrace.Traces, error) {
+		out := ptrace.NewTraces()
+		rs := out.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("telemetry.sdk.name", "opentelemetry")
+		s := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		s.Attributes().PutStr("gen_ai.operation.name", "chat")
+		s.Attributes().PutStr("coding_agent.source", "native")
+		s.Attributes().PutStr("coding_agent.client.name", "x")
+		return out, nil
+	}}
+	errs := Check(e)
+	if len(errs) != 1 || !contains(errs, "resource missing required service.name") {
+		t.Fatalf("want exactly the missing-service.name failure, got %v", errs)
+	}
+}
+
+func TestFilterResource(t *testing.T) {
+	out := ptrace.NewTraces()
+	rs := out.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "cursor")
+	rs.Resource().Attributes().PutStr("service.version", "1.2.3")
+	rs.Resource().Attributes().PutStr("telemetry.sdk.language", "go")
+	rs.Resource().Attributes().PutStr("cursor.surface", "cli")
+	rs.Resource().Attributes().PutStr("vendor.thing", "x")
+	FilterResource(rs)
+	attrs := rs.Resource().Attributes()
+	requireKeys := []string{"service.name", "service.version", "telemetry.sdk.language"}
+	for _, key := range requireKeys {
+		if _, ok := attrs.Get(key); !ok {
+			t.Errorf("canonical resource key %s was stripped", key)
+		}
+	}
+	for _, key := range []string{"cursor.surface", "vendor.thing"} {
+		if _, ok := attrs.Get(key); ok {
+			t.Errorf("vendor resource key %s survived FilterResource", key)
+		}
 	}
 }
 
@@ -141,5 +201,13 @@ func TestIsCanonicalAttribute(t *testing.T) {
 		if got := IsCanonicalAttribute(tc.key); got != tc.want {
 			t.Errorf("IsCanonicalAttribute(%q) = %v, want %v", tc.key, got, tc.want)
 		}
+	}
+	for _, key := range canonicalResourceKeys {
+		if !IsCanonicalResourceKey(key) {
+			t.Errorf("enumerated canonical resource key rejected: %s", key)
+		}
+	}
+	if IsCanonicalResourceKey("cursor.surface") || IsCanonicalResourceKey("session.id") {
+		t.Error("vendor or raw keys must not pass the canonical resource check")
 	}
 }

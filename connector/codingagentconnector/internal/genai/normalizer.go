@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
@@ -79,6 +80,7 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		inputResourceSpans.CopyTo(rs)
 		serviceName := resourceString(rs.Resource(), "service.name")
 		serviceVersion := resourceString(rs.Resource(), "service.version")
+		canonical.FilterResource(rs)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			ss := rs.ScopeSpans().At(j)
 			matched := matchesGenAIScope(ss.Scope().Name())

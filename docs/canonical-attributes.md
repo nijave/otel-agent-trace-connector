@@ -26,6 +26,23 @@ required keys: `gen_ai.operation.name`, `coding_agent.source`, and
 enforces the contract per harness in CI, and each edge package carries its own
 conformance test against a captured native fixture.
 
+## Resource attributes
+
+Resource attributes follow the same fail-closed rule as span attributes. The
+canonical resource vocabulary is the standard OTel identity keys:
+
+- `service.name` (required on every emitted resource group; it feeds
+  `coding_agent.client.name`)
+- `service.version`
+- `telemetry.sdk.name`
+- `telemetry.sdk.language`
+- `telemetry.sdk.version`
+
+Every other key — vendor resources such as `cursor.surface`, raw keys such as
+`session.id` — is stripped from canonical output. Edges that consume raw
+resource values (for example `session.id` → `gen_ai.conversation.id`) read them
+before the strip.
+
 ## Vocabulary
 
 Connector-owned provenance namespace:

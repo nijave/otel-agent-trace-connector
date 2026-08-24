@@ -282,3 +282,31 @@ func assertRequiredKeys(t *testing.T, span ptrace.Span) {
 		require.True(t, ok, "%s must carry required %s", span.Name(), key)
 	}
 }
+
+func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "claude-code")
+	rs.Resource().Attributes().PutStr("service.version", "2.3.4")
+	rs.Resource().Attributes().PutStr("session.id", "session-1")
+	rs.Resource().Attributes().PutStr("vendor.thing", "x")
+	root := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	root.SetName("claude_code.interaction")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	for _, key := range []string{"session.id", "vendor.thing"} {
+		_, ok := attrs.Get(key)
+		require.False(t, ok, "raw key %s must not reach canonical output", key)
+	}
+	// session.id is consumed for conversation ids before the filter strips it.
+	normalizedRoot := findSpan(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent claude_code")
+	require.Equal(t, "session-1", attrString(t, normalizedRoot, "gen_ai.conversation.id"))
+}

@@ -487,3 +487,26 @@ func TestNoLaminarBookkeepingInOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "agent-server")
+	rs.Resource().Attributes().PutStr("service.version", "0.9.0")
+	rs.Resource().Attributes().PutStr("vendor.thing", "x")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName(scopeName)
+	makeSpan(traceA, conversationSpec()).CopyTo(ss.Spans().AppendEmpty())
+
+	s := &sink{}
+	require.NoError(t, New(s).ConsumeTraces(context.Background(), input))
+	require.Len(t, s.batches, 1)
+	attrs := s.batches[0].ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	_, hasVendor := attrs.Get("vendor.thing")
+	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
+}

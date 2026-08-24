@@ -733,3 +733,27 @@ func TestGenAINormalizerSkipsPiGroups(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all(), "the Pi normalizer owns these groups")
 }
+
+func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "strands-agent")
+	rs.Resource().Attributes().PutStr("service.version", "1.0.0")
+	rs.Resource().Attributes().PutStr("vendor.thing", "x")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("strands.telemetry.tracer")
+	span := ss.Spans().AppendEmpty()
+	span.SetName("chat")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
+	for _, key := range []string{"service.name", "service.version"} {
+		value, ok := attrs.Get(key)
+		require.True(t, ok, "canonical resource key %s must survive", key)
+		require.NotEmpty(t, value.Str())
+	}
+	_, hasVendor := attrs.Get("vendor.thing")
+	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
+}

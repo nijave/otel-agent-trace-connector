@@ -74,6 +74,7 @@ func Check(e Edge) []string {
 	var errs []string
 	errs = append(errs, checkRequired(e.Name, out)...)
 	errs = append(errs, checkAllowed(e.Name, out)...)
+	errs = append(errs, checkResource(e.Name, out)...)
 	errs = append(errs, checkSignals(e.Name, raw, out, e.Signals)...)
 	return errs
 }
@@ -118,6 +119,28 @@ func checkAllowed(name string, out ptrace.Traces) []string {
 		for i := 0; i < events.Len(); i++ {
 			report(events.At(i).Attributes())
 		}
+	}
+	return errs
+}
+
+// checkResource validates output resource attributes against the canonical
+// resource vocabulary and requires service.name on every resource group.
+func checkResource(name string, out ptrace.Traces) []string {
+	var errs []string
+	rss := out.ResourceSpans()
+	for i := 0; i < rss.Len(); i++ {
+		attrs := rss.At(i).Resource().Attributes()
+		for _, key := range requiredResourceKeys {
+			if _, ok := attrs.Get(key); !ok {
+				errs = append(errs, fmt.Sprintf("harness %s: resource missing required %s", name, key))
+			}
+		}
+		attrs.Range(func(key string, _ pcommon.Value) bool {
+			if !IsCanonicalResourceKey(key) {
+				errs = append(errs, fmt.Sprintf("harness %s: forbidden resource attribute %s", name, key))
+			}
+			return true
+		})
 	}
 	return errs
 }
