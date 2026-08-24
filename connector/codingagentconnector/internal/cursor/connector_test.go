@@ -256,6 +256,80 @@ func TestTruncationSetsMarker(t *testing.T) {
 	require.Len(t, instance.bursts[testConversation].events, 1)
 }
 
+// TestTruncatedBurstStillClosesQuietUnderRedeliveryStorm pins the fix for
+// deferred finalization: once a burst is full, redelivered overflow records
+// must not refresh lastSeen. Before the fix their EventIDs were never
+// recorded, so every at-least-once resend re-entered add(), the quiet window
+// never fired while the storm lasted, and turn_timeout closed the burst with
+// an error status instead of closing quiet.
+func TestTruncatedBurstStillClosesQuietUnderRedeliveryStorm(t *testing.T) {
+	cfg := codex.NewDefaultConfig()
+	cfg.MaxEvents = 2
+	cfg.ReorderWindow = 25 * time.Millisecond
+	// Short enough that a regression fails fast by emitting "timeout" instead
+	// of hanging the loop to its deadline.
+	cfg.TurnTimeout = 500 * time.Millisecond
+	sink := &traceSink{}
+	connectorLogs, err := New(cfg, testSettings(), sink)
+	require.NoError(t, err)
+	instance := connectorLogs.(*cursorConnector)
+	require.NoError(t, instance.Start(context.Background(), nil))
+	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
+
+	// Not backdated: cursor's turn_timeout runs from the first record's
+	// timestamp, so backdating would trip the timeout branch immediately.
+	base := time.Now()
+	fill := makeCursorLogs(
+		apiRequest(base, "a", "m", 1, 1),
+		apiRequest(base.Add(time.Millisecond), "b", "m", 1, 1),
+	)
+	overflow := makeCursorLogs(apiRequest(base.Add(2*time.Millisecond), "c", "m", 1, 1))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), fill))
+	deadline := time.Now().Add(3 * time.Second)
+	for sink.count() == 0 && time.Now().Before(deadline) {
+		require.NoError(t, instance.ConsumeLogs(context.Background(), overflow))
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.Equal(t, 1, sink.count())
+	root := spansByName(sink.traces[0])["invoke_agent cursor"][0]
+	require.Equal(t, ptrace.StatusCodeUnset, root.Status().Code(),
+		"a storm-deferred burst must close quiet, not timeout")
+}
+
+// TestPostTruncationRecordDoesNotMutateBurstState pins that a record arriving
+// after truncation leaves no trace in burst state: it must not refresh
+// first/last/lastSeen (which decide the quiet window) -- but its EventID must be
+// recorded so redeliveries deduplicate exactly.
+func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
+	cfg := codex.NewDefaultConfig()
+	cfg.ReorderWindow = 5 * time.Millisecond
+	base := time.Now().Add(-time.Second)
+	now := time.Now()
+	burst := &burstState{conversationID: testConversation, first: base, last: base}
+	burst.add(Event{Body: BodyAPIRequest, EventID: "ev-a", ConversationID: testConversation, Timestamp: base}, now, 2)
+	burst.add(Event{Body: BodyAPIRequest, EventID: "ev-b", ConversationID: testConversation, Timestamp: base.Add(time.Millisecond)}, now, 2)
+	require.False(t, burst.truncated)
+
+	overflow := Event{Body: BodyAPIRequest, EventID: "ev-c", ConversationID: testConversation, Timestamp: base.Add(time.Hour)}
+	burst.add(overflow, now.Add(time.Hour), 2)
+	require.True(t, burst.truncated)
+	require.Len(t, burst.events, 2)
+	require.Contains(t, burst.seen, "ev-c")
+	require.True(t, burst.lastSeen.Equal(now))
+	require.Equal(t, base, burst.first)
+	require.True(t, burst.last.Equal(base.Add(time.Millisecond)))
+
+	// The dropped record must not skew the close reason: with only stored
+	// records considered, the burst goes quiet rather than timing out.
+	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	require.NoError(t, err)
+	instance := connectorLogs.(*cursorConnector)
+	instance.bursts[testConversation] = burst
+	finalized := instance.collectReady(now.Add(cfg.ReorderWindow))
+	require.Len(t, finalized, 1)
+	require.Equal(t, "quiet", finalized[0].reason)
+}
+
 func TestIgnoresForeignAndScopelessRecords(t *testing.T) {
 	cfg := codex.NewDefaultConfig()
 	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
