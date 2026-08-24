@@ -341,7 +341,7 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
 	if sid := firstString(src, attrSessionID); sid != "" {
 		attrs.PutStr("gen_ai.conversation.id", sid)
 	}
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	attrs.PutStr("coding_agent.source.scope", scopeName)
 	if uid := firstString(src, attrUserID); uid != "" {
@@ -377,7 +377,7 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
 
 func normalizeChat(wire, span ptrace.Span) {
 	attrs := span.Attributes()
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	attrs.PutStr("gen_ai.operation.name", "chat")
 	name := "chat"
@@ -395,7 +395,7 @@ func normalizeChat(wire, span ptrace.Span) {
 
 func normalizeTool(wire, span ptrace.Span) {
 	attrs := span.Attributes()
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	attrs.PutStr("gen_ai.operation.name", "execute_tool")
 	tool := wire.Name()

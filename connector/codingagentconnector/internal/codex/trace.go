@@ -104,7 +104,7 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	attrs.PutBool("coding_agent.turn.complete", reason == "completed")
 	attrs.PutBool("coding_agent.turn.prompt_observed", turn.promptSeen)
 	attrs.PutBool("coding_agent.turn.events_truncated", turn.truncated)
-	attrs.PutStr("telemetry.source", "normalized")
+	attrs.PutStr("coding_agent.source", "normalized")
 	if model := lastStringAttr(events, "model"); model != "" {
 		attrs.PutStr("gen_ai.request.model", model)
 	}

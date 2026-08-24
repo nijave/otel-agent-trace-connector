@@ -108,7 +108,7 @@ func TestGenAINormalizerClaimsCopilotScope(t *testing.T) {
 	require.Equal(t, "execute_hook PreToolUse", spans.At(2).Name())
 
 	attrs := spans.At(0).Attributes()
-	require.Equal(t, "native", fixtureAttrString(t, attrs, "telemetry.source"))
+	require.Equal(t, "native", fixtureAttrString(t, attrs, "coding_agent.source"))
 	require.Equal(t, "github.copilot", fixtureAttrString(t, attrs, "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, attrs, "coding_agent.client.name"))
 	require.Equal(t, "1.0.64", fixtureAttrString(t, attrs, "coding_agent.client.version"))
@@ -207,7 +207,7 @@ func TestGenAINormalizerNormalizesOpenAIV2LegacyChat(t *testing.T) {
 	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
 	_, hasSystem := out.Attributes().Get("gen_ai.system")
 	require.False(t, hasSystem, "legacy gen_ai.system must not survive")
-	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, out, "coding_agent.source"))
 	require.Equal(t, "opentelemetry.instrumentation.openai_v2",
 		attrString(t, out, "coding_agent.source.scope"))
 	require.Equal(t, "adhoc-agent", attrString(t, out, "coding_agent.client.name"))
@@ -316,7 +316,7 @@ func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "run", outApp.Name())
-	_, tagged := outApp.Attributes().Get("telemetry.source")
+	_, tagged := outApp.Attributes().Get("coding_agent.source")
 	require.False(t, tagged, "spans outside matched scopes stay untouched")
 }
 
@@ -329,7 +329,7 @@ func TestGenAINormalizerPassesThroughInvokeWorkflow(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "invoke_workflow my-flow", out.Name(), "non-canonical operations keep their emitted names")
-	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, out, "coding_agent.source"))
 	require.Equal(t, "opentelemetry.util.genai.handler",
 		attrString(t, out, "coding_agent.source.scope"))
 }
@@ -533,7 +533,7 @@ func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
 						require.False(t, content.IsContentEvent(span.Events().At(e).Name()),
 							"content event %q survived", span.Events().At(e).Name())
 					}
-					if value, ok := span.Attributes().Get("telemetry.source"); ok && value.Str() == "native" {
+					if value, ok := span.Attributes().Get("coding_agent.source"); ok && value.Str() == "native" {
 						_, hasScope := span.Attributes().Get("coding_agent.source.scope")
 						require.True(t, hasScope, "provenance scope missing on %q", span.Name())
 					}
@@ -602,7 +602,7 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	cliRoot, ok := names["invoke_agent copilot-cli"]
 	require.True(t, ok, "CLI invoke_agent root renames by agent name")
-	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "telemetry.source"))
+	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source"))
 	require.Equal(t, "github.copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.client.name"))
 	require.Equal(t, "11111111-2222-3333-4444-555555555555", fixtureAttrString(t, cliRoot.Attributes(), "gen_ai.conversation.id"))

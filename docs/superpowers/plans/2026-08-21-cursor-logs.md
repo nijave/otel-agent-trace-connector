@@ -1191,7 +1191,7 @@ func TestBuildTraceRoot(t *testing.T) {
 	require.Equal(t, testConversation, stringAttrOn(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "cursor", stringAttrOn(t, root, "coding_agent.client.name"))
 	require.Equal(t, "1.16.5", stringAttrOn(t, root, "coding_agent.client.version"))
-	require.Equal(t, "normalized", stringAttrOn(t, root, "telemetry.source"))
+	require.Equal(t, "normalized", stringAttrOn(t, root, "coding_agent.source"))
 	require.Equal(t, "quiet", stringAttrOn(t, root, "coding_agent.turn.finish_reason"))
 	require.Equal(t, "cli", stringAttrOn(t, root, "coding_agent.cursor.surface"))
 	require.Equal(t, "cli", stringAttrOn(t, root, "coding_agent.cursor.entrypoint"))
@@ -1471,7 +1471,7 @@ func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event, rea
 	}
 	attrs.PutStr("coding_agent.turn.finish_reason", reason)
 	attrs.PutBool("coding_agent.turn.events_truncated", burst.truncated)
-	attrs.PutStr("telemetry.source", "normalized")
+	attrs.PutStr("coding_agent.source", "normalized")
 	// Deliberately no gen_ai.provider.name: the wire never names the upstream
 	// provider and the connector does not guess one. Deliberately no
 	// coding_agent.turn.complete: quiet closing cannot distinguish a finished

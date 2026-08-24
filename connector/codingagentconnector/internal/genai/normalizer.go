@@ -148,7 +148,7 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 	attrs.Remove("gen_ai.system")
 	mapLegacyTokens(attrs, "gen_ai.usage.prompt_tokens", "gen_ai.usage.input_tokens")
 	mapLegacyTokens(attrs, "gen_ai.usage.completion_tokens", "gen_ai.usage.output_tokens")
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.source.scope", scopeName)
 	if serviceName != "" {
 		attrs.PutStr("coding_agent.client.name", serviceName)

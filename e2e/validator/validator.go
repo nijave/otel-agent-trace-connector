@@ -174,7 +174,7 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 			if stringAttr(root, "coding_agent.client.name") != "claude_code" {
 				return errors.New("claude client name is missing")
 			}
-			if stringAttr(root, "telemetry.source") != "native" {
+			if stringAttr(root, "coding_agent.source") != "native" {
 				return errors.New("claude telemetry source is not native")
 			}
 		}
@@ -356,7 +356,7 @@ func validateAdhocChat(spans []ptrace.Span, service string) error {
 			lastErr = fmt.Errorf("%s: chat provider is not openai", service)
 			continue
 		}
-		if stringAttr(span, "telemetry.source") != "native" {
+		if stringAttr(span, "coding_agent.source") != "native" {
 			lastErr = fmt.Errorf("%s: telemetry source is not native", service)
 			continue
 		}
@@ -387,7 +387,7 @@ func validateStrandsSpans(spans []ptrace.Span) error {
 		if stringAttr(root, "gen_ai.provider.name") != "strands-agents" {
 			return errors.New("strands provider is not strands-agents")
 		}
-		if stringAttr(root, "telemetry.source") != "native" {
+		if stringAttr(root, "coding_agent.source") != "native" {
 			return errors.New("strands telemetry source is not native")
 		}
 		chat, tool := false, false
@@ -483,7 +483,7 @@ func validateCopilotTree(spans []ptrace.Span, root ptrace.Span) error {
 	if _, ok := root.Attributes().Get("gen_ai.usage.output_tokens"); !ok {
 		return errors.New("copilot root output usage is missing")
 	}
-	if stringAttr(root, "telemetry.source") != "native" {
+	if stringAttr(root, "coding_agent.source") != "native" {
 		return errors.New("telemetry source is not native")
 	}
 	if stringAttr(root, "coding_agent.client.name") == "" {

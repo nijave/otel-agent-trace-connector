@@ -106,7 +106,7 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "anthropic", attrString(t, root, "gen_ai.provider.name"))
-	require.Equal(t, "native", attrString(t, root, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, root, "coding_agent.source"))
 	require.Equal(t, "2.1.207", attrString(t, root, "coding_agent.client.version"))
 	// The prompt is redacted at the source and must stay redacted after normalization.
 	require.Equal(t, "<REDACTED>", attrString(t, root, "user_prompt"))

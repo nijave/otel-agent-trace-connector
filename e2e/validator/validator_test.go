@@ -152,7 +152,7 @@ func TestValidateOpenAIAdhocCanonical(t *testing.T) {
 		span.SetName("chat glm-4.7")
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
 		span.Attributes().PutStr("gen_ai.provider.name", "openai")
-		span.Attributes().PutStr("telemetry.source", "native")
+		span.Attributes().PutStr("coding_agent.source", "native")
 		span.Attributes().PutStr("coding_agent.client.name", service)
 		span.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
 		span.Attributes().PutInt("gen_ai.usage.output_tokens", 6)
@@ -183,7 +183,7 @@ func TestValidatePiCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.agent.name", "pi")
 	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	chat := spans.AppendEmpty()
 	chat.SetName("chat glm-4.7")
@@ -220,7 +220,7 @@ func TestValidateStrandsCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	root.SetSpanID(pcommon.SpanID{2})
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	chat := spans.AppendEmpty()
 	chat.SetName("chat glm-4.7")
@@ -257,7 +257,7 @@ func TestValidateStrandsCanonicalSkipsFailedChatAttempts(t *testing.T) {
 	root.SetSpanID(pcommon.SpanID{2})
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	tool := spans.AppendEmpty()
 	tool.SetName("execute_tool get_marker")
@@ -377,7 +377,7 @@ func validCopilotTraces() ptrace.Traces {
 	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
 	root.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
 	root.Attributes().PutInt("gen_ai.usage.output_tokens", 7)
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 	root.Attributes().PutStr("coding_agent.client.name", "github-copilot")
 
 	chat := spans.AppendEmpty()
@@ -458,7 +458,7 @@ func validClaudeTraces(runID string, canonical bool) ptrace.Traces {
 		root.Attributes().PutStr("gen_ai.conversation.id", "session-claude")
 		root.Attributes().PutStr("gen_ai.provider.name", "anthropic")
 		root.Attributes().PutStr("coding_agent.client.name", "claude_code")
-		root.Attributes().PutStr("telemetry.source", "native")
+		root.Attributes().PutStr("coding_agent.source", "native")
 		llm.SetName("chat claude-haiku")
 		llm.Attributes().PutStr("gen_ai.operation.name", "chat")
 		llm.Attributes().PutStr("gen_ai.request.model", "claude-haiku")

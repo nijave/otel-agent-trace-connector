@@ -145,7 +145,7 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 }
 
 func putCommon(attrs pcommon.Map, version string) {
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	if version != "" {
 		attrs.PutStr("coding_agent.client.version", version)

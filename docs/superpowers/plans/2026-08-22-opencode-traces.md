@@ -160,7 +160,7 @@ func TestNormalizerClaimsGroupDropsNoiseAndKeepsIdentity(t *testing.T) {
 	require.Equal(t, "ses_abc", attrString(span, "gen_ai.conversation.id"))
 	require.Equal(t, "invoke_agent", attrString(span, "gen_ai.operation.name"))
 	require.Equal(t, "opencode", attrString(span, "gen_ai.agent.name"))
-	require.Equal(t, "native", attrString(span, "telemetry.source"))
+	require.Equal(t, "native", attrString(span, "coding_agent.source"))
 	require.Equal(t, "opencode", attrString(span, "coding_agent.client.name"))
 	require.Equal(t, "1.18.21", attrString(span, "coding_agent.client.version"))
 	require.Equal(t, "ai.streamText", attrString(span, "coding_agent.source.event"))
@@ -351,7 +351,7 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 }
 
 func putCommon(attrs pcommon.Map, version string) {
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	if version != "" {
 		attrs.PutStr("coding_agent.client.version", version)

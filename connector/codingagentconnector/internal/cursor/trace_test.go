@@ -85,7 +85,7 @@ func TestBuildTraceRoot(t *testing.T) {
 	require.Equal(t, testConversation, stringAttrOn(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "cursor", stringAttrOn(t, root, "coding_agent.client.name"))
 	require.Equal(t, "1.16.5", stringAttrOn(t, root, "coding_agent.client.version"))
-	require.Equal(t, "normalized", stringAttrOn(t, root, "telemetry.source"))
+	require.Equal(t, "normalized", stringAttrOn(t, root, "coding_agent.source"))
 	require.Equal(t, "quiet", stringAttrOn(t, root, "coding_agent.turn.finish_reason"))
 	require.Equal(t, "cli", stringAttrOn(t, root, "coding_agent.cursor.surface"))
 	require.Equal(t, "cli", stringAttrOn(t, root, "coding_agent.cursor.entrypoint"))

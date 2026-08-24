@@ -125,7 +125,7 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string) {
 func putClaudeCommon(attrs pcommon.Map, version string) {
 	attrs.PutStr("gen_ai.provider.name", "anthropic")
 	attrs.PutStr("coding_agent.client.name", "claude_code")
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	if version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
 	}

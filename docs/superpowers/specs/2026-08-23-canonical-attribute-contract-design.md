@@ -63,7 +63,7 @@ Harness-neutral keys, enforced at runtime by `internal/content` (the existing
 allowlist, minus the prefix exemption):
 
 - Provenance (connector-owned namespace): `coding_agent.source` (renamed from
-  `telemetry.source`; values `native`/`normalized`),
+  `coding_agent.source`; values `native`/`normalized`),
   `coding_agent.source.scope`, `coding_agent.source.event`,
   `coding_agent.client.name`, `coding_agent.client.version`
 - Operation/request/response: `gen_ai.operation.name`, `gen_ai.provider.name`,

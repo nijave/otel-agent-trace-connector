@@ -89,7 +89,7 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 	require.Equal(t, "pi", attrString(t, root, "gen_ai.agent.name"))
 	require.Equal(t, "session-1", attrString(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "pi", attrString(t, root, "coding_agent.client.name"))
-	require.Equal(t, "native", attrString(t, root, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, root, "coding_agent.source"))
 	require.Equal(t, "chat-turn", attrString(t, root, "coding_agent.source.event"))
 
 	chat := findSpan(t, spans, "chat deepseek-v4-flash")
@@ -426,7 +426,7 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 	root := findSpan(t, all, "invoke_agent pi")
 	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "the agent root carries no dangling parent")
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
-	require.Equal(t, "native", attrString(t, root, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, root, "coding_agent.source"))
 
 	chat := findSpan(t, all, "chat deepseek-v4-flash")
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())

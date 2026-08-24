@@ -145,12 +145,12 @@ git commit -m "canonical: add attribute-contract vocabulary and conformance runn
 
 ---
 
-### Task 2: Rename `telemetry.source` → `coding_agent.source`
+### Task 2: Rename `coding_agent.source` → `coding_agent.source`
 
 **Files:**
-- Modify: all seven normalizers under `connector/codingagentconnector/internal/{claude,codex,cursor,genai,opencode,openhands,pi}/` (the `PutStr("telemetry.source", ...)` sites)
+- Modify: all seven normalizers under `connector/codingagentconnector/internal/{claude,codex,cursor,genai,opencode,openhands,pi}/` (the `PutStr("coding_agent.source", ...)` sites)
 - Modify: `connector/codingagentconnector/internal/content/content.go` (allowlist entry)
-- Modify: every test/fixture referencing `telemetry.source` (find via grep)
+- Modify: every test/fixture referencing `coding_agent.source` (find via grep)
 
 - [ ] **Step 1: Find every reference**
 
@@ -159,7 +159,7 @@ Note each file.
 
 - [ ] **Step 2: Replace mechanically**
 
-Replace the literal `telemetry.source` with `coding_agent.source` in code, tests, and JSON fixtures. Do not touch `coding_agent.source.scope`/`.event` (already correct).
+Replace the literal `coding_agent.source` with `coding_agent.source` in code, tests, and JSON fixtures. Do not touch `coding_agent.source.scope`/`.event` (already correct).
 
 - [ ] **Step 3: Verify**
 
@@ -171,7 +171,7 @@ Expected: PASS
 
 ```bash
 git add -u connector docs
-git commit -m "canonical: rename telemetry.source to coding_agent.source"
+git commit -m "canonical: rename coding_agent.source to coding_agent.source"
 ```
 
 ---

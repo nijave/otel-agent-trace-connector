@@ -118,7 +118,7 @@ No mapping changes are required. For claimed groups the existing code path:
 
 and additionally derives `gen_ai.provider.name` from `gen_ai.system` when
 absent, strips content attributes/events, applies legacy token-key mapping,
-and stamps `telemetry.source=native`, `coding_agent.source.scope`,
+and stamps `coding_agent.source=native`, `coding_agent.source.scope`,
 `coding_agent.client.name` ← resource `service.name`, and
 `coding_agent.client.version`.
 

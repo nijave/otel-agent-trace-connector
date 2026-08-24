@@ -192,7 +192,7 @@ Common attributes include:
 - `coding_agent.client.version`
 - `coding_agent.source.event`
 - `coding_agent.model_provider`
-- `telemetry.source`
+- `coding_agent.source`
 
 Custom attributes remain under `coding_agent.*` and migrate as the
 semantic conventions evolve.
@@ -344,7 +344,7 @@ Root `invoke_agent cursor`: start = first event timestamp, end = last event
 timestamp. It carries `gen_ai.operation.name=invoke_agent`,
 `gen_ai.agent.name=cursor`, `gen_ai.conversation.id`,
 `coding_agent.client.name=cursor`, `coding_agent.client.version` from
-resource `service.version`, `telemetry.source=normalized`, and resource-side
+resource `service.version`, `coding_agent.source=normalized`, and resource-side
 `coding_agent.cursor.*` surface, entrypoint, team, and user attributes.
 Usage rollup sums the burst's `api_request` records into `gen_ai.usage.*`,
 with cache sums under `gen_ai.usage.cache_read.input_tokens` and
@@ -466,7 +466,7 @@ operations) keep their emitted names and hierarchy.
   (same for output/completion). It removes legacy
   `prompt_tokens`/`completion_tokens` keys from canonical output either
   way. `total_tokens` and cache read/write counts pass through unchanged.
-- Provenance: `telemetry.source=native`,
+- Provenance: `coding_agent.source=native`,
   `coding_agent.source.scope=<original instrumentation scope name>` (the
   GenAI analog of `coding_agent.source.event`),
   `coding_agent.client.name` from resource `service.name` and
@@ -542,7 +542,7 @@ counters have no established canonical key and stay out. Each
 `gen_ai.request.model` (bare `chat` when absent), and each `ai.toolCall` child
 becomes `execute_tool <tool>` from `ai.toolCall.name`. Renamed spans are
 rebuilt with only these attributes plus the common marker set used by the
-other edges (`telemetry.source=native`, `coding_agent.client.name`,
+other edges (`coding_agent.source=native`, `coding_agent.client.name`,
 `coding_agent.client.version`, and `coding_agent.source.event` holding the
 original wire name), so content such as `ai.response.text` and
 `ai.toolCall.args`/`result` has no path into canonical output — removal is

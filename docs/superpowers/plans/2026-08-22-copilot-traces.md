@@ -79,7 +79,7 @@ func TestGenAINormalizerClaimsCopilotScope(t *testing.T) {
 	require.Equal(t, "execute_hook PreToolUse", spans.At(2).Name())
 
 	attrs := spans.At(0).Attributes()
-	require.Equal(t, "native", fixtureAttrString(t, attrs, "telemetry.source"))
+	require.Equal(t, "native", fixtureAttrString(t, attrs, "coding_agent.source"))
 	require.Equal(t, "github.copilot", fixtureAttrString(t, attrs, "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, attrs, "coding_agent.client.name"))
 	require.Equal(t, "1.0.64", fixtureAttrString(t, attrs, "coding_agent.client.version"))
@@ -179,7 +179,7 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	cliRoot, ok := names["invoke_agent copilot-cli"]
 	require.True(t, ok, "CLI invoke_agent root renames by agent name")
-	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "telemetry.source"))
+	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source"))
 	require.Equal(t, "github.copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.client.name"))
 	require.Equal(t, "11111111-2222-3333-4444-555555555555", fixtureAttrString(t, cliRoot.Attributes(), "gen_ai.conversation.id"))

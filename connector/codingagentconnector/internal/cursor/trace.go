@@ -107,7 +107,7 @@ func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event, rea
 	}
 	attrs.PutStr("coding_agent.turn.finish_reason", reason)
 	attrs.PutBool("coding_agent.turn.events_truncated", burst.truncated)
-	attrs.PutStr("telemetry.source", "normalized")
+	attrs.PutStr("coding_agent.source", "normalized")
 	// Deliberately no gen_ai.provider.name: the wire never names the upstream
 	// provider and the connector does not guess one. Deliberately no
 	// coding_agent.turn.complete: quiet closing cannot distinguish a finished

@@ -279,7 +279,7 @@ func TestConversationBecomesRootWithCanonicalAttrs(t *testing.T) {
 	require.Equal(t, "invoke_agent", attrString(r, "gen_ai.operation.name"))
 	require.Equal(t, "openhands", attrString(r, "gen_ai.agent.name"))
 	require.Equal(t, sessionID, attrString(r, "gen_ai.conversation.id"))
-	require.Equal(t, "native", attrString(r, "telemetry.source"))
+	require.Equal(t, "native", attrString(r, "coding_agent.source"))
 	require.Equal(t, "openhands", attrString(r, "coding_agent.client.name"))
 	require.Equal(t, scopeName, attrString(r, "coding_agent.source.scope"))
 	require.Equal(t, "42", attrString(r, "enduser.pseudo.id"))

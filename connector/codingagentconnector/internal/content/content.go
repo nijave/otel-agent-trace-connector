@@ -23,7 +23,7 @@ import (
 // fails closed instead of riding along.
 var canonicalAttributeKeys = map[string]bool{
 	// Written by the normalizers for every claimed span.
-	"telemetry.source":            true,
+	"coding_agent.source":            true,
 	"coding_agent.source.scope":   true,
 	"coding_agent.client.name":    true,
 	"coding_agent.client.version": true,

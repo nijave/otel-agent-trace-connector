@@ -190,7 +190,7 @@ func reparentOrphans(spans ptrace.SpanSlice, children map[pcommon.SpanID]bool) {
 
 func putPiCommon(attrs pcommon.Map, version string) {
 	attrs.PutStr("coding_agent.client.name", "pi")
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	if version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
 	}
