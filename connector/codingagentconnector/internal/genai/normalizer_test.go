@@ -372,6 +372,30 @@ func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
 	}
 }
 
+// TestGenAINormalizerCoercesNonIntCacheCounters pins that underscore cache
+// keys carrying doubles or numeric strings land on their dotted canonical
+// counterparts instead of being deleted unmapped.
+func TestGenAINormalizerCoercesNonIntCacheCounters(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutDouble("gen_ai.usage.cache_read_input_tokens", 42.0)
+	span.Attributes().PutStr("gen_ai.usage.cache_write_input_tokens", "7")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, int64(42), attrInt(t, out, "gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(7), attrInt(t, out, "gen_ai.usage.cache_creation.input_tokens"))
+	for _, key := range []string{
+		"gen_ai.usage.cache_read_input_tokens",
+		"gen_ai.usage.cache_write_input_tokens",
+	} {
+		_, exists := out.Attributes().Get(key)
+		require.False(t, exists, "underscore usage key %q survived", key)
+	}
+}
+
 func TestGenAINormalizerKeepsDottedUsageOverUnderscoreVariant(t *testing.T) {
 	input := ptrace.NewTraces()
 	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")

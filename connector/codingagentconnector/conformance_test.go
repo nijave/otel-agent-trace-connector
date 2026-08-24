@@ -311,9 +311,12 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				},
 				Normalize: conformanceConsumeTraces(opencode.New),
 				Signals: []canonical.Signal{
-					{RawKey: "ai.usage.inputTokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
-					{RawKey: "ai.usage.outputTokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
-					{RawKey: "ai.usage.totalTokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
+					// The streamText parent duplicates the doStream child's
+					// counters, so sums compare the authoritative inner span
+					// against chat-prefixed output spans only.
+					{RawKey: "ai.usage.inputTokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum, RawSpanName: "ai.streamText.doStream", OutputSpanPrefix: "chat"},
+					{RawKey: "ai.usage.outputTokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum, RawSpanName: "ai.streamText.doStream", OutputSpanPrefix: "chat"},
+					{RawKey: "ai.usage.totalTokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum, RawSpanName: "ai.streamText.doStream", OutputSpanPrefix: "chat"},
 					{RawKey: "gen_ai.usage.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Presence},
 					{RawKey: "ai.response.msToFirstChunk", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 				},
