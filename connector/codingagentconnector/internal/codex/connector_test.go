@@ -70,7 +70,9 @@ func TestConnectorSplitsConsecutivePrompts(t *testing.T) {
 		testEvent("codex.user_prompt", base, nil), testEvent("codex.user_prompt", base.Add(time.Second), nil),
 	)))
 	require.Len(t, sink.all(), 1)
-	require.Equal(t, "superseded", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
+	root := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	_, hasFinishReason := root.Attributes().Get("coding_agent.turn.finish_reason")
+	require.False(t, hasFinishReason, "finalization reasons are metrics-only, not span attributes")
 }
 
 func TestConnectorDeduplicatesRedeliveredEvents(t *testing.T) {
@@ -96,9 +98,9 @@ func TestConnectorDeduplicatesRedeliveredEvents(t *testing.T) {
 
 	require.Len(t, sink.all(), 1)
 	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	root := findSpan(t, spans, "invoke_agent codex")
-	require.Equal(t, int64(5), attrInt(t, root, "gen_ai.usage.input_tokens"))
-	require.Equal(t, int64(2), attrInt(t, root, "gen_ai.usage.output_tokens"))
+	chat := findSpan(t, spans, "chat")
+	require.Equal(t, int64(5), attrInt(t, chat, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(2), attrInt(t, chat, "gen_ai.usage.output_tokens"))
 	chatCount, toolCount := 0, 0
 	for i := 0; i < spans.Len(); i++ {
 		switch attrString(t, spans.At(i), "gen_ai.operation.name") {
@@ -126,7 +128,9 @@ func TestConnectorBoundsStateAndEvents(t *testing.T) {
 	second.attrs["conversation.id"] = "second"
 	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(first, second)))
 	require.Len(t, sink.all(), 1)
-	require.Equal(t, "evicted", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
+	root := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	_, hasFinishReason := root.Attributes().Get("coding_agent.turn.finish_reason")
+	require.False(t, hasFinishReason)
 	require.Len(t, instance.turns, 1)
 	for _, turn := range instance.turns {
 		turn.add(testEvent("codex.api_request", time.Now().Add(2*time.Second), nil), time.Now(), cfg.MaxEvents)
@@ -167,7 +171,9 @@ func TestTruncatedTurnStillFinalizesUnderRedeliveryStorm(t *testing.T) {
 	}
 	require.Len(t, sink.all(), 1)
 	root := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	require.Equal(t, "timeout", attrString(t, root, "coding_agent.turn.finish_reason"))
+	// The timeout surfaces as span status, not as a finish-reason attribute.
+	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
+	require.Equal(t, "turn finalized after inactivity timeout", root.Status().Message())
 }
 
 // TestPostTruncationCompletionDoesNotMutateTurnState pins that an event arriving
@@ -252,7 +258,9 @@ func TestShutdownFlushesIncompleteTurn(t *testing.T) {
 	require.NoError(t, instance.ConsumeLogs(context.Background(), makeLogs(testEvent("codex.user_prompt", time.Now(), nil))))
 	require.NoError(t, instance.Shutdown(context.Background()))
 	require.Len(t, sink.all(), 1)
-	require.Equal(t, "shutdown", attrString(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0), "coding_agent.turn.finish_reason"))
+	root := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	_, hasFinishReason := root.Attributes().Get("coding_agent.turn.finish_reason")
+	require.False(t, hasFinishReason)
 }
 
 func TestShutdownWithoutStartDoesNotBlock(t *testing.T) {
@@ -337,13 +345,16 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	root := findSpan(t, spans, "invoke_agent codex")
 	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID())
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
-	require.True(t, attrBool(t, root, "coding_agent.turn.complete"), "real capture must finalize as a completed turn")
+	_, hasTurnComplete := root.Attributes().Get("coding_agent.turn.complete")
+	require.False(t, hasTurnComplete, "finalization state is not a canonical attribute")
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
-	require.Greater(t, attrInt(t, root, "gen_ai.usage.input_tokens"), int64(0))
-	// The capture was recorded through the responses-proxy, so it pins the provider
-	// label Codex reports for a custom provider -- and that gen_ai.provider.name is
-	// left describing the wire protocol rather than being overwritten with it.
-	require.Equal(t, "z.ai via responses-proxy", attrString(t, root, "coding_agent.model_provider"))
+	_, hasRootUsage := root.Attributes().Get("gen_ai.usage.input_tokens")
+	require.False(t, hasRootUsage, "usage lives on chat spans only")
+	// The capture was recorded through the responses-proxy; the operator-authored
+	// provider label is dropped and gen_ai.provider.name keeps describing the wire
+	// protocol.
+	_, hasModelProvider := root.Attributes().Get("coding_agent.model_provider")
+	require.False(t, hasModelProvider)
 	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))
 
 	// Every chat span must carry usage: the timing-only duplicate completions
@@ -354,6 +365,9 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 		if attrString(t, span, "gen_ai.operation.name") == "chat" {
 			chatSpans++
 			require.Greater(t, attrInt(t, span, "gen_ai.usage.input_tokens"), int64(0), "chat span %q lacks usage", span.Name())
+			require.Greater(t, attrInt(t, span, "gen_ai.usage.total_tokens"), int64(0), "chat span %q lacks total tokens", span.Name())
+			_, hasTTFT := span.Attributes().Get("gen_ai.response.time_to_first_chunk")
+			require.True(t, hasTTFT, "chat span %q lacks ttft", span.Name())
 		}
 	}
 	require.Positive(t, chatSpans)

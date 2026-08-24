@@ -22,13 +22,14 @@ const instrumentationScope = "github.com/nijave/otel-agent-trace-connector/conne
 const DefaultScopeVersion = "0.1.0"
 
 // tokenUsageAttrs maps Codex completion token counts to their canonical
-// destination attributes. It is the single source of truth for both per-chat-span
-// usage and the aggregate root usage.
+// destination attributes. It is the single source of truth for per-chat-span
+// usage; the invoke_agent root carries no usage of its own.
 var tokenUsageAttrs = []struct{ source, dest string }{
 	{"input_token_count", "gen_ai.usage.input_tokens"},
 	{"output_token_count", "gen_ai.usage.output_tokens"},
 	{"cached_token_count", "gen_ai.usage.cache_read.input_tokens"},
-	{"reasoning_token_count", "coding_agent.usage.reasoning_tokens"},
+	{"tool_token_count", "gen_ai.usage.total_tokens"},
+	{"reasoning_token_count", "gen_ai.usage.reasoning.output_tokens"},
 }
 
 func buildTrace(turn *turnState, reason, scopeVersion string) (ptrace.Traces, error) {
@@ -52,7 +53,7 @@ func buildTrace(turn *turnState, reason, scopeVersion string) (ptrace.Traces, er
 	root.SetKind(ptrace.SpanKindInternal)
 	root.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
 	root.SetEndTimestamp(pcommon.NewTimestampFromTime(end))
-	putRootAttributes(root.Attributes(), turn, events, reason)
+	putRootAttributes(root.Attributes(), turn, events)
 	if reason == "timeout" {
 		root.Status().SetCode(ptrace.StatusCodeError)
 		root.Status().SetMessage("turn finalized after inactivity timeout")
@@ -89,7 +90,7 @@ func turnBounds(turn *turnState, events []agentEvent) (time.Time, time.Time) {
 	return start, end
 }
 
-func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, reason string) {
+func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent) {
 	attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 	attrs.PutStr("gen_ai.agent.name", "codex")
 	attrs.PutStr("gen_ai.provider.name", "openai")
@@ -100,10 +101,6 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 		sourceEvent = events[0].name
 	}
 	attrs.PutStr("coding_agent.source.event", sourceEvent)
-	attrs.PutStr("coding_agent.turn.finish_reason", reason)
-	attrs.PutBool("coding_agent.turn.complete", reason == "completed")
-	attrs.PutBool("coding_agent.turn.prompt_observed", turn.promptSeen)
-	attrs.PutBool("coding_agent.turn.events_truncated", turn.truncated)
 	attrs.PutStr("coding_agent.source", "normalized")
 	if model := lastStringAttr(events, "model"); model != "" {
 		attrs.PutStr("gen_ai.request.model", model)
@@ -111,18 +108,6 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	if version := lastStringAttr(events, "app.version"); version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
 	}
-	// Codex reports the configured model provider only on codex.conversation_starts,
-	// which it emits once per session -- so only a session's first turn carries it,
-	// and later turns simply omit the attribute. The value is the operator-authored
-	// `name` from the provider block in config.toml (Codex's own default reads
-	// "OpenAI"), so it is a display label, not an identifier: it is deliberately kept
-	// out of gen_ai.provider.name, whose consumers expect a known value. Nothing in
-	// the logs reports the upstream host, so a proxied setup is indistinguishable
-	// from a direct one except by this label.
-	if provider := lastStringAttr(events, "provider_name"); provider != "" {
-		attrs.PutStr("coding_agent.model_provider", provider)
-	}
-	putAggregateUsage(attrs, events)
 }
 
 func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []agentEvent, turnStart time.Time) {
@@ -165,6 +150,8 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		span.SetEndTimestamp(pcommon.NewTimestampFromTime(event.timestamp))
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
 		span.Attributes().PutStr("gen_ai.provider.name", "openai")
+		span.Attributes().PutStr("coding_agent.source", "normalized")
+		span.Attributes().PutStr("coding_agent.client.name", "codex")
 		span.Attributes().PutStr("coding_agent.source.event", event.name)
 		if model != "" {
 			span.Attributes().PutStr("gen_ai.request.model", model)
@@ -172,20 +159,12 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		for _, m := range tokenUsageAttrs {
 			copyIntAttr(span.Attributes(), event.attrs, m.source, m.dest)
 		}
+		copyIntAttr(span.Attributes(), event.attrs, "ttft_ms", "gen_ai.response.time_to_first_chunk")
 		completionIndex++
 	}
 }
 
 func appendToolSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []agentEvent) {
-	decisions := make(map[string][]agentEvent)
-	for _, event := range events {
-		if event.name == "codex.tool_decision" {
-			callID := stringValue(event.attrs["call_id"])
-			if callID != "" {
-				decisions[callID] = append(decisions[callID], event)
-			}
-		}
-	}
 	toolIndex := 0
 	for _, event := range events {
 		if event.name != "codex.tool_result" {
@@ -207,23 +186,12 @@ func appendToolSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		span.SetEndTimestamp(pcommon.NewTimestampFromTime(event.timestamp))
 		span.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
 		span.Attributes().PutStr("gen_ai.tool.name", tool)
+		span.Attributes().PutStr("coding_agent.source", "normalized")
+		span.Attributes().PutStr("coding_agent.client.name", "codex")
 		span.Attributes().PutStr("coding_agent.source.event", event.name)
-		if callID != "" {
-			span.Attributes().PutStr("coding_agent.tool.call_id", callID)
-		}
-		if success, ok := boolValue(event.attrs["success"]); ok {
-			span.Attributes().PutBool("coding_agent.tool.success", success)
-			if !success {
-				span.Status().SetCode(ptrace.StatusCodeError)
-				span.Status().SetMessage("tool execution failed")
-			}
-		}
-		for _, decision := range decisions[callID] {
-			e := span.Events().AppendEmpty()
-			e.SetName("codex.tool_decision")
-			e.SetTimestamp(pcommon.NewTimestampFromTime(decision.timestamp))
-			copyStringAttr(e.Attributes(), decision.attrs, "decision", "coding_agent.tool.decision")
-			copyStringAttr(e.Attributes(), decision.attrs, "source", "coding_agent.tool.decision_source")
+		if success, ok := boolValue(event.attrs["success"]); ok && !success {
+			span.Status().SetCode(ptrace.StatusCodeError)
+			span.Status().SetMessage("tool execution failed")
 		}
 		toolIndex++
 	}
@@ -238,8 +206,6 @@ func appendRootEvents(dst ptrace.SpanEventSlice, events []agentEvent) {
 		e := dst.AppendEmpty()
 		e.SetName(event.name)
 		e.SetTimestamp(pcommon.NewTimestampFromTime(event.timestamp))
-		copyStringAttr(e.Attributes(), event.attrs, "event.kind", "coding_agent.source.event_kind")
-		copyStringAttr(e.Attributes(), event.attrs, "error.message", "error.message")
 	}
 }
 
@@ -287,27 +253,6 @@ func lastStringAttr(events []agentEvent, key string) string {
 	return ""
 }
 
-func putAggregateUsage(attrs pcommon.Map, events []agentEvent) {
-	totals := map[string]int64{}
-	seen := map[string]bool{}
-	for _, event := range events {
-		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
-			continue
-		}
-		for _, m := range tokenUsageAttrs {
-			if value, ok := int64Value(event.attrs[m.source]); ok {
-				totals[m.source] += value
-				seen[m.source] = true
-			}
-		}
-	}
-	for _, m := range tokenUsageAttrs {
-		if seen[m.source] {
-			attrs.PutInt(m.dest, totals[m.source])
-		}
-	}
-}
-
 // isTimingOnlyCompletion reports whether a response.completed record is Codex's
 // duplicate rather than the one describing the model call.
 //
@@ -338,11 +283,5 @@ func hasTokenUsage(attrs map[string]any) bool {
 func copyIntAttr(dst pcommon.Map, src map[string]any, from, to string) {
 	if value, ok := int64Value(src[from]); ok {
 		dst.PutInt(to, value)
-	}
-}
-
-func copyStringAttr(dst pcommon.Map, src map[string]any, from, to string) {
-	if value := stringValue(src[from]); value != "" {
-		dst.PutStr(to, value)
 	}
 }
