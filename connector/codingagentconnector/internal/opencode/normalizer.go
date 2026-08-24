@@ -131,6 +131,23 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 			name += " " + model
 		}
 		attrs.PutStr("gen_ai.operation.name", "chat")
+		copyUsage(wire.Attributes(), attrs)
+		passthroughCanonicalUsage(wire.Attributes(), attrs)
+		if total, ok := intValue(wire.Attributes(), "ai.usage.totalTokens"); ok {
+			attrs.PutInt("gen_ai.usage.total_tokens", total)
+		}
+		reasoning, ok := intValue(wire.Attributes(), "ai.usage.reasoningTokens")
+		if !ok {
+			reasoning, ok = intValue(wire.Attributes(), "ai.usage.outputTokenDetails.reasoningTokens")
+		}
+		if ok {
+			attrs.PutInt("gen_ai.usage.reasoning.output_tokens", reasoning)
+		}
+		if ttft, ok := intValue(wire.Attributes(), "ai.response.msToFirstChunk"); ok {
+			// Wire units are fractional milliseconds; canonical stores whole
+			// milliseconds like every other edge.
+			attrs.PutInt("gen_ai.response.time_to_first_chunk", ttft)
+		}
 		span.SetName(name)
 	case wireToolCall:
 		tool := firstString(wire.Attributes(), "ai.toolCall.name")
@@ -156,6 +173,7 @@ var usageKeys = [][2]string{
 	{"ai.usage.inputTokens", "gen_ai.usage.input_tokens"},
 	{"ai.usage.outputTokens", "gen_ai.usage.output_tokens"},
 	{"ai.usage.cachedInputTokens", "gen_ai.usage.cache_read.input_tokens"},
+	{"ai.usage.totalTokens", "gen_ai.usage.total_tokens"},
 }
 
 // wireStringAttrs maps OpenCode string attributes onto canonical destinations,
@@ -178,6 +196,33 @@ func copyUsage(from, to pcommon.Map) {
 			to.PutInt(pair[1], value.Int())
 		}
 	}
+}
+
+// passthroughCanonicalUsage keeps the ready-made canonical usage counters the
+// wire already carries under their canonical names; the ai.usage.* mappings
+// above land on the same slots with the same values.
+func passthroughCanonicalUsage(from, to pcommon.Map) {
+	for _, key := range []string{"gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens"} {
+		if value, ok := intValue(from, key); ok {
+			to.PutInt(key, value)
+		}
+	}
+}
+
+// intValue reads an attribute as an int64: ints pass through and doubles
+// truncate, matching the coercion semantics used across the other edges.
+func intValue(attrs pcommon.Map, key string) (int64, bool) {
+	value, ok := attrs.Get(key)
+	if !ok {
+		return 0, false
+	}
+	switch value.Type() {
+	case pcommon.ValueTypeInt:
+		return value.Int(), true
+	case pcommon.ValueTypeDouble:
+		return int64(value.Double()), true
+	}
+	return 0, false
 }
 
 func firstString(attrs pcommon.Map, key string) string {

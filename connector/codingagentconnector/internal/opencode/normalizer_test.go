@@ -336,3 +336,53 @@ func TestNormalizerFixtureReplay(t *testing.T) {
 	require.True(t, anySpanNameWithPrefix(names, "chat"), "fixture must contain a chat child")
 	require.True(t, anySpanNameWithPrefix(names, "execute_tool"), "fixture must contain an execute_tool child")
 }
+
+func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "opencode-native-traces.json"))
+	require.NoError(t, err)
+	input, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(data)
+	require.NoError(t, err)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+
+	var chat *ptrace.Span
+	out := sink.all()[0]
+	for i := 0; i < out.ResourceSpans().Len() && chat == nil; i++ {
+		rs := out.ResourceSpans().At(i)
+		for j := 0; j < rs.ScopeSpans().Len() && chat == nil; j++ {
+			spans := rs.ScopeSpans().At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				if strings.HasPrefix(spans.At(k).Name(), "chat") {
+					s := spans.At(k)
+					chat = &s
+					break
+				}
+			}
+		}
+	}
+	require.NotNil(t, chat, "fixture must contain a chat span")
+
+	usageInt := func(key string) int64 {
+		v, ok := chat.Attributes().Get(key)
+		require.True(t, ok, "chat span must carry %s", key)
+		return v.Int()
+	}
+	require.Equal(t, int64(7136), usageInt("gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(48), usageInt("gen_ai.usage.output_tokens"))
+	require.Equal(t, int64(7184), usageInt("gen_ai.usage.total_tokens"))
+	require.Equal(t, int64(7), usageInt("gen_ai.usage.reasoning.output_tokens"))
+	// 3276.662537 ms truncates to whole milliseconds.
+	require.Equal(t, int64(3276), usageInt("gen_ai.response.time_to_first_chunk"))
+
+	for _, dropped := range []string{
+		"ai.usage.totalTokens",
+		"ai.usage.reasoningTokens",
+		"ai.usage.outputTokenDetails.reasoningTokens",
+		"ai.response.msToFirstChunk",
+	} {
+		_, leaked := chat.Attributes().Get(dropped)
+		require.False(t, leaked, "%s must not reach canonical output", dropped)
+	}
+}
