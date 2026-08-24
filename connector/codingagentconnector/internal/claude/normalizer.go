@@ -164,7 +164,8 @@ func remapUsage(attrs pcommon.Map) {
 		}
 	}
 	if n, ok := attrInt(attrs, "ttft_ms"); ok {
-		attrs.PutInt(ttftCanonicalKey, n)
+		// Wire units are integer milliseconds; canonical stores seconds.
+		attrs.PutDouble(ttftCanonicalKey, float64(n)/1000)
 	}
 	if value, ok := attrs.Get("stop_reason"); ok && value.Type() == pcommon.ValueTypeStr {
 		appendFinishReason(attrs, value.Str())

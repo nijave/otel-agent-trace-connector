@@ -97,7 +97,7 @@ appear on every emitted span:
 
 | Canonical key | Status |
 |---|---|
-| `gen_ai.response.time_to_first_chunk` / `gen_ai.server.time_to_first_token` | not provided (the wire carries no durations) |
+| `gen_ai.response.time_to_first_chunk` | not provided (the wire carries no durations) |
 | `gen_ai.response.finish_reasons` | not provided (Cursor logs no model stop reason) |
 | `gen_ai.response.id` / `gen_ai.response.model` | not provided |
 | `gen_ai.usage.total_tokens` / `gen_ai.usage.reasoning.output_tokens` | not provided |

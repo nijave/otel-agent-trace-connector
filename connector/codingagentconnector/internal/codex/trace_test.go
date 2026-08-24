@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -40,7 +41,7 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 	require.Equal(t, int64(2), attrInt(t, chat, "gen_ai.usage.cache_read.input_tokens"))
 	require.Equal(t, int64(15), attrInt(t, chat, "gen_ai.usage.total_tokens"))
 	require.Equal(t, int64(7), attrInt(t, chat, "gen_ai.usage.reasoning.output_tokens"))
-	require.Equal(t, int64(40), attrInt(t, chat, "gen_ai.response.time_to_first_chunk"))
+	require.Equal(t, 0.04, attrDouble(t, chat, "gen_ai.response.time_to_first_chunk"))
 	require.Equal(t, "shell", attrString(t, tool, "gen_ai.tool.name"))
 	require.Equal(t, 0, tool.Events().Len())
 	_, hasPrompt := root.Attributes().Get("prompt")
@@ -137,7 +138,7 @@ func TestBuildTraceSkipsTimingOnlyCompletion(t *testing.T) {
 	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat gpt-test")
 	require.Equal(t, int64(10), attrInt(t, chat, "gen_ai.usage.input_tokens"))
-	require.Equal(t, int64(30), attrInt(t, chat, "gen_ai.response.time_to_first_chunk"))
+	require.Equal(t, 0.03, attrDouble(t, chat, "gen_ai.response.time_to_first_chunk"))
 }
 
 // TestBuildTraceKeepsCompletionWithoutUsage covers a provider that omits token usage
@@ -244,4 +245,12 @@ func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
 	}
 	_, hasVendor := attrs.Get("vendor.thing")
 	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
+}
+
+func attrDouble(t *testing.T, span ptrace.Span, key string) float64 {
+	t.Helper()
+	value, ok := span.Attributes().Get(key)
+	require.True(t, ok)
+	require.Equal(t, pcommon.ValueTypeDouble, value.Type(), "%s must be a double", key)
+	return value.Double()
 }

@@ -49,9 +49,9 @@ gateway tag); they are passed through verbatim rather than normalized.
 | `eventType` | (`coding_agent.source.event`) | dropped (the event name is pinned to `chat-turn`) |
 | `durationMs` | — | dropped (whole-turn duration, not a TTFT source) |
 
-Because `gen_ai.response.time_to_first_chunk` /
-`gen_ai.server.time_to_first_token` need a first-chunk latency and the wire
-only carries whole-turn durations, both are **not provided** for this edge.
+Because `gen_ai.response.time_to_first_chunk` needs a first-chunk latency and
+the wire only carries whole-turn durations, it is **not provided** for this
+edge.
 
 ### tool span → execute_tool
 
@@ -81,7 +81,7 @@ stripped everywhere.
 
 | Canonical key | Status |
 |---|---|
-| `gen_ai.response.time_to_first_chunk` / `gen_ai.server.time_to_first_token` | not provided (only whole-turn durations exist upstream) |
+| `gen_ai.response.time_to_first_chunk` | not provided (only whole-turn durations exist upstream) |
 | `gen_ai.usage.reasoning.output_tokens` | not provided |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
 | `gen_ai.response.model` | not provided |

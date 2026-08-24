@@ -63,8 +63,8 @@ Operation, request, and response:
 - `gen_ai.response.finish_reasons`
 - `gen_ai.response.id`
 - `gen_ai.response.model`
-- `gen_ai.response.time_to_first_chunk`
-- `gen_ai.server.time_to_first_token`
+- `gen_ai.response.time_to_first_chunk` (seconds, double — every edge converts
+  its wire unit to seconds at normalization time)
 
 Agent, conversation, and tool:
 

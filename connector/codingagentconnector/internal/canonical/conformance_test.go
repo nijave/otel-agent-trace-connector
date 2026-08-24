@@ -194,6 +194,7 @@ func TestIsCanonicalAttribute(t *testing.T) {
 		{"gen_ai.usage.reasoning.output_tokens", true},
 		{"gen_ai.usage.cache_read.input_tokens", true},
 		{"gen_ai.usage.reasoning_tokens", false},
+		{"gen_ai.server.time_to_first_token", false},
 		{"ai.usage.inputTokens", false},
 		{"event_loop.cycle_id", false},
 		{"github.copilot.cost", false},

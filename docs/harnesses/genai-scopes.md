@@ -67,7 +67,7 @@ as span events by default; those events are stripped here.
 | `gen_ai.usage.total_tokens` | chat, invoke_agent | `gen_ai.usage.total_tokens` | kept |
 | `gen_ai.usage.cache_read_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_read.input_tokens` | mapped (underscore variant) |
 | `gen_ai.usage.cache_write_input_tokens` | invoke_agent | `gen_ai.usage.cache_creation.input_tokens` | mapped (underscore variant) |
-| `gen_ai.server.time_to_first_token` | chat | `gen_ai.server.time_to_first_token` | kept |
+| `gen_ai.server.time_to_first_token` | chat | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; the legacy key is removed) |
 | `gen_ai.event.start_time` / `end_time` | all | same | kept |
 | `gen_ai.request.model` | chat, invoke_agent | `gen_ai.request.model` | kept |
 | `gen_ai.agent.name` | invoke_agent | `gen_ai.agent.name` | kept |
@@ -121,7 +121,7 @@ Across all four emitters there is no raw source for:
 | `gen_ai.usage.total_tokens` | openai_v2, util-genai, copilot-cli | not provided (Strands provides it) |
 | `gen_ai.usage.cache_creation.input_tokens` | openai_v2, util-genai, copilot-cli | not provided (Strands provides it via the underscore variant) |
 | `gen_ai.usage.reasoning.output_tokens` | openai_v2, util-genai, strands | not provided (Copilot provides it) |
-| `gen_ai.response.time_to_first_chunk` | openai_v2, util-genai | not provided in traces (openai-v2 reports TTFT only as a metric); Strands exposes `gen_ai.server.time_to_first_token` instead; Copilot CLI provides it directly |
+| `gen_ai.response.time_to_first_chunk` | openai_v2, util-genai | not provided in traces (openai-v2 reports TTFT only as a metric); Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) |
 
 ## Connector-written attributes
 
