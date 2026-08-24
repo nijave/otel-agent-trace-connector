@@ -5,6 +5,7 @@ package claude
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/collector/component"
@@ -33,8 +34,9 @@ func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
-// ConsumeTraces renames native claude_code.* spans and strips content from
-// non-native sibling scopes riding in the same claimed group.
+// ConsumeTraces renames native claude_code.* spans, remaps their attributes
+// onto the canonical vocabulary, and strips everything outside that vocabulary
+// from every span in claimed groups — native and sibling scopes alike.
 func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
@@ -52,9 +54,8 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 				span := spans.At(k)
 				if strings.HasPrefix(span.Name(), claudeSpanPrefix) {
 					normalizeClaudeSpan(span, version, resourceSessionID)
-				} else {
-					content.Strip(span)
 				}
+				content.Strip(span)
 			}
 		}
 	}
@@ -110,6 +111,7 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string) {
 		if model != "" {
 			span.Attributes().PutStr("gen_ai.request.model", model)
 		}
+		remapUsage(span.Attributes())
 	case "claude_code.tool":
 		tool := firstSpanString(span, "gen_ai.tool.name", "tool_name")
 		span.SetName("execute_tool" + optionalNameSuffix(tool))
@@ -119,7 +121,89 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string) {
 		if tool != "" {
 			span.Attributes().PutStr("gen_ai.tool.name", tool)
 		}
+	default:
+		// Sub-spans such as claude_code.tool.execution, blocked_on_user, or
+		// hooks are not renamed but must still satisfy the required-key
+		// contract before the strip.
+		attrs := span.Attributes()
+		operation := strings.TrimPrefix(span.Name(), claudeSpanPrefix)
+		if strings.HasPrefix(operation, "tool") {
+			operation = "execute_tool"
+		}
+		attrs.PutStr("gen_ai.operation.name", operation)
+		putClaudeCommon(attrs, version)
 	}
+}
+
+// usageIntKeys maps Claude Code's vendor token counters onto their canonical
+// counterparts.
+var usageIntKeys = [][2]string{
+	{"input_tokens", "gen_ai.usage.input_tokens"},
+	{"output_tokens", "gen_ai.usage.output_tokens"},
+	{"cache_read_tokens", "gen_ai.usage.cache_read.input_tokens"},
+	{"cache_creation_tokens", "gen_ai.usage.cache_creation.input_tokens"},
+}
+
+const (
+	ttftCanonicalKey      = "gen_ai.response.time_to_first_chunk"
+	finishReasonsCanonKey = "gen_ai.response.finish_reasons"
+)
+
+// remapUsage copies Claude Code's usage, latency, and stop-reason attributes
+// onto their canonical keys. Raw keys are not deleted here: content.Strip
+// runs right after normalization and removes everything outside the
+// vocabulary, raw copies included.
+func remapUsage(attrs pcommon.Map) {
+	for _, pair := range usageIntKeys {
+		if n, ok := attrInt(attrs, pair[0]); ok {
+			attrs.PutInt(pair[1], n)
+		}
+	}
+	if n, ok := attrInt(attrs, "ttft_ms"); ok {
+		attrs.PutInt(ttftCanonicalKey, n)
+	}
+	if value, ok := attrs.Get("stop_reason"); ok && value.Type() == pcommon.ValueTypeStr {
+		appendFinishReason(attrs, value.Str())
+	}
+}
+
+// appendFinishReason adds reason to gen_ai.response.finish_reasons unless the
+// slice already carries it; Claude Code also emits that canonical key itself.
+func appendFinishReason(attrs pcommon.Map, reason string) {
+	if reason == "" {
+		return
+	}
+	if existing, ok := attrs.Get(finishReasonsCanonKey); ok && existing.Type() == pcommon.ValueTypeSlice {
+		reasons := existing.Slice()
+		for i := 0; i < reasons.Len(); i++ {
+			if reasons.At(i).Str() == reason {
+				return
+			}
+		}
+		reasons.AppendEmpty().SetStr(reason)
+		return
+	}
+	reasons := attrs.PutEmptySlice(finishReasonsCanonKey)
+	reasons.AppendEmpty().SetStr(reason)
+}
+
+// attrInt coerces an attribute to int64 following the connector-wide
+// semantics: ints pass through, doubles truncate, strings parse as integers.
+func attrInt(attrs pcommon.Map, key string) (int64, bool) {
+	value, ok := attrs.Get(key)
+	if !ok {
+		return 0, false
+	}
+	switch value.Type() {
+	case pcommon.ValueTypeInt:
+		return value.Int(), true
+	case pcommon.ValueTypeDouble:
+		return int64(value.Double()), true
+	case pcommon.ValueTypeStr:
+		parsed, err := strconv.ParseInt(value.Str(), 10, 64)
+		return parsed, err == nil
+	}
+	return 0, false
 }
 
 func putClaudeCommon(attrs pcommon.Map, version string) {
