@@ -6,6 +6,7 @@ package openhands
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 	"sync"
@@ -394,12 +395,100 @@ func TestFragmentWithoutConversationGetsSyntheticRoot(t *testing.T) {
 	roots := findByName(t, out, "invoke_agent openhands")
 	require.Len(t, roots, 1)
 	require.Equal(t, traceA, roots[0].TraceID())
-	sum := sha256.Sum256(append(append([]byte{}, traceA[:]...), []byte(syntheticRootDiscriminator)...))
+	sum := sha256.New()
+	_, _ = sum.Write(traceA[:])
+	_, _ = sum.Write([]byte(syntheticRootDiscriminator))
+	var bounds [16]byte
+	binary.BigEndian.PutUint64(bounds[:8], uint64(pcommon.NewTimestampFromTime(baseTime)))
+	binary.BigEndian.PutUint64(bounds[8:], uint64(pcommon.NewTimestampFromTime(baseTime.Add(time.Second))))
+	_, _ = sum.Write(bounds[:])
 	var want pcommon.SpanID
-	copy(want[:], sum[:8])
+	copy(want[:], sum.Sum(nil)[:8])
 	require.Equal(t, want, roots[0].SpanID())
 	// The synthetic root inherits the conversation id from a child span.
 	require.Equal(t, sessionID, attrString(roots[0], "gen_ai.conversation.id"))
+}
+
+func TestFragmentWindowsGetDistinctStableRoots(t *testing.T) {
+	// Successive partial exports of one conversation share a trace ID but
+	// cover different time windows. Each fragment must get its own root
+	// span ID — identical IDs would collide in backends keying by
+	// (traceID, spanID) — while re-emitting the same fragment reproduces
+	// the same ID.
+	fragment := func(start time.Time) ptrace.Traces {
+		return makeTraces(
+			makeSpan(traceA, spanSpec{
+				name: "agent.step", spanID: "dddddddddddddddd",
+				start: start,
+				end:   start.Add(time.Second),
+				attrs: baseAttrs(),
+			}),
+			makeSpan(traceA, spanSpec{
+				name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM",
+				start: start,
+				end:   start.Add(time.Second),
+			}),
+		)
+	}
+	first := normalizeOne(t, fragment(baseTime))
+	second := normalizeOne(t, fragment(baseTime.Add(time.Minute)))
+	root1 := findByName(t, first, "invoke_agent openhands")[0]
+	root2 := findByName(t, second, "invoke_agent openhands")[0]
+	require.Equal(t, traceA, root1.TraceID())
+	require.Equal(t, traceA, root2.TraceID())
+	require.NotEqual(t, root1.SpanID(), root2.SpanID(),
+		"distinct fragments of one conversation must not share a root span ID")
+
+	rerunFirst := normalizeOne(t, fragment(baseTime))
+	rerunSecond := normalizeOne(t, fragment(baseTime.Add(time.Minute)))
+	require.Equal(t, root1.SpanID(), findByName(t, rerunFirst, "invoke_agent openhands")[0].SpanID(),
+		"re-emitting a fragment must reproduce its root span ID")
+	require.Equal(t, root2.SpanID(), findByName(t, rerunSecond, "invoke_agent openhands")[0].SpanID(),
+		"re-emitting a fragment must reproduce its root span ID")
+}
+
+func TestOutputByteIdenticalAcrossRuns(t *testing.T) {
+	// Attribute insertion order must not depend on Go map iteration: two
+	// runs over one input batch marshal to byte-identical JSON.
+	traces := makeTraces(
+		makeSpan(traceA, spanSpec{
+			name: "agent.step", spanID: "dddddddddddddddd",
+			attrs: map[string]any{
+				attrSessionID:                   sessionID,
+				"lmnr.association.properties.a": "1",
+				"lmnr.association.properties.b": "2",
+				"lmnr.association.properties.c": "3",
+				"lmnr.association.properties.d": "4",
+				"lmnr.association.properties.e": "5",
+			},
+		}),
+		makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM",
+			attrs: map[string]any{
+				"gen_ai.system":             "openai",
+				"gen_ai.request.model":      "m",
+				"gen_ai.usage.input_tokens": int64(7),
+			},
+		}),
+	)
+	want := marshalT(t, normalizeOne(t, traces))
+	for i := 0; i < 10; i++ {
+		require.Equal(t, want, marshalT(t, normalizeOne(t, traces)),
+			"run %d diverged from the first run's bytes", i+2)
+	}
+}
+
+func TestOutputScopeCarriesWireVersion(t *testing.T) {
+	traces := makeTraces(makeSpan(traceA, spanSpec{
+		name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM",
+		attrs: map[string]any{attrSessionID: sessionID, attrIsDelegate: "true"},
+	}))
+	out := normalizeOne(t, traces)
+	require.Equal(t, 1, out.ResourceSpans().Len())
+	scopes := out.ResourceSpans().At(0).ScopeSpans()
+	require.Equal(t, 1, scopes.Len())
+	require.Equal(t, scopeName, scopes.At(0).Scope().Name())
+	require.Equal(t, "0.7.56", scopes.At(0).Scope().Version())
 }
 
 func TestDelegateLinkageDropped(t *testing.T) {
