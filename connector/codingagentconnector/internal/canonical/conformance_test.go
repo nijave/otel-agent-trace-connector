@@ -129,8 +129,10 @@ func TestIsCanonicalAttribute(t *testing.T) {
 		want bool
 	}{
 		{"exception.anything", true},
+		{"exception.type", true},
 		{"gen_ai.usage.input_tokens", true},
 		{"gen_ai.usage.reasoning.output_tokens", true},
+		{"gen_ai.usage.cache_read.input_tokens", true},
 		{"gen_ai.usage.reasoning_tokens", false},
 		{"ai.usage.inputTokens", false},
 		{"event_loop.cycle_id", false},

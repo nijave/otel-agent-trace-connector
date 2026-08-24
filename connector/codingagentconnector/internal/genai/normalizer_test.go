@@ -112,12 +112,10 @@ func TestGenAINormalizerClaimsCopilotScope(t *testing.T) {
 	require.Equal(t, "github.copilot", fixtureAttrString(t, attrs, "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, attrs, "coding_agent.client.name"))
 	require.Equal(t, "1.0.64", fixtureAttrString(t, attrs, "coding_agent.client.version"))
-	cost, ok := attrs.Get("github.copilot.cost")
-	require.True(t, ok, "vendor extras pass through untouched")
-	require.Equal(t, 0.15, cost.Double())
-	aiu, ok := attrs.Get("github.copilot.aiu")
-	require.True(t, ok)
-	require.Equal(t, int64(1), aiu.Int())
+	_, ok := attrs.Get("github.copilot.cost")
+	require.False(t, ok, "vendor extras must not reach canonical output")
+	_, ok = attrs.Get("github.copilot.aiu")
+	require.False(t, ok, "vendor extras must not reach canonical output")
 	_, ok = attrs.Get("gen_ai.system_instructions")
 	require.False(t, ok, "capture-gated content must be stripped")
 
@@ -606,9 +604,8 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 	require.Equal(t, "github.copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.client.name"))
 	require.Equal(t, "11111111-2222-3333-4444-555555555555", fixtureAttrString(t, cliRoot.Attributes(), "gen_ai.conversation.id"))
-	cost, ok := cliRoot.Attributes().Get("github.copilot.cost")
-	require.True(t, ok, "vendor cost passes through")
-	require.Equal(t, 0.15, cost.Double())
+	_, ok = cliRoot.Attributes().Get("github.copilot.cost")
+	require.False(t, ok, "vendor cost must not reach canonical output")
 	var shutdownSeen bool
 	for i := 0; i < cliRoot.Events().Len(); i++ {
 		if cliRoot.Events().At(i).Name() == "github.copilot.session.shutdown" {
@@ -619,7 +616,8 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	chat, ok := names["chat gpt-5.2"]
 	require.True(t, ok)
-	require.Equal(t, "t-1", fixtureAttrString(t, chat.Attributes(), "github.copilot.turn_id"))
+	_, hasTurnID := chat.Attributes().Get("github.copilot.turn_id")
+	require.False(t, hasTurnID, "vendor turn id must not reach canonical output")
 
 	tool, ok := names["execute_tool run_commands"]
 	require.True(t, ok)
@@ -640,7 +638,8 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	hook, ok := names["execute_hook PreToolUse"]
 	require.True(t, ok, "unknown operations keep their wire names")
-	require.Equal(t, "pass", fixtureAttrString(t, hook.Attributes(), "github.copilot.hook.decision"))
+	_, hasHookDecision := hook.Attributes().Get("github.copilot.hook.decision")
+	require.False(t, hasHookDecision, "vendor hook decision must not reach canonical output")
 }
 
 func TestGenAINormalizerSkipsPiGroups(t *testing.T) {
