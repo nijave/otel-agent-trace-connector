@@ -25,36 +25,19 @@ const (
 
 	attrSpanType   = "lmnr.span.type"
 	attrSessionID  = "lmnr.association.properties.session_id"
-	attrUserID     = "lmnr.association.properties.user_id"
-	attrTags       = "lmnr.association.properties.tags"
 	attrMetadata   = "lmnr.association.properties.metadata."
 	attrToolCallID = attrMetadata + "tool_call_id"
 	attrIsDelegate = attrMetadata + "is_delegate"
 
-	tagPrefix = "conversation.tags."
-
-	openhandsTagPrefix = "coding_agent.openhands.tag."
-	openhandsTagsAttr  = "coding_agent.openhands.tags"
-	delegatePrefix     = "coding_agent.openhands.delegate."
-	delegateFlag       = "coding_agent.openhands.delegate"
-
 	syntheticRootDiscriminator = ":synthetic-root"
 )
 
-// delegateKeys are the linkage metadata attributes copied onto delegate
-// roots so severed sibling fragments stay reconcilable downstream.
-var delegateKeys = [][2]string{
-	{attrMetadata + "task_id", delegatePrefix + "task_id"},
-	{attrMetadata + "subagent_type", delegatePrefix + "subagent_type"},
-	{attrMetadata + "parent_session_id", delegatePrefix + "parent_session_id"},
-	{attrToolCallID, delegatePrefix + "tool_call_id"},
-}
-
 // usageKeys remap the Laminar/LiteLLM accounting keys onto the canonical
-// namespace. llm.usage.total_tokens is derivable and never copied.
+// namespace.
 var usageKeys = [][2]string{
 	{"gen_ai.usage.input_tokens", "gen_ai.usage.input_tokens"},
 	{"gen_ai.usage.output_tokens", "gen_ai.usage.output_tokens"},
+	{"llm.usage.total_tokens", "gen_ai.usage.total_tokens"},
 	{"gen_ai.usage.cache_read_input_tokens", "gen_ai.usage.cache_read.input_tokens"},
 	{"gen_ai.usage.cache_creation_input_tokens", "gen_ai.usage.cache_creation.input_tokens"},
 }
@@ -327,9 +310,7 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
 		for _, k := range g.children {
 			k.span.Attributes().Range(func(name string, v pcommon.Value) bool {
 				if _, exists := src.Get(name); !exists &&
-					(strings.HasPrefix(name, attrMetadata) ||
-						strings.HasPrefix(name, "lmnr.association.properties.") ||
-						strings.HasPrefix(name, tagPrefix)) {
+					strings.HasPrefix(name, "lmnr.association.properties.") {
 					v.CopyTo(src.PutEmpty(name))
 				}
 				return true
@@ -341,47 +322,26 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
 	if sid := firstString(src, attrSessionID); sid != "" {
 		attrs.PutStr("gen_ai.conversation.id", sid)
 	}
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	attrs.PutStr("coding_agent.source.scope", scopeName)
-	if uid := firstString(src, attrUserID); uid != "" {
-		attrs.PutStr("enduser.pseudo.id", uid)
-	}
-	if tags, ok := src.Get(attrTags); ok && tags.Type() == pcommon.ValueTypeSlice {
-		dst := attrs.PutEmptySlice(openhandsTagsAttr)
-		for i := 0; i < tags.Slice().Len(); i++ {
-			if v := tags.Slice().At(i); v.Type() == pcommon.ValueTypeStr {
-				dst.AppendEmpty().SetStr(v.Str())
-			}
-		}
-	}
-	keyedTags := map[string]string{}
-	src.Range(func(k string, v pcommon.Value) bool {
-		if strings.HasPrefix(k, tagPrefix) && v.Type() == pcommon.ValueTypeStr {
-			keyedTags[strings.TrimPrefix(k, tagPrefix)] = v.Str()
-		}
-		return true
-	})
-	for k, v := range keyedTags {
-		attrs.PutStr(openhandsTagPrefix+k, v)
-	}
-	if firstString(src, attrIsDelegate) == "true" {
-		attrs.PutBool(delegateFlag, true)
-	}
-	for _, pair := range delegateKeys {
-		if v := firstString(src, pair[0]); v != "" {
-			attrs.PutStr(pair[1], v)
-		}
-	}
 }
 
 func normalizeChat(wire, span ptrace.Span) {
 	attrs := span.Attributes()
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	attrs.PutStr("gen_ai.operation.name", "chat")
+	wireAttrs := wire.Attributes()
+	if systemValue, ok := wireAttrs.Get("gen_ai.system"); ok {
+		// Extract before Put: a map write may invalidate held values.
+		provider := systemValue.Str()
+		if provider != "" {
+			attrs.PutStr("gen_ai.provider.name", provider)
+		}
+	}
 	name := "chat"
-	if model := firstString(wire.Attributes(), "gen_ai.request.model"); model != "" {
+	if model := firstString(wireAttrs, "gen_ai.request.model"); model != "" {
 		attrs.PutStr("gen_ai.request.model", model)
 		name += " " + model
 	}
@@ -395,7 +355,7 @@ func normalizeChat(wire, span ptrace.Span) {
 
 func normalizeTool(wire, span ptrace.Span) {
 	attrs := span.Attributes()
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)
 	attrs.PutStr("gen_ai.operation.name", "execute_tool")
 	tool := wire.Name()

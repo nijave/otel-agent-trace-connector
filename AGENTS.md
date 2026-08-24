@@ -50,6 +50,12 @@ tests cover it — before cleverness, flexibility, or feature breadth.
 - **If you push something broken, fix it** — forward, or by amending and (only
   with explicit, session-scoped authorization) force-pushing. Never leave a
   broken commit on `main`.
+- **Canonical attributes are a closed vocabulary.** Every harness edge must
+  remap ALL raw attributes explicitly into
+  [docs/canonical-attributes.md](docs/canonical-attributes.md); prefix
+  pass-through is not permitted. Any edge wired in `traces.go`/`logs.go`
+  without an entry in
+  `connector/codingagentconnector/conformance_test.go` fails CI.
 
 ## Layout notes
 

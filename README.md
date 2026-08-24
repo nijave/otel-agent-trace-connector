@@ -50,6 +50,12 @@ invoke_agent <agent>
 The raw vendor logs and traces export separately. Normalization never
 copies prompt text, tool arguments, or tool output into generated Codex spans.
 
+Canonical output uses a closed attribute vocabulary documented in
+[docs/canonical-attributes.md](docs/canonical-attributes.md), with a raw →
+canonical mapping matrix per harness under
+[docs/harnesses/](docs/harnesses/) and the upstream research record in
+[docs/harnesses.md](docs/harnesses.md).
+
 ## Supported harnesses
 
 These are the sources the connector sorts today, and what each needs. The

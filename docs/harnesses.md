@@ -10,6 +10,11 @@ Research refreshed 2026-08-20 against primary sources (official docs and the
 harnesses' own source trees). Provider schemas are not stable APIs; treat the
 attribute names below as snapshots, not contracts.
 
+What each supported harness emits after normalization is tracked separately:
+[docs/canonical-attributes.md](canonical-attributes.md) holds the closed
+canonical vocabulary, and [docs/harnesses/](harnesses/) holds one raw →
+canonical mapping matrix per harness.
+
 ## Summary
 
 | Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics | Connector today |

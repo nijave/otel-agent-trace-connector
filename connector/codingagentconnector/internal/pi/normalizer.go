@@ -147,6 +147,15 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 		if provider := firstSpanString(span, "provider"); provider != "" {
 			attrs.PutStr("gen_ai.provider.name", provider)
 		}
+		if stop := firstSpanString(span, "stopReason"); stop != "" {
+			if _, exists := attrs.Get("gen_ai.response.finish_reasons"); !exists {
+				reasons := attrs.PutEmptySlice("gen_ai.response.finish_reasons")
+				reasons.AppendEmpty().SetStr(stop)
+			}
+		}
+		if responseID := firstSpanString(span, "responseId"); responseID != "" {
+			attrs.PutStr("gen_ai.response.id", responseID)
+		}
 		mapUsageCount(attrs, "usage.input", "gen_ai.usage.input_tokens")
 		mapUsageCount(attrs, "usage.output", "gen_ai.usage.output_tokens")
 		mapUsageCount(attrs, "usage.total_tokens", "gen_ai.usage.total_tokens")
@@ -190,7 +199,7 @@ func reparentOrphans(spans ptrace.SpanSlice, children map[pcommon.SpanID]bool) {
 
 func putPiCommon(attrs pcommon.Map, version string) {
 	attrs.PutStr("coding_agent.client.name", "pi")
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	if version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
 	}
@@ -230,12 +239,23 @@ func coerceInt(value pcommon.Value) (int64, bool) {
 
 // stripPiBaggage removes exporter-local metadata that must not reach
 // canonical output: Langfuse observation baggage, the serialized usage object,
-// and diagnostic fields with no canonical counterpart.
+// and the raw wire keys whose canonical counterparts (if any) were already
+// written by normalizePiSpan. Cost has no canonical counterpart and stays
+// dropped.
 var stripKeys = []string{
 	"usage",
 	"usage.cost.total",
 	"stopReason",
 	"status",
+	"model",
+	"provider",
+	"sessionId",
+	"durationMs",
+	"llmGenerationId",
+	"responseId",
+	"eventType",
+	"toolName",
+	"toolCallId",
 }
 
 func stripPiBaggage(span ptrace.Span) {

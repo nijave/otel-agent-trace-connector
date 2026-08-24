@@ -29,10 +29,8 @@ const (
 	// BodyAPIRequest and friends name the OTLP log-record bodies from the
 	// wire reference. Bodies are unprefixed ("api_request", not
 	// "cursor.api.request"); the cursor.* namespace carries attributes only.
-	BodyAPIRequest            = "api_request"
-	BodyAPIError              = "api_error"
-	BodySkillActivated        = "skill_activated"
-	BodyHookExecutionComplete = "hook_execution_complete"
+	BodyAPIRequest = "api_request"
+	BodyAPIError   = "api_error"
 )
 
 // Event is one claimed Cursor log record with the correlation keys the wire
@@ -52,11 +50,6 @@ type Event struct {
 // ("api_correction_<kind>" per the wire reference).
 func IsCorrectionBody(body string) bool {
 	return strings.HasPrefix(body, "api_correction_")
-}
-
-// IsCloudAgentBody reports whether a body belongs to the cloud_agents family.
-func IsCloudAgentBody(body string) bool {
-	return strings.HasPrefix(body, "cloud_agent_")
 }
 
 // ParseRecord claims a record for the Cursor edge when its instrumentation
@@ -156,15 +149,4 @@ func Int64Value(v any) (int64, bool) {
 		return parsed, err == nil
 	}
 	return 0, false
-}
-
-func BoolValue(v any) (bool, bool) {
-	switch value := v.(type) {
-	case bool:
-		return value, true
-	case string:
-		parsed, err := strconv.ParseBool(value)
-		return parsed, err == nil
-	}
-	return false, false
 }

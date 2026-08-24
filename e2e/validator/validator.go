@@ -150,9 +150,6 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 		if root.ParentSpanID() != [8]byte{} {
 			return errors.New("root span unexpectedly has a parent")
 		}
-		if agent == "codex" && !boolAttr(root, "coding_agent.turn.complete") {
-			return errors.New("root turn is incomplete")
-		}
 		if stringAttr(root, "gen_ai.operation.name") != "invoke_agent" {
 			return errors.New("root operation is not invoke_agent")
 		}
@@ -174,7 +171,7 @@ func validateCanonicalTraces(traces ptrace.Traces, runID, agent string) error {
 			if stringAttr(root, "coding_agent.client.name") != "claude_code" {
 				return errors.New("claude client name is missing")
 			}
-			if stringAttr(root, "telemetry.source") != "native" {
+			if stringAttr(root, "coding_agent.source") != "native" {
 				return errors.New("claude telemetry source is not native")
 			}
 		}
@@ -356,7 +353,7 @@ func validateAdhocChat(spans []ptrace.Span, service string) error {
 			lastErr = fmt.Errorf("%s: chat provider is not openai", service)
 			continue
 		}
-		if stringAttr(span, "telemetry.source") != "native" {
+		if stringAttr(span, "coding_agent.source") != "native" {
 			lastErr = fmt.Errorf("%s: telemetry source is not native", service)
 			continue
 		}
@@ -387,7 +384,7 @@ func validateStrandsSpans(spans []ptrace.Span) error {
 		if stringAttr(root, "gen_ai.provider.name") != "strands-agents" {
 			return errors.New("strands provider is not strands-agents")
 		}
-		if stringAttr(root, "telemetry.source") != "native" {
+		if stringAttr(root, "coding_agent.source") != "native" {
 			return errors.New("strands telemetry source is not native")
 		}
 		chat, tool := false, false
@@ -483,7 +480,7 @@ func validateCopilotTree(spans []ptrace.Span, root ptrace.Span) error {
 	if _, ok := root.Attributes().Get("gen_ai.usage.output_tokens"); !ok {
 		return errors.New("copilot root output usage is missing")
 	}
-	if stringAttr(root, "telemetry.source") != "native" {
+	if stringAttr(root, "coding_agent.source") != "native" {
 		return errors.New("telemetry source is not native")
 	}
 	if stringAttr(root, "coding_agent.client.name") == "" {
@@ -552,11 +549,6 @@ func rejectOpenCodeContent(spans []ptrace.Span) error {
 	return nil
 }
 
-func boolAttr(span ptrace.Span, key string) bool {
-	value, ok := span.Attributes().Get(key)
-	return ok && value.Bool()
-}
-
 // allSpans flattens every span across all resource and scope groups, like
 // collectRunSpans without the run-id filter: fixture files carry no run id.
 func allSpans(traces ptrace.Traces) []ptrace.Span {
@@ -619,8 +611,8 @@ func validateCursorRoot(span ptrace.Span) error {
 	if got := stringAttr(span, "gen_ai.conversation.id"); got == "" {
 		return errors.New("cursor root missing gen_ai.conversation.id")
 	}
-	if got := stringAttr(span, "coding_agent.turn.finish_reason"); got == "" {
-		return errors.New("cursor root missing finish reason")
+	if _, ok := span.Attributes().Get("coding_agent.turn.finish_reason"); ok {
+		return errors.New("cursor root must not carry the connector-derived finish reason")
 	}
 	if _, ok := span.Attributes().Get("gen_ai.provider.name"); ok {
 		return errors.New("cursor root must not claim gen_ai.provider.name")

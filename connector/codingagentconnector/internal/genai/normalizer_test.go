@@ -108,16 +108,14 @@ func TestGenAINormalizerClaimsCopilotScope(t *testing.T) {
 	require.Equal(t, "execute_hook PreToolUse", spans.At(2).Name())
 
 	attrs := spans.At(0).Attributes()
-	require.Equal(t, "native", fixtureAttrString(t, attrs, "telemetry.source"))
+	require.Equal(t, "native", fixtureAttrString(t, attrs, "coding_agent.source"))
 	require.Equal(t, "github.copilot", fixtureAttrString(t, attrs, "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, attrs, "coding_agent.client.name"))
 	require.Equal(t, "1.0.64", fixtureAttrString(t, attrs, "coding_agent.client.version"))
-	cost, ok := attrs.Get("github.copilot.cost")
-	require.True(t, ok, "vendor extras pass through untouched")
-	require.Equal(t, 0.15, cost.Double())
-	aiu, ok := attrs.Get("github.copilot.aiu")
-	require.True(t, ok)
-	require.Equal(t, int64(1), aiu.Int())
+	_, ok := attrs.Get("github.copilot.cost")
+	require.False(t, ok, "vendor extras must not reach canonical output")
+	_, ok = attrs.Get("github.copilot.aiu")
+	require.False(t, ok, "vendor extras must not reach canonical output")
 	_, ok = attrs.Get("gen_ai.system_instructions")
 	require.False(t, ok, "capture-gated content must be stripped")
 
@@ -207,7 +205,7 @@ func TestGenAINormalizerNormalizesOpenAIV2LegacyChat(t *testing.T) {
 	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
 	_, hasSystem := out.Attributes().Get("gen_ai.system")
 	require.False(t, hasSystem, "legacy gen_ai.system must not survive")
-	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, out, "coding_agent.source"))
 	require.Equal(t, "opentelemetry.instrumentation.openai_v2",
 		attrString(t, out, "coding_agent.source.scope"))
 	require.Equal(t, "adhoc-agent", attrString(t, out, "coding_agent.client.name"))
@@ -301,6 +299,74 @@ func TestGenAINormalizerMapsLegacyTokensWhenCurrentAbsent(t *testing.T) {
 	require.Equal(t, "chat", out.Name())
 }
 
+func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("gen_ai.usage.cache_read_input_tokens", 42)
+	span.Attributes().PutInt("gen_ai.usage.cache_write_input_tokens", 7)
+	// Unknown usage families are vendor keys and must not survive.
+	span.Attributes().PutInt("gen_ai.usage.vendor_extras", 3)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
+	require.Equal(t, int64(42), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
+		"gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(7), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
+		"gen_ai.usage.cache_creation.input_tokens"))
+	for _, key := range []string{
+		"gen_ai.usage.cache_read_input_tokens",
+		"gen_ai.usage.cache_write_input_tokens",
+		"gen_ai.usage.vendor_extras",
+	} {
+		_, exists := out.Get(key)
+		require.False(t, exists, "underscore/unknown usage key %q survived", key)
+	}
+}
+
+func TestGenAINormalizerKeepsDottedUsageOverUnderscoreVariant(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("gen_ai.usage.cache_read.input_tokens", 100)
+	span.Attributes().PutInt("gen_ai.usage.cache_read_input_tokens", 42)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, int64(100), attrInt(t, out, "gen_ai.usage.cache_read.input_tokens"),
+		"the dotted semconv key wins over the underscore variant")
+	_, exists := out.Attributes().Get("gen_ai.usage.cache_read_input_tokens")
+	require.False(t, exists)
+}
+
+func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "github.copilot", "invoke_agent copilot-cli")
+	span.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	span.Attributes().PutStr("enduser.pseudo.id", "user-42")
+	span.Attributes().PutDouble("github.copilot.cost", 0.15)
+	span.Attributes().PutStr("github.copilot.turn_id", "turn-1")
+	span.Attributes().PutStr("event_loop.cycle_id", "cycle-1")
+	span.Attributes().PutInt("gen_ai.usage.reasoning.output_tokens", 25)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	for _, key := range []string{
+		"enduser.pseudo.id",
+		"github.copilot.cost",
+		"github.copilot.turn_id",
+		"event_loop.cycle_id",
+	} {
+		_, exists := out.Attributes().Get(key)
+		require.False(t, exists, "vendor key %q must not reach canonical output", key)
+	}
+	require.Equal(t, int64(25), attrInt(t, out, "gen_ai.usage.reasoning.output_tokens"),
+		"the reasoning-token key survives normalization")
+}
+
 func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
@@ -316,7 +382,7 @@ func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "run", outApp.Name())
-	_, tagged := outApp.Attributes().Get("telemetry.source")
+	_, tagged := outApp.Attributes().Get("coding_agent.source")
 	require.False(t, tagged, "spans outside matched scopes stay untouched")
 }
 
@@ -329,7 +395,7 @@ func TestGenAINormalizerPassesThroughInvokeWorkflow(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "invoke_workflow my-flow", out.Name(), "non-canonical operations keep their emitted names")
-	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, out, "coding_agent.source"))
 	require.Equal(t, "opentelemetry.util.genai.handler",
 		attrString(t, out, "coding_agent.source.scope"))
 }
@@ -533,7 +599,7 @@ func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
 						require.False(t, content.IsContentEvent(span.Events().At(e).Name()),
 							"content event %q survived", span.Events().At(e).Name())
 					}
-					if value, ok := span.Attributes().Get("telemetry.source"); ok && value.Str() == "native" {
+					if value, ok := span.Attributes().Get("coding_agent.source"); ok && value.Str() == "native" {
 						_, hasScope := span.Attributes().Get("coding_agent.source.scope")
 						require.True(t, hasScope, "provenance scope missing on %q", span.Name())
 					}
@@ -602,13 +668,12 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	cliRoot, ok := names["invoke_agent copilot-cli"]
 	require.True(t, ok, "CLI invoke_agent root renames by agent name")
-	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "telemetry.source"))
+	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source"))
 	require.Equal(t, "github.copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source.scope"))
 	require.Equal(t, "github-copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.client.name"))
 	require.Equal(t, "11111111-2222-3333-4444-555555555555", fixtureAttrString(t, cliRoot.Attributes(), "gen_ai.conversation.id"))
-	cost, ok := cliRoot.Attributes().Get("github.copilot.cost")
-	require.True(t, ok, "vendor cost passes through")
-	require.Equal(t, 0.15, cost.Double())
+	_, ok = cliRoot.Attributes().Get("github.copilot.cost")
+	require.False(t, ok, "vendor cost must not reach canonical output")
 	var shutdownSeen bool
 	for i := 0; i < cliRoot.Events().Len(); i++ {
 		if cliRoot.Events().At(i).Name() == "github.copilot.session.shutdown" {
@@ -619,7 +684,8 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	chat, ok := names["chat gpt-5.2"]
 	require.True(t, ok)
-	require.Equal(t, "t-1", fixtureAttrString(t, chat.Attributes(), "github.copilot.turn_id"))
+	_, hasTurnID := chat.Attributes().Get("github.copilot.turn_id")
+	require.False(t, hasTurnID, "vendor turn id must not reach canonical output")
 
 	tool, ok := names["execute_tool run_commands"]
 	require.True(t, ok)
@@ -640,7 +706,8 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 
 	hook, ok := names["execute_hook PreToolUse"]
 	require.True(t, ok, "unknown operations keep their wire names")
-	require.Equal(t, "pass", fixtureAttrString(t, hook.Attributes(), "github.copilot.hook.decision"))
+	_, hasHookDecision := hook.Attributes().Get("github.copilot.hook.decision")
+	require.False(t, hasHookDecision, "vendor hook decision must not reach canonical output")
 }
 
 func TestGenAINormalizerSkipsPiGroups(t *testing.T) {

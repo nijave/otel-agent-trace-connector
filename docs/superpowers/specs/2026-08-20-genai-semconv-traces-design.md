@@ -174,7 +174,7 @@ Attribute handling on normalized spans:
   (same for output/completion). It removes legacy
   `prompt_tokens`/`completion_tokens` keys from canonical output either
   way. `total_tokens` and cache read/write counts pass through unchanged.
-- Provenance: `telemetry.source=native`,
+- Provenance: `coding_agent.source=native`,
   `coding_agent.source.scope=<original instrumentation scope name>` (the
   GenAI analog of `coding_agent.source.event`),
   `coding_agent.client.name` from resource `service.name` and

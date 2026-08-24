@@ -11,6 +11,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 )
 
 type traceSink struct {
@@ -106,20 +108,72 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "anthropic", attrString(t, root, "gen_ai.provider.name"))
-	require.Equal(t, "native", attrString(t, root, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, root, "coding_agent.source"))
 	require.Equal(t, "2.1.207", attrString(t, root, "coding_agent.client.version"))
-	// The prompt is redacted at the source and must stay redacted after normalization.
-	require.Equal(t, "<REDACTED>", attrString(t, root, "user_prompt"))
+	// The prompt is redacted at the source and dropped from canonical output
+	// entirely: raw leftovers never survive the strip.
+	_, exists := root.Attributes().Get("user_prompt")
+	require.False(t, exists, "raw user_prompt must not reach canonical output")
+	for _, raw := range []string{"session.id", "user.id", "terminal.type", "span.type", "interaction.sequence", "interaction.duration_ms"} {
+		_, exists := root.Attributes().Get(raw)
+		require.False(t, exists, "raw %s must not reach canonical output", raw)
+	}
 
 	chat := findSpan(t, all, "chat glm-4.7")
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
 	require.Equal(t, "chat", attrString(t, chat, "gen_ai.operation.name"))
 	require.Equal(t, "glm-4.7", attrString(t, chat, "gen_ai.request.model"))
+	// Totals span both llm_request spans in the capture.
+	usage := map[string]int64{
+		"gen_ai.usage.input_tokens":                477,
+		"gen_ai.usage.output_tokens":               166,
+		"gen_ai.usage.cache_read.input_tokens":     1216,
+		"gen_ai.usage.cache_creation.input_tokens": 0,
+	}
+	for key, want := range usage {
+		total := int64(0)
+		for i := 0; i < all.Len(); i++ {
+			if value, ok := all.At(i).Attributes().Get(key); ok {
+				total += value.Int()
+			}
+		}
+		require.Equal(t, want, total, "%s must be remapped onto every chat span", key)
+	}
+	// Batches can arrive in any order, so latency/reason assertions collect
+	// across every chat span instead of pinning one.
+	var ttfts []int64
+	finishReasons := map[string]bool{}
+	for i := 0; i < all.Len(); i++ {
+		span := all.At(i)
+		if value, ok := span.Attributes().Get("gen_ai.response.time_to_first_chunk"); ok {
+			ttfts = append(ttfts, value.Int())
+		}
+		if value, ok := span.Attributes().Get("gen_ai.response.finish_reasons"); ok {
+			for j := 0; j < value.Slice().Len(); j++ {
+				finishReasons[value.Slice().At(j).Str()] = true
+			}
+		}
+	}
+	require.ElementsMatch(t, []int64{2188, 3084, 1197}, ttfts)
+	require.True(t, finishReasons["end_turn"] && finishReasons["tool_use"], "stop reasons must be remapped: %v", finishReasons)
+	for _, raw := range []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
+		"ttft_ms", "stop_reason", "model", "duration_ms", "speed", "llm_request.context", "attempt",
+		"success", "gen_ai.system"} {
+		_, exists := chat.Attributes().Get(raw)
+		require.False(t, exists, "raw %s must not reach canonical output", raw)
+	}
 
 	tool := findSpan(t, all, "execute_tool Bash")
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())
 	require.Equal(t, "execute_tool", attrString(t, tool, "gen_ai.operation.name"))
 	require.Equal(t, "Bash", attrString(t, tool, "gen_ai.tool.name"))
+	assertRequiredKeys(t, tool)
+
+	execution := findSpan(t, all, "claude_code.tool.execution")
+	require.Equal(t, "execute_tool", attrString(t, execution, "gen_ai.operation.name"))
+	assertRequiredKeys(t, execution)
+	blocked := findSpan(t, all, "claude_code.tool.blocked_on_user")
+	assertRequiredKeys(t, blocked)
 }
 
 // TestClaudeTraceNormalizerKeepsSubToolOnlyBatch covers an export carrying only tool
@@ -138,8 +192,12 @@ func TestClaudeTraceNormalizerKeepsSubToolOnlyBatch(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	require.Equal(t, 2, all.Len(), "sub-tool spans must survive a batch of their own")
-	// Sub-spans pass through unchanged; only the three canonical types are renamed.
-	require.Equal(t, pcommon.SpanID{4}, findSpan(t, all, "claude_code.tool.execution").ParentSpanID())
+	// Sub-spans are not renamed but still carry the required canonical keys.
+	outExecution := findSpan(t, all, "claude_code.tool.execution")
+	require.Equal(t, pcommon.SpanID{4}, outExecution.ParentSpanID())
+	assertRequiredKeys(t, outExecution)
+	blockedOut := findSpan(t, all, "claude_code.tool.blocked_on_user")
+	assertRequiredKeys(t, blockedOut)
 }
 
 // TestClaudeTraceNormalizerStripsContentFromUnmatchedScopesInClaimedGroups
@@ -215,4 +273,12 @@ func attrString(t *testing.T, span ptrace.Span, key string) string {
 	value, ok := span.Attributes().Get(key)
 	require.True(t, ok)
 	return value.Str()
+}
+
+func assertRequiredKeys(t *testing.T, span ptrace.Span) {
+	t.Helper()
+	for _, key := range canonical.RequiredKeys() {
+		_, ok := span.Attributes().Get(key)
+		require.True(t, ok, "%s must carry required %s", span.Name(), key)
+	}
 }

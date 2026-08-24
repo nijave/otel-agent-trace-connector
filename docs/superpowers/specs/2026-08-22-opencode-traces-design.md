@@ -104,7 +104,7 @@ canonical output:
 | `ai.toolCall` | `execute_tool {tool}` | `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name` ← `ai.toolCall.name`; `ai.toolCall.id` has no canonical home in the current vocabulary and is dropped rather than inventing a key |
 
 All renamed spans also get the common marker set used by the other edges:
-`telemetry.source=native`, `coding_agent.client.name=opencode`,
+`coding_agent.source=native`, `coding_agent.client.name=opencode`,
 `coding_agent.client.version` ← `service.version` resource attribute, and
 `coding_agent.source.event` ← original wire span name (mirrors
 `internal/claude`). `gen_ai.provider.name` is left absent when the wire has

@@ -127,7 +127,7 @@ and attributes:
 
 - `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name=openhands`,
   `gen_ai.conversation.id` from the session-id association property.
-- `coding_agent.client.name=openhands`, `telemetry.source=native`,
+- `coding_agent.client.name=openhands`, `coding_agent.source=native`,
   `coding_agent.source.scope=lmnr.tracer`. No client version exists on the
   wire; none is invented.
 - `enduser.pseudo.id` from the user-id association property when present.

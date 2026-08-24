@@ -23,7 +23,7 @@
 - Scope allowlist, verbatim from the spec (prefix matching):
   `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
   `opentelemetry.instrumentation.genai`, `strands.telemetry`.
-- Provenance values, verbatim: `telemetry.source=native`,
+- Provenance values, verbatim: `coding_agent.source=native`,
   `coding_agent.source.scope=<instrumentation scope name>`,
   `coding_agent.client.name=<resource service.name>`,
   `coding_agent.client.version=<resource service.version>`.
@@ -373,7 +373,7 @@ func TestGenAINormalizerNormalizesOpenAIV2LegacyChat(t *testing.T) {
 	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
 	_, hasSystem := out.Attributes().Get("gen_ai.system")
 	require.False(t, hasSystem, "legacy gen_ai.system must not survive")
-	require.Equal(t, "native", attrString(t, out, "telemetry.source"))
+	require.Equal(t, "native", attrString(t, out, "coding_agent.source"))
 	require.Equal(t, "opentelemetry.instrumentation.openai_v2",
 		attrString(t, out, "coding_agent.source.scope"))
 	require.Equal(t, "adhoc-agent", attrString(t, out, "coding_agent.client.name"))
@@ -479,7 +479,7 @@ func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	outApp := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "run", outApp.Name())
-	_, tagged := outApp.Attributes().Get("telemetry.source")
+	_, tagged := outApp.Attributes().Get("coding_agent.source")
 	require.False(t, tagged, "spans outside matched scopes stay untouched")
 }
 
@@ -560,7 +560,7 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 	attrs.Remove("gen_ai.system")
 	mapLegacyTokens(attrs, "gen_ai.usage.prompt_tokens", "gen_ai.usage.input_tokens")
 	mapLegacyTokens(attrs, "gen_ai.usage.completion_tokens", "gen_ai.usage.output_tokens")
-	attrs.PutStr("telemetry.source", "native")
+	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.source.scope", scopeName)
 	if serviceName != "" {
 		attrs.PutStr("coding_agent.client.name", serviceName)
@@ -978,7 +978,7 @@ func TestValidateOpenAIAdhocCanonical(t *testing.T) {
 		span.SetName("chat glm-4.7")
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
 		span.Attributes().PutStr("gen_ai.provider.name", "openai")
-		span.Attributes().PutStr("telemetry.source", "native")
+		span.Attributes().PutStr("coding_agent.source", "native")
 		span.Attributes().PutStr("coding_agent.client.name", service)
 		span.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
 		span.Attributes().PutInt("gen_ai.usage.output_tokens", 6)
@@ -1004,7 +1004,7 @@ func TestValidateStrandsCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	root.SetSpanID(pcommon.SpanID{2})
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	chat := spans.AppendEmpty()
 	chat.SetName("chat glm-4.7")
@@ -1128,7 +1128,7 @@ func validateAdhocChat(spans []ptrace.Span, service string) error {
 			lastErr = fmt.Errorf("%s: chat provider is not openai", service)
 			continue
 		}
-		if stringAttr(span, "telemetry.source") != "native" {
+		if stringAttr(span, "coding_agent.source") != "native" {
 			lastErr = fmt.Errorf("%s: telemetry source is not native", service)
 			continue
 		}
@@ -1159,7 +1159,7 @@ func validateStrandsSpans(spans []ptrace.Span) error {
 		if stringAttr(root, "gen_ai.provider.name") != "strands-agents" {
 			return errors.New("strands provider is not strands-agents")
 		}
-		if stringAttr(root, "telemetry.source") != "native" {
+		if stringAttr(root, "coding_agent.source") != "native" {
 			return errors.New("strands telemetry source is not native")
 		}
 		chat, tool := false, false

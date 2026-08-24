@@ -21,7 +21,7 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 			// Equal timestamps and later batch order exercise order-independent
 			// decision/result correlation without placing an event after span end.
 			testEvent("codex.tool_decision", base.Add(3*time.Second), map[string]any{"tool_name": "shell", "call_id": "call-1", "decision": "approved", "source": "Config"}),
-			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "input_token_count": "12", "output_token_count": int64(3), "cached_token_count": 2}),
+			testEvent("codex.sse_event", base.Add(4*time.Second), map[string]any{"event.kind": "response.completed", "model": "gpt-test", "input_token_count": "12", "output_token_count": int64(3), "cached_token_count": 2, "tool_token_count": int64(15), "reasoning_token_count": 7, "ttft_ms": int64(40)}),
 		},
 	}
 
@@ -35,17 +35,26 @@ func TestBuildTraceProducesCanonicalTree(t *testing.T) {
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())
 	require.Equal(t, root.TraceID(), chat.TraceID())
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
-	require.Equal(t, int64(12), attrInt(t, root, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(12), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(3), attrInt(t, chat, "gen_ai.usage.output_tokens"))
+	require.Equal(t, int64(2), attrInt(t, chat, "gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(15), attrInt(t, chat, "gen_ai.usage.total_tokens"))
+	require.Equal(t, int64(7), attrInt(t, chat, "gen_ai.usage.reasoning.output_tokens"))
+	require.Equal(t, int64(40), attrInt(t, chat, "gen_ai.response.time_to_first_chunk"))
 	require.Equal(t, "shell", attrString(t, tool, "gen_ai.tool.name"))
-	require.Equal(t, 1, tool.Events().Len())
-	require.Equal(t, "codex.tool_decision", tool.Events().At(0).Name())
+	require.Equal(t, 0, tool.Events().Len())
 	_, hasPrompt := root.Attributes().Get("prompt")
 	_, hasArguments := tool.Attributes().Get("arguments")
 	_, hasOutput := tool.Attributes().Get("output")
+	_, hasRootUsage := root.Attributes().Get("gen_ai.usage.input_tokens")
+	_, hasToolCallID := tool.Attributes().Get("coding_agent.tool.call_id")
+	_, hasToolSuccess := tool.Attributes().Get("coding_agent.tool.success")
 	require.False(t, hasPrompt)
 	require.False(t, hasArguments)
 	require.False(t, hasOutput)
+	require.False(t, hasRootUsage, "usage lives on chat spans only")
+	require.False(t, hasToolCallID)
+	require.False(t, hasToolSuccess)
 	require.Equal(t, "codex_cli_rs", traces.ResourceSpans().At(0).Resource().Attributes().AsRaw()["service.name"])
 }
 
@@ -64,10 +73,13 @@ func TestBuildTraceMarksTimeout(t *testing.T) {
 		events: []agentEvent{testEvent("codex.api_request", base, nil)}}
 	root := mustBuildTrace(t, turn, "timeout").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
-	require.False(t, attrBool(t, root, "coding_agent.turn.complete"))
+	_, hasComplete := root.Attributes().Get("coding_agent.turn.complete")
+	require.False(t, hasComplete)
 }
 
-func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
+// TestUsageStaysOnChatSpansNotRoot pins that each model call's token counts land
+// on its own chat span and the invoke_agent root carries no usage of its own.
+func TestUsageStaysOnChatSpansNotRoot(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{
 		conversationID: "c", first: base, last: base.Add(2 * time.Second), promptSeen: true,
@@ -77,9 +89,17 @@ func TestBuildTraceAggregatesUsageAcrossModelCalls(t *testing.T) {
 			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{"event.kind": "response.completed", "input_token_count": 7, "output_token_count": 3}),
 		},
 	}
-	root := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	require.Equal(t, int64(12), attrInt(t, root, "gen_ai.usage.input_tokens"))
-	require.Equal(t, int64(5), attrInt(t, root, "gen_ai.usage.output_tokens"))
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	first := findSpan(t, spans, "chat")
+	second := spans.At(2)
+	require.Equal(t, int64(5), attrInt(t, first, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(7), attrInt(t, second, "gen_ai.usage.input_tokens"))
+	for i := range spans.Len() {
+		_, ok := spans.At(i).Attributes().Get("gen_ai.usage.input_tokens")
+		if spans.At(i).Name() != "chat" {
+			require.False(t, ok, "span %q must not carry usage", spans.At(i).Name())
+		}
+	}
 }
 
 func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
@@ -117,6 +137,7 @@ func TestBuildTraceSkipsTimingOnlyCompletion(t *testing.T) {
 	require.Equal(t, 2, traces.SpanCount()) // root + a single chat span
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat gpt-test")
 	require.Equal(t, int64(10), attrInt(t, chat, "gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(30), attrInt(t, chat, "gen_ai.response.time_to_first_chunk"))
 }
 
 // TestBuildTraceKeepsCompletionWithoutUsage covers a provider that omits token usage
@@ -139,40 +160,6 @@ func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat glm-test")
 	_, ok := chat.Attributes().Get("gen_ai.usage.input_tokens")
 	require.False(t, ok, "no usage was reported, so none should be invented")
-}
-
-// TestBuildTraceRecordsConfiguredModelProvider covers the provider label Codex
-// reports on codex.conversation_starts. It stays in a coding_agent.* attribute
-// rather than gen_ai.provider.name because the value is the operator-authored
-// provider name from config.toml, not a known provider identifier.
-func TestBuildTraceRecordsConfiguredModelProvider(t *testing.T) {
-	base := time.Unix(100, 0)
-	turn := &turnState{
-		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
-		events: []agentEvent{
-			testEvent("codex.conversation_starts", base, map[string]any{"provider_name": "z.ai via responses-proxy"}),
-			testEvent("codex.user_prompt", base.Add(time.Millisecond), nil),
-		},
-	}
-	root := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	require.Equal(t, "z.ai via responses-proxy", attrString(t, root, "coding_agent.model_provider"))
-	// The wire protocol Codex speaks is still OpenAI's, and that is what this means.
-	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))
-}
-
-// TestBuildTraceOmitsModelProviderWithoutConversationStart pins the known limit of
-// the above: Codex emits codex.conversation_starts once per session, so a later turn
-// in the same session has no provider label and must omit the attribute rather than
-// invent or inherit one.
-func TestBuildTraceOmitsModelProviderWithoutConversationStart(t *testing.T) {
-	base := time.Unix(100, 0)
-	turn := &turnState{
-		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
-		events: []agentEvent{testEvent("codex.user_prompt", base, nil)},
-	}
-	root := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	_, ok := root.Attributes().Get("coding_agent.model_provider")
-	require.False(t, ok, "a turn with no conversation_starts must not claim a provider")
 }
 
 func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
@@ -238,10 +225,4 @@ func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
 	value, ok := span.Attributes().Get(key)
 	require.True(t, ok)
 	return value.Int()
-}
-func attrBool(t *testing.T, span ptrace.Span, key string) bool {
-	t.Helper()
-	value, ok := span.Attributes().Get(key)
-	require.True(t, ok)
-	return value.Bool()
 }

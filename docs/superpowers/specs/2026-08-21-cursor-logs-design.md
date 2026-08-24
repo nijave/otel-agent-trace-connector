@@ -210,7 +210,7 @@ timestamp.
   provider and the connector does not guess one, consistent with the existing
   stance in `docs/design.md`.
 - `coding_agent.client.name=cursor`, `coding_agent.client.version` from
-  resource `service.version` when present, `telemetry.source=normalized`.
+  resource `service.version` when present, `coding_agent.source=normalized`.
 - `coding_agent.cursor.surface`, `coding_agent.cursor.entrypoint`,
   `coding_agent.cursor.team.id`, `coding_agent.cursor.user.id` from the
   resource. Opaque team-scoped ints and enums with operational value;

@@ -93,7 +93,7 @@ Provenance attributes, present on every span:
 
 | Attribute | Value |
 | --- | --- |
-| `telemetry.source` | `native` (traces edges) or `normalized` (Codex and Cursor logs edge). |
+| `coding_agent.source` | `native` (traces edges) or `normalized` (Codex and Cursor logs edge). |
 | `coding_agent.client.name` | The agent name, for example `claude_code`. |
 | `coding_agent.client.version` | Client version, when the source reports one. |
 | `coding_agent.source.scope` | Instrumentation scope name, on scope-claimed groups. |

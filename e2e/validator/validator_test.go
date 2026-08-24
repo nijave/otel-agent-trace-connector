@@ -72,33 +72,6 @@ func TestValidateTracesRejectsSensitiveAttrOnGrandchild(t *testing.T) {
 // TestValidateTracesAcceptsRunWithAnIncompleteTurn covers a run that contains more
 // than one root: the Codex connector emits a root per turn, and a turn finalized by
 // inactivity timeout is incomplete by design. Validation must keep looking rather
-// than failing on whichever candidate comes first.
-func TestValidateTracesAcceptsRunWithAnIncompleteTurn(t *testing.T) {
-	// The timed-out turn is emitted first, so it is the first candidate the root
-	// scan encounters -- exactly the ordering that made this fail before.
-	incompleteOnly := ptrace.NewTraces()
-	rs := incompleteOnly.ResourceSpans().AppendEmpty()
-	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
-	incomplete := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
-	incomplete.SetName("invoke_agent codex")
-	incomplete.SetTraceID(pcommon.TraceID{7})
-	incomplete.SetSpanID(pcommon.SpanID{8})
-	incomplete.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
-	incomplete.Attributes().PutStr("gen_ai.conversation.id", "conversation-1")
-	incomplete.Attributes().PutBool("coding_agent.turn.complete", false)
-
-	// A run holding only the incomplete turn still fails, and says why.
-	require.ErrorContains(t, validateTraces(incompleteOnly, "run-1"), "incomplete")
-
-	// Append the complete turn after it: the incomplete root must not veto the run.
-	traces := ptrace.NewTraces()
-	incompleteOnly.ResourceSpans().CopyTo(traces.ResourceSpans())
-	validTraces("run-1").ResourceSpans().MoveAndAppendTo(traces.ResourceSpans())
-	spans := collectRunSpans(traces, "run-1")
-	require.False(t, boolAttr(spans[0], "coding_agent.turn.complete"), "incomplete root must be first")
-	require.NoError(t, validateTraces(traces, "run-1"))
-}
-
 func TestValidateClaudeRawAndCanonicalTraces(t *testing.T) {
 	raw := validClaudeTraces("run-claude", false)
 	canonical := validClaudeTraces("run-claude", true)
@@ -152,7 +125,7 @@ func TestValidateOpenAIAdhocCanonical(t *testing.T) {
 		span.SetName("chat glm-4.7")
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
 		span.Attributes().PutStr("gen_ai.provider.name", "openai")
-		span.Attributes().PutStr("telemetry.source", "native")
+		span.Attributes().PutStr("coding_agent.source", "native")
 		span.Attributes().PutStr("coding_agent.client.name", service)
 		span.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
 		span.Attributes().PutInt("gen_ai.usage.output_tokens", 6)
@@ -183,7 +156,7 @@ func TestValidatePiCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.agent.name", "pi")
 	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	chat := spans.AppendEmpty()
 	chat.SetName("chat glm-4.7")
@@ -220,7 +193,7 @@ func TestValidateStrandsCanonicalRequiresTreeWithoutContent(t *testing.T) {
 	root.SetSpanID(pcommon.SpanID{2})
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	chat := spans.AppendEmpty()
 	chat.SetName("chat glm-4.7")
@@ -257,7 +230,7 @@ func TestValidateStrandsCanonicalSkipsFailedChatAttempts(t *testing.T) {
 	root.SetSpanID(pcommon.SpanID{2})
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.provider.name", "strands-agents")
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 
 	tool := spans.AppendEmpty()
 	tool.SetName("execute_tool get_marker")
@@ -377,7 +350,7 @@ func validCopilotTraces() ptrace.Traces {
 	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
 	root.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
 	root.Attributes().PutInt("gen_ai.usage.output_tokens", 7)
-	root.Attributes().PutStr("telemetry.source", "native")
+	root.Attributes().PutStr("coding_agent.source", "native")
 	root.Attributes().PutStr("coding_agent.client.name", "github-copilot")
 
 	chat := spans.AppendEmpty()
@@ -416,7 +389,6 @@ func validTraces(runID string) ptrace.Traces {
 	root.SetSpanID(rootID)
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 	root.Attributes().PutStr("gen_ai.conversation.id", "conversation-1")
-	root.Attributes().PutBool("coding_agent.turn.complete", true)
 	chat := spans.AppendEmpty()
 	chat.SetName("chat test")
 	chat.SetTraceID(traceID)
@@ -458,7 +430,7 @@ func validClaudeTraces(runID string, canonical bool) ptrace.Traces {
 		root.Attributes().PutStr("gen_ai.conversation.id", "session-claude")
 		root.Attributes().PutStr("gen_ai.provider.name", "anthropic")
 		root.Attributes().PutStr("coding_agent.client.name", "claude_code")
-		root.Attributes().PutStr("telemetry.source", "native")
+		root.Attributes().PutStr("coding_agent.source", "native")
 		llm.SetName("chat claude-haiku")
 		llm.Attributes().PutStr("gen_ai.operation.name", "chat")
 		llm.Attributes().PutStr("gen_ai.request.model", "claude-haiku")
