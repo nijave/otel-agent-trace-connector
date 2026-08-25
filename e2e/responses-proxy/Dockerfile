@@ -4,7 +4,8 @@
 # This service exists only for the Codex e2e stack; it is not part of the
 # connector or any production path.
 #
-# Built from a pinned commit on our fork rather than the crates.io release. Two
+# Downloaded as a prebuilt binary from a pinned release of our fork rather than
+# compiled from crates.io source here. The fork commit is required because two
 # gaps make the published 0.1.3 unusable for capturing faithful Codex telemetry
 # against z.ai:
 #   1. 0.1.3 emits data-only SSE frames (no `event:` name line), so Codex logs
@@ -14,27 +15,34 @@
 #      (choices empty); z.ai attaches usage to the final content chunk, so usage
 #      was dropped. Our fork patch captures usage from any chunk that carries it.
 # Fork branch: fix/usage-capture-on-content-chunk (PR-able back upstream).
-FROM rust:1-slim-trixie AS build
+#
+# The tag names one immutable fork commit; the fork's release workflow compiled
+# it once with a locked Cargo.lock, so the whole dependency graph stays pinned.
+# Pulling the finished binary replaces a ~140s Rust compile on every CI run with
+# a checksum-verified download. Refresh the tag and sha256 together when the fork
+# commit changes.
+FROM debian:trixie-slim AS fetch
+ARG RESPONSES_PROXY_TAG=prebuilt-d2b5d04
+ARG RESPONSES_PROXY_TARGET=x86_64-unknown-linux-gnu
+ARG RESPONSES_PROXY_SHA256=f9f8a4f56a6650647db1d023330052d82f11d89f64e3428b5c66c85ec5514c75
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-        git ca-certificates \
+        ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-ARG RESPONSES_PROXY_REF=d2b5d0456ec00d30dbd718c0b6c95804c0aba5cc
-# --locked builds against the committed Cargo.lock, so the pinned rev pins the whole
-# dependency graph; without it a new semver-compatible crate release can break this
-# build with no change on our side.
-RUN cargo install responses-proxy \
-        --git https://github.com/nijave/responses-proxy.git \
-        --rev "${RESPONSES_PROXY_REF}" \
-        --locked \
-        --root /out
+RUN base="responses-proxy-${RESPONSES_PROXY_TAG}-${RESPONSES_PROXY_TARGET}" \
+    && curl --fail --location --silent --show-error \
+        --output /tmp/responses-proxy.tar.gz \
+        "https://github.com/nijave/responses-proxy/releases/download/${RESPONSES_PROXY_TAG}/${base}.tar.gz" \
+    && echo "${RESPONSES_PROXY_SHA256}  /tmp/responses-proxy.tar.gz" | sha256sum --check --strict \
+    && tar -xzf /tmp/responses-proxy.tar.gz -C /tmp \
+    && install -D -m 0755 "/tmp/${base}/responses-proxy" /out/bin/responses-proxy
 
 FROM debian:trixie-slim
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/bin/responses-proxy /usr/local/bin/responses-proxy
+COPY --from=fetch /out/bin/responses-proxy /usr/local/bin/responses-proxy
 COPY config.yaml /app/config.yaml
 WORKDIR /app
 EXPOSE 3000
