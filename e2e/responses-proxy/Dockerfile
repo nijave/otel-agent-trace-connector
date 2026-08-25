@@ -24,7 +24,7 @@
 FROM debian:trixie-slim AS fetch
 ARG RESPONSES_PROXY_TAG=prebuilt-d2b5d04
 ARG RESPONSES_PROXY_TARGET=x86_64-unknown-linux-gnu
-ARG RESPONSES_PROXY_SHA256=f9f8a4f56a6650647db1d023330052d82f11d89f64e3428b5c66c85ec5514c75
+ARG RESPONSES_PROXY_SHA256=f14a17a2ec41aefd7f1d81597c5817ae4ee4172d8d92316e86c714fcbed4ac06
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates curl \
