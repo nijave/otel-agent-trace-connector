@@ -23,21 +23,35 @@ Event-to-span mapping:
 
 ## Attribute matrix
 
-Status is one of **mapped** (remapped onto the canonical key), **dropped**
+Status is one of **mapped** (remapped onto the canonical key; a parenthetical
+names any wire condition under which the key is absent), **dropped**
 (deliberately removed from canonical output; recoverable only via a raw
 preservation pipeline branch), or **not provided** (the source never emits a
 raw key that would map there).
+
+Usage is provider-dependent: the connector copies only the counts the
+provider returned. A `response.completed` from a provider that reports no
+usage (e.g. a chat-completions stream without `stream_options.include_usage`)
+still builds its chat span, with no `gen_ai.usage.*` keys at all.
+
+Wire drift (audited 2026-08-25 against upstream HEAD): newer Codex builds
+add `cache_write_token_count`, optional `service_tier`, and
+`model_reasoning_effort` to `response.completed`, and detail fields to
+`codex.tool_result` (`tool_namespace`, `tool_result_seq`, `output_truncated`,
+length/count and origin fields). The pinned research and e2e (0.144.1)
+predate these; the builder copies only the keys in this matrix, so the new
+fields stay out of canonical output until mapped.
 
 ### codex.sse_event (response.completed) → chat
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `input_token_count` | `gen_ai.usage.input_tokens` | mapped |
-| `output_token_count` | `gen_ai.usage.output_tokens` | mapped |
-| `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped |
-| `tool_token_count` | `gen_ai.usage.total_tokens` | mapped |
-| `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
-| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; from the usage-bearing `response.completed`; also the discriminator that skips the timing-only duplicate) |
+| `input_token_count` | `gen_ai.usage.input_tokens` | mapped (absent when the provider reports no usage) |
+| `output_token_count` | `gen_ai.usage.output_tokens` | mapped (absent when the provider reports no usage) |
+| `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the provider's usage carries no cached-token field) |
+| `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (absent when the provider's usage carries no total; the connector never computes one) |
+| `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
+| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
@@ -47,8 +61,8 @@ raw key that would map there).
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `tool_name` | `gen_ai.tool.name` | mapped (also names the span) |
-| `success` = false | span Status = Error, message `tool execution failed` | mapped to status (the boolean attribute itself is dropped) |
+| `tool_name` | `gen_ai.tool.name` | mapped (also names the span; a record without `tool_name` gets the literal `unknown`) |
+| `success` = false | span Status = Error, message `tool execution failed` | mapped to status (the connector drops the boolean attribute itself) |
 | `call_id` | — | dropped (the connector does not emit `gen_ai.tool.call.id`) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `arguments`, `output` | — | dropped (tool content, stripped at parse time) |
@@ -66,7 +80,7 @@ raw key that would map there).
 | `coding_agent.turn.complete` | — | dropped (derivable from the metric label above) |
 | `coding_agent.turn.prompt_observed` | — | dropped |
 | `coding_agent.turn.events_truncated` | — | dropped (still exposed via `otelcol_coding_agent_turns_truncated`) |
-| aggregate usage (turn-total token counts on the root) | — | dropped (usage lives on chat spans only; sum them for turn totals) |
+| turn-total usage (summed token counts on the root) | — | dropped (usage lives on chat spans only; sum them for turn totals) |
 | root-event `error.message` copy | — | dropped (root events keep their names only) |
 | root-event `event.kind` copy | — | dropped |
 
@@ -79,15 +93,15 @@ remaining purpose.
 
 ## Connector-written attributes
 
-These are written by the connector itself, not remapped from raw keys, and
-appear on every emitted span:
+The connector writes these itself rather than remapping them from raw keys;
+they appear on every emitted span except where noted:
 
 - `coding_agent.source` = `normalized`
 - `coding_agent.client.name` = `codex`
 - `coding_agent.source.event` = originating `codex.*` event name
 - `gen_ai.operation.name` = `invoke_agent` / `chat` / `execute_tool`
-- `gen_ai.provider.name` = `openai` (the wire protocol)
-- `gen_ai.agent.name` = `codex` (invoke_agent root)
+- `gen_ai.provider.name` = `openai` (the wire protocol; invoke_agent root and chat spans only — execute_tool spans never carry it)
+- `gen_ai.agent.name` = `codex` (invoke_agent root only)
 
 ## Canonical keys with no Codex source
 
@@ -95,7 +109,7 @@ appear on every emitted span:
 |---|---|
 | `gen_ai.response.finish_reasons` | not provided (Codex logs no model stop reason; see the dropped connector-derived `finish_reason` above) |
 | `gen_ai.response.id` / `gen_ai.response.model` | not provided |
-| `gen_ai.usage.cache_creation.input_tokens` | not provided |
+| `gen_ai.usage.cache_creation.input_tokens` | not provided by the pinned wire (upstream HEAD adds `cache_write_token_count`; unmapped until the pin bumps) |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `gen_ai.tool.call.id` / `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |

@@ -20,26 +20,31 @@ Span-name renames:
 
 ## Attribute matrix
 
-Status is one of **mapped** (remapped onto the canonical key), **dropped**
+Status is one of **mapped** (remapped onto the canonical key; a parenthetical
+names any wire condition under which the key is absent), **dropped**
 (deliberately removed from canonical output; recoverable only via a raw
 preservation pipeline branch), or **not provided** (the source never emits a
 raw key that would map there).
+
+Usage is per step and never zero-filled: an in-flight or failed step carries
+no `ai.usage.*` on the wire, so its canonical span emits with no
+`gen_ai.usage.*` keys at all.
 
 ### ai.streamText → invoke_agent
 
 | Raw key | Canonical key | Status |
 |---|---|---|
 | `session.id` | `gen_ai.conversation.id` | mapped (resource `session.id` as fallback) |
-| `ai.usage.inputTokens` | `gen_ai.usage.input_tokens` | mapped |
-| `ai.usage.outputTokens` | `gen_ai.usage.output_tokens` | mapped |
-| `ai.usage.cachedInputTokens` | `gen_ai.usage.cache_read.input_tokens` | mapped |
-| `ai.usage.totalTokens` | `gen_ai.usage.total_tokens` | mapped |
-| `ai.model.provider` | `gen_ai.provider.name` | mapped |
+| `ai.usage.inputTokens` | `gen_ai.usage.input_tokens` | mapped (absent for in-flight or failed steps) |
+| `ai.usage.outputTokens` | `gen_ai.usage.output_tokens` | mapped (same condition) |
+| `ai.usage.cachedInputTokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (same condition) |
+| `ai.usage.totalTokens` | `gen_ai.usage.total_tokens` | mapped (same condition) |
+| `ai.model.provider` | `gen_ai.provider.name` | mapped (only when non-empty; an empty wire provider stays absent) |
 | `ai.model.id` | — | dropped (`gen_ai.request.model` carries the model) |
 | `ai.settings.maxOutputTokens` | — | dropped |
 | `ai.settings.maxRetries` | — | dropped |
 | `ai.telemetry.functionId` | — | dropped |
-| `ai.telemetry.metadata.sessionId` | — | dropped (`session.id` is used instead) |
+| `ai.telemetry.metadata.sessionId` | — | dropped (the edge reads `session.id` instead) |
 | `ai.telemetry.metadata.userId` | — | dropped |
 | `ai.request.headers.*` | — | dropped |
 | `ai.prompt`, `ai.prompt.messages`, `ai.prompt.tools`, `ai.prompt.toolChoice` | — | dropped (prompt content) |
@@ -57,18 +62,18 @@ raw key that would map there).
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `gen_ai.request.model` | `gen_ai.request.model` | kept (already canonical) |
-| `ai.model.provider` | `gen_ai.provider.name` | mapped |
-| `ai.usage.inputTokens` | `gen_ai.usage.input_tokens` | mapped |
-| `ai.usage.outputTokens` | `gen_ai.usage.output_tokens` | mapped |
-| `ai.usage.cachedInputTokens` | `gen_ai.usage.cache_read.input_tokens` | mapped |
-| `ai.usage.totalTokens` | `gen_ai.usage.total_tokens` | mapped |
-| `ai.usage.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (falls back to `ai.usage.outputTokenDetails.reasoningTokens` when absent) |
+| `gen_ai.request.model` | `gen_ai.request.model` | kept (already canonical; a doStream without it emits as bare `chat` with no key) |
+| `ai.model.provider` | `gen_ai.provider.name` | mapped (only when non-empty; an empty wire provider stays absent) |
+| `ai.usage.inputTokens` | `gen_ai.usage.input_tokens` | mapped (absent for in-flight or failed steps) |
+| `ai.usage.outputTokens` | `gen_ai.usage.output_tokens` | mapped (same condition) |
+| `ai.usage.cachedInputTokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (same condition) |
+| `ai.usage.totalTokens` | `gen_ai.usage.total_tokens` | mapped (same condition) |
+| `ai.usage.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (falls back to `ai.usage.outputTokenDetails.reasoningTokens`; absent for non-reasoning steps) |
 | `ai.usage.outputTokenDetails.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (fallback source only) |
 | `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | same key | kept (already canonical passthrough) |
-| `ai.response.msToFirstChunk` | `gen_ai.response.time_to_first_chunk` | mapped (fractional ms → seconds, double) |
+| `ai.response.msToFirstChunk` | `gen_ai.response.time_to_first_chunk` | mapped (fractional ms → seconds, double; absent when the request errors before the first chunk) |
 | `session.id` | `gen_ai.conversation.id` | not mapped on this span (the parent `invoke_agent` carries it) |
-| `gen_ai.system` | — | dropped (`gen_ai.provider.name` is remapped from `ai.model.provider`) |
+| `gen_ai.system` | — | dropped (`gen_ai.provider.name` comes from `ai.model.provider` instead) |
 | `gen_ai.request.max_tokens` | — | dropped today; candidate future mapping (`ai.settings.maxOutputTokens` duplicates it) |
 | `gen_ai.response.finish_reasons` | — | dropped (deliberate: wire value reflects the SDK's finish event, not a normalized stop-reason set) |
 | `gen_ai.response.id` | — | dropped (deliberate) |
@@ -90,14 +95,15 @@ raw key that would map there).
 | `ai.usage.inputTokenDetails.cacheReadTokens` | — | dropped (redundant duplicate of `ai.usage.cachedInputTokens`) |
 | `ai.usage.outputTokenDetails.textTokens` | — | dropped |
 
-Span events (`ai.stream.firstChunk`, `ai.stream.finish`) are dropped;
+The edge drops the span events (`ai.stream.firstChunk`, `ai.stream.finish`);
 first-chunk latency survives via the `msToFirstChunk` mapping above.
 
 ### ai.toolCall → execute_tool
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `ai.toolCall.name` | `gen_ai.tool.name` | mapped |
+| `ai.toolCall.name` | `gen_ai.tool.name` | mapped (a call without it emits as bare `execute_tool` with no key) |
+| `ai.model.provider` | `gen_ai.provider.name` | mapped (only when non-empty; the pinned capture's tool spans carry no provider) |
 | `ai.toolCall.id` | `gen_ai.tool.call.id` | not mapped today (dropped) |
 | `ai.toolCall.args` | — | dropped (tool input content) |
 | `ai.toolCall.result` | — | dropped (tool output content) |
@@ -106,14 +112,14 @@ first-chunk latency survives via the `msToFirstChunk` mapping above.
 
 ## Connector-written attributes
 
-These are written by the connector itself, not remapped from raw keys:
+The connector writes these itself rather than remapping them from raw keys:
 
 - `coding_agent.source` = `native`
 - `coding_agent.client.name` = `opencode`
-- `coding_agent.client.version` = resource `service.version`
+- `coding_agent.client.version` = resource `service.version` (when present)
 - `coding_agent.source.event` = original `ai.*` span name on all claimed spans
 - `gen_ai.operation.name` = `invoke_agent` / `chat` / `execute_tool`
-- `gen_ai.agent.name` = `opencode` (invoke_agent root)
+- `gen_ai.agent.name` = `opencode` (invoke_agent root only)
 
 ## Canonical keys with no OpenCode source
 

@@ -3,13 +3,34 @@
 This document records the connector's current design and updates with the
 implementation rather than serving as a future proposal.
 
+## Use case
+
+The connector serves organization-level visibility into AI coding-agent
+usage while respecting developer privacy. Token usage, and the cost
+computed from it, is the primary measurement; performance (turn duration,
+time-to-first-token, error status) comes second. Privacy constrains both:
+canonical output answers what agent activity consumed and how it performed
+without carrying what developers typed, what tools received, or what tools
+returned.
+
+Cost computation happens downstream. Canonical spans carry token counts,
+including the cache and reasoning splits that price differently, and
+pricing joins happen at query time, so historical traces stay correct as
+provider prices change. The
+[canonical attribute vocabulary](canonical-attributes.md) scopes itself to
+exactly this: usage, cost, and performance, uniform across harnesses.
+
 ## Goals
 
-1. Produce a comparable trace per user turn across Codex and Claude Code.
+1. Produce a comparable trace per user turn — or the nearest boundary each
+   wire supports — across all supported harnesses, so usage and
+   performance questions span agents in one query.
 2. Keep vendor telemetry in a parallel raw pipeline.
 3. Keep provider mappings explicit and testable.
 4. Bound memory and latency under missing, duplicated, delayed, or malformed events.
-5. Avoid collecting prompt or tool content by default.
+5. Keep prompt text, tool arguments, and tool output out of canonical
+   output unconditionally; recommended harness defaults keep them off the
+   wire entirely.
 6. Package the component independently and compose it into a pinned Collector
    distribution with OCB.
 
@@ -58,10 +79,10 @@ two modes:
 - Experimental mode (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`,
   semconv v1.37.0): the `opentelemetry-util-genai` package emits the spans
   (scope `opentelemetry.util.genai.handler`), uses
-  `gen_ai.provider.name=openai`, adds Responses API coverage
-  (`openai.api.type`), and can place content on span attributes
-  (`gen_ai.input.messages`, `gen_ai.output.messages`) when capture is
-  enabled. `opentelemetry-util-genai` also exposes inference, embedding,
+  `gen_ai.provider.name=openai`, adds Responses API coverage (a
+  `fetch_response` operation), and can place content on span attributes
+  (`gen_ai.input.messages`, `gen_ai.output.messages`) under the
+  `span_only`/`event_only`/`span_and_event` capture modes. `opentelemetry-util-genai` also exposes inference, embedding,
   tool, workflow, and local/remote agent invocations, so hand-rolled agents
   can emit the full `invoke_agent`/`chat`/`execute_tool` vocabulary through
   the same scope.
@@ -84,9 +105,12 @@ attributes. Redaction is opt-in via the
 `gen_ai_unredacted_attributes=<list>` token; absent the token, Strands
 exports content unredacted.
 
-Upstream is renaming the package to
-`opentelemetry-instrumentation-genai-openai` in the new
-`opentelemetry-python-genai` repository, which will change its scope name.
+Upstream renamed the package to `opentelemetry-instrumentation-genai-openai`
+in the new `opentelemetry-python-genai` repository (verified 2026-08-24; the
+old package now receives only security patches). The rename did not change
+the wire scope: the renamed package still emits through
+`opentelemetry.util.genai.handler`, which the existing
+`opentelemetry.util.genai` prefix already claims.
 
 Research reflects the Cursor wire reference as of 2026-08-21.
 
@@ -210,8 +234,8 @@ when either targets a third-party endpoint. Neither agent logs the upstream
 host, so a proxied setup does not distinguish from a direct one.
 
 Codex's wire carries a `provider_name` display label on
-`codex.conversation_starts`, but it is an operator-authored label, not an
-identifier, and appears only once per session — so the connector drops it
+`codex.conversation_starts`, but the label holds operator-authored text, not
+an identifier, and appears only once per session — so the connector drops it
 rather than mapping it anywhere (see [docs/harnesses/codex.md](harnesses/codex.md)).
 Each edge sets `gen_ai.provider.name` itself from what the source reliably
 reports (`openai` for Codex; nothing for edges whose wire never names a
@@ -262,7 +286,7 @@ batch; source timestamps still drive span timing.
 - Each `codex.tool_result` becomes an `execute_tool` span; a failed result
   (`success=false`) sets the span's OTel error status without carrying a
   decision attribute.
-- `codex.tool_decision` records are dropped from canonical output.
+- The builder drops `codex.tool_decision` records from canonical output.
 - Other safe operational events become root span events (names and
   timestamps only).
 - Usage lives on chat spans only; the root carries no usage of its own.
@@ -332,7 +356,8 @@ replay-proof reads dedupe on trace ID.
 
 Records sort by record timestamp before feeding state (the wire guarantees no
 ordering). Timestamp resolution: record timestamp, else observed timestamp,
-else wall clock with `coding_agent.timestamp.inferred=true`, matching Codex.
+else wall clock, matching Codex; the internal inferred-timestamp marker
+never reaches emitted spans.
 
 ### Bounds
 
@@ -354,10 +379,11 @@ Root `invoke_agent cursor`: start = first event timestamp, end = last event
 timestamp. It carries `gen_ai.operation.name=invoke_agent`,
 `gen_ai.agent.name=cursor`, `gen_ai.conversation.id`,
 `coding_agent.client.name=cursor`, `coding_agent.client.version` from
-resource `service.version`, and `coding_agent.source=normalized`. Cursor's
+resource `service.version` when present (desktop/CLI clients only; cloud
+agents carry none), and `coding_agent.source=normalized`. Cursor's
 vendor detail — resource-side surface/entrypoint/team/user attributes,
-billable flags, correction kinds, skill/hook/cloud-agent payloads — is
-dropped from canonical output; the full raw → canonical matrix lives in
+billable flags, correction kinds, skill/hook/cloud-agent payloads — stays
+out of canonical output; the full raw → canonical matrix lives in
 [docs/harnesses/cursor.md](harnesses/cursor.md).
 
 The root never sets `gen_ai.provider.name`: the wire never names the upstream
@@ -375,8 +401,9 @@ In-burst `cursor.usage_event.id` joins: an `api_error` sharing a request's
 usage-event id sets that chat span's status to Error; an `api_correction`
 attaching to the same id becomes an event on that span. When the counterpart
 arrived in an earlier, already-finalized burst — expected, since corrections
-trail their requests — the event lands on the root instead. The join key is
-consumed internally and does not survive onto emitted spans or events.
+trail their requests — the event lands on the root instead. The join key
+serves only internal correlation and does not survive onto emitted spans or
+events.
 
 Root span events hold every non-chat record the chat spans did not consume:
 unjoined `api_error` and `api_correction` records, `skill_activated`,
@@ -437,7 +464,7 @@ Scope-name matching, evaluated per scope-spans block:
 | --- | --- |
 | `opentelemetry.instrumentation.openai_v2` (prefix) | openai-v2 default mode |
 | `opentelemetry.util.genai` (prefix) | openai-v2 experimental mode and direct util-genai users |
-| `opentelemetry.instrumentation.genai` (prefix) | the announced upstream package rename |
+| `opentelemetry.instrumentation.genai` (prefix) | reserved: no shipping package emits this scope — the renamed genai-openai package kept the util-genai scope |
 | `strands.telemetry` (prefix) | Strands Agents SDK built-in tracer |
 
 Within a claimed group, the normalizer rewrites a span only when its scope
@@ -533,7 +560,7 @@ edge, so stripping matters for Strands defaults and openai-v2 experimental
 ## OpenCode normalization
 
 A third stateless package, `internal/opencode`, joins the traces edge. It
-claims a resource group iff any instrumentation scope is named exactly
+claims a resource group iff any instrumentation scope bears the exact name
 `opencode`. The match is exact rather than prefixed on purpose: `opencode.*`
 scopes belong to plugins and `com.opencode` to the Kilo fork — separate
 surfaces this edge must not claim — and exact naming keeps its claims disjoint
@@ -541,7 +568,7 @@ from the Claude and GenAI rules by construction.
 
 Inside a claimed group, three Vercel AI SDK span names rewrite in place and
 everything else — the internal Effect instrumentation making up most of the
-wire — is dropped from canonical output. `ai.streamText`, one per model step,
+wire — stays out of canonical output. `ai.streamText`, one per model step,
 becomes `invoke_agent opencode`, carrying `gen_ai.conversation.id` mapped from
 `session.id` on the span (falling back to the resource) and the step's usage
 totals: `ai.usage.inputTokens`/`outputTokens` map onto
@@ -557,8 +584,9 @@ other edges (`coding_agent.source=native`, `coding_agent.client.name`,
 original wire name), so content such as `ai.response.text` and
 `ai.toolCall.args`/`result` has no path into canonical output — removal is
 structural allowlisting, not a denylist that fails open as the wire evolves.
-The root carries no `gen_ai.provider.name`: the wire's `gen_ai.system` holds
-the SDK name, not a provider.
+Every claimed span copies a non-empty `ai.model.provider` onto
+`gen_ai.provider.name`; the wire's `gen_ai.system` holds the SDK name, not a
+provider, and drops.
 
 Granularity is per step: every `ai.streamText` span becomes its own canonical
 root inside one long-lived per-session trace — the wire keeps one TraceId per
@@ -577,13 +605,13 @@ The Pi coding agent has no native OTLP export; the
 [`@amaster.ai/pi-telemetry`](https://www.npmjs.com/package/@amaster.ai/pi-telemetry)
 extension (Apache-2.0) fills that gap. It emits OTLP/HTTP traces only — no
 logs or metrics — scoped to user-input boundaries: one trace per user
-message, containing every agentic iteration and tool call until the reply is
-published.
+message, containing every agentic iteration and tool call until the reply
+goes out.
 
-Groups are claimed by instrumentation-scope prefix
-(`@amaster.ai/pi-telemetry`) or the resource `telemetry.sdk.name` attribute.
-The wire shape was pinned from a live capture on 2026-08-22 (extension 0.1.9,
-pi 0.84.2), which ships as the golden fixture:
+The edge claims groups by instrumentation-scope prefix
+(`@amaster.ai/pi-telemetry`) or by the resource `telemetry.sdk.name`
+attribute. A live capture on 2026-08-22 (extension 0.1.9, pi 0.84.2) pinned
+the wire shape and ships as the golden fixture:
 
 | Native span | Canonical name | Notes |
 | --- | --- | --- |
@@ -597,20 +625,21 @@ pi 0.84.2), which ships as the golden fixture:
   `chat-turn` span they ran under, but a batch can arrive without the turn it
   references, and the pinned capture shows successive iterations reusing one
   turn span ID (so their children all attach to its first occurrence). Each
-  `chat-turn` therefore becomes a root with any dangling parent cleared,
+  `chat-turn` becomes a root with any dangling parent cleared,
   matching the plan-level rule that turn grouping relies on
   `gen_ai.conversation.id` rather than a long-lived session root. Orphaned
   `chat`/`execute_tool` spans re-attach to the first agent root in their
   batch; children arriving in a batch of their own become roots, mirroring
   the Claude Code sub-batch behavior.
-- Exporter-local metadata never reaches canonical output: `langfuse.*`
-  attribute baggage, the serialized `usage` JSON object (the flat per-field
-  source keys are renamed instead), cost totals, and diagnostic `status` /
-  `stopReason` fields are dropped. Payload capture stays off by default in
-  the extension (`includePayloads`).
-- Unknown span names pass through unchanged with Langfuse baggage stripped,
-  so future extension events surface visibly instead of being silently
-  dropped.
+- Exporter-local metadata never reaches canonical output: the edge drops
+  `langfuse.*` attribute baggage, the serialized `usage` JSON object
+  (renaming the flat per-field source keys instead), cost totals, and
+  diagnostic `status` / `stopReason` fields. Payload capture stays off by
+  default in the extension (`includePayloads`).
+- Unknown span names match no native shape, so they drop from canonical
+  output along with non-native sibling spans; the raw pipelines preserve
+  them, and a future extension event needs a new mapping here to reach
+  canonical output.
 - The extension's own telemetry contract differs from Pi's first-party
   `@earendil-works/pi-telemetry` package, which defines vocabulary but ships
   no exporter. Supporting the third-party extension here reflects what
@@ -643,24 +672,23 @@ group drops from canonical output, but still widens the root's time
 envelope for its trace ID. Kept children reparent under the root; a tool
 call and its result share a `tool_call_id` and dedupe to one span. The
 root maps `gen_ai.conversation.id` from
-`lmnr.association.properties.session_id`, copies `user_id` onto
-`enduser.pseudo.id`, and preserves conversation tags under
-`coding_agent.openhands.*`.
+`lmnr.association.properties.session_id`; `user_id` and conversation tags
+are vendor detail outside the vocabulary and stay in the raw pipeline.
 
 The normalizer stays stateless like the OpenCode edge: mid-conversation
 exports can arrive before their `conversation` root ends, so such fragments
 get a synthetic root whose span ID derives from SHA-256 of the trace ID.
 Delegates run their own sessions, so they arrive as sibling traces sharing
-the conversation id rather than as descendants; each delegate root carries
-`coding_agent.openhands.delegate=true` plus linkage attributes (task id,
-subagent type, parent session id, tool call id) so downstream consumers can
-reconstruct the delegation.
+the conversation id rather than as descendants. The delegate metadata flag
+serves claiming only, and the linkage detail (task id, subagent type,
+parent session id, tool call id) stays in the raw pipeline; downstream
+consumers reconstruct delegation through the shared conversation id.
 
 ### Usage and content
 
-Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*`,
-including cache read/creation input tokens; `llm.usage.total_tokens` is
-derivable and never copied. Streamed completions carry no token usage
+Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*` —
+input, output, total, and cache read/creation input tokens — each key only
+when the wire carries it. Streamed completions carry no token usage
 upstream, so a chat span may carry no usage at all. The wire reports no
 cost and no reasoning-token counts on spans.
 
@@ -838,19 +866,19 @@ make stale-output detection ineffective.
   config flag behind which the connector synthesizes `invoke_agent` parents is
   future work if rootless traces prove common).
 - Configurable scope allowlist extension.
-- Upstream scope names are pre-1.0 and will change with the announced package
-  rename; prefix matching mitigates, and rerun fixtures and E2Es before
-  bumping pins.
+- Upstream scope names are pre-1.0. The announced package rename landed
+  without a scope change (the renamed genai-openai package kept the
+  util-genai scope); rerun fixtures and E2Es before bumping pins.
 - Cursor: implemented as native-log synthesis with fixture-based validation.
   A live Cursor E2E stays blocked on Enterprise-only server-side configuration
   (no Enterprise access available); tool-call children would need Cursor to
   log tool calls with a conversation id — today they are metrics without
   correlation IDs. The wire surface was re-verified against the 2026-08-22
-  reference: all ten log events are covered, `cloud_agent.mcp_auth_error`
+  reference: the edge covers all ten log events, `cloud_agent.mcp_auth_error`
   maps its server attribute onto the root event, and correction records
   annotate the joined chat span with the correction kind instead of dropping
   its token totals (deliberate; downstream decides billing semantics).
-- Copilot native traces are handled via the GenAI edge. A live Copilot E2E
+- The GenAI edge handles Copilot native traces. A live Copilot E2E
   stack runs the CLI against a BYOK provider (no GitHub auth or subscription
   needed): provider type/base URL/key/model arrive via `COPILOT_PROVIDER_*`
   environment variables. A renamed producer scope (`COPILOT_OTEL_SOURCE_NAME`)
