@@ -151,8 +151,9 @@ Claude logic lives in `internal/claude`; GenAI normalizer logic lives in
 This prevents provider schemas and correlation helpers from becoming accidental
 public API.
 
-This organization drew from the v0.156.0 Contrib count, routing,
-spanmetrics, and servicegraph connectors. The implementation follows their
+This organization drew from the Contrib count, routing,
+spanmetrics, and servicegraph connectors current when this connector was
+first built. The implementation follows their
 common patterns: a small `NewFactory` with type and per-signal stability sourced
 from the generated `metadata` package, typed default configuration, Collector
 `Validate`, factory/config conformance and generated lifecycle tests, `goleak`

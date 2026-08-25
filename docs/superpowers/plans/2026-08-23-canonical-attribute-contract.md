@@ -147,6 +147,9 @@ git commit -m "canonical: add attribute-contract vocabulary and conformance runn
 
 ### Task 2: Rename `coding_agent.source` → `coding_agent.source`
 
+> Correction (2026-08-24): the heading is a template substitution failure; the
+> change actually performed was `telemetry.source` → `coding_agent.source`.
+
 **Files:**
 - Modify: all seven normalizers under `connector/codingagentconnector/internal/{claude,codex,cursor,genai,opencode,openhands,pi}/` (the `PutStr("coding_agent.source", ...)` sites)
 - Modify: `connector/codingagentconnector/internal/content/content.go` (allowlist entry)

@@ -350,10 +350,10 @@
     <h3>distribution + deployment files <span class="badge gen">packaging</span></h3>
     <p class="sub">What turns the component into a running Collector</p>
     <ul class="types">
-      <li><code>builder-config.yaml</code> &#8212; pins OCB v0.156.0; otlp receiver, batch + resource processors, otlp/awss3/file exporters, file_storage + healthcheck extensions, this connector.</li>
+      <li><code>builder-config.yaml</code> &#8212; pins OCB v0.159.0; otlp receiver, batch + resource processors, otlp/awss3/file exporters, file_storage + healthcheck extensions, this connector.</li>
       <li><code>Dockerfile</code> &#8212; two-stage build; OCB generates the dist main package, ships a single binary plus bundled config; EXPOSE 4317 / 4318 / 13133.</li>
       <li><code>collector-config.yaml</code> &#8212; e2e shape: three pipelines (logs/vendor, traces/native, traces/canonical) with file exporters.</li>
-      <li><code>compose.e2e-*.yaml</code> stacks &#8212; seven opt-in live harness stacks (codex, claude, openai-adhoc, strands, opencode, pi, copilot) sharing the collector via <code>include</code>; each defines only its own agent service, parameterized by env.</li>
+      <li><code>compose.e2e-*.yaml</code> stacks &#8212; eight opt-in live harness stacks (codex, claude, openai-adhoc, strands, opencode, pi, copilot, openhands) sharing the collector via <code>include</code>; each defines only its own agent service, parameterized by env.</li>
       <li><code>examples/otelcol-s3.yaml</code> &#8212; production reference: one S3 prefix per stream, persistent sending queues on local file_storage with fsync, bounded queue size and database size.</li>
       <li>State contract &#8212; correlation state is memory-only; exporter queues persist completed batches but not active turns. See docs/multi-instance-ha.md for the N-instance analysis.</li>
     </ul>

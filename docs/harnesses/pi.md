@@ -24,7 +24,7 @@ raw key that would map there).
 | Raw key | Canonical key | Status |
 |---|---|---|
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
-| `provider` | `gen_ai.provider.name` | mapped |
+| `provider` | `gen_ai.provider.name` | mapped (verbatim; deliberate divergence — the value is operator-authored and often a gateway/harness label, unlike the recognized-provider values other edges emit) |
 | `usage.input` | `gen_ai.usage.input_tokens` | mapped |
 | `usage.output` | `gen_ai.usage.output_tokens` | mapped |
 | `usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped |

@@ -11,13 +11,17 @@ Adding a stack is automatic in CI and `scripts/check.sh` (globs cover the
 scripts, run.sh files, compose files, and Dockerfiles); the only per-stack
 work is its credential-split assertion.
 
-The stacks use one of two model APIs. Claude Code runs against z.ai's
-Anthropic-compatible endpoint (the Copilot CLI stack defaults there too). The
-rest speak an OpenAI Completions-compatible API pointed at either
+The stacks use one of three model APIs. Claude Code runs against z.ai's
+Anthropic-compatible endpoint (the Copilot CLI stack defaults there too).
+The OpenAI Completions-compatible stacks point at either
 [z.ai](https://docs.z.ai/)'s GLM models or OpenCode Go (the OpenCode stack).
+OpenHands reaches its model directly through litellm and defaults to
+Anthropic's API with model `anthropic/claude-sonnet-4-5`.
 Nothing about the connector is provider-specific — these tests simply connect
 to whatever each stack points at. A single z.ai API key covers every stack
-except OpenCode, which needs its own `OPENCODE_API_KEY`.
+except OpenCode (which needs its own `OPENCODE_API_KEY`) and OpenHands (whose
+`LLM_API_KEY` must be valid for whatever provider `LLM_MODEL` names — an
+Anthropic API key by default).
 
 ## Live Codex E2E
 
@@ -298,3 +302,49 @@ documented schema, and real captures are how that fixture gets refreshed
 against actual CLI output. After updating it, rerun
 `go test ./internal/genai/` from `connector/codingagentconnector/` to confirm
 the fixture still replays green.
+
+## Live OpenHands E2E
+
+The OpenHands stack builds the custom Collector and runs a real headless
+[OpenHands SDK](https://github.com/OpenHands/software-agent-sdk) conversation
+(pinned via the `OPENHANDS_SDK_VERSION` image arg) with one terminal tool the
+prompt forces. The agent reaches its model directly through litellm — no
+proxy service is needed — with default model `anthropic/claude-sonnet-4-5`.
+The SDK's Laminar instrumentation exports OTLP/HTTP traces through
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
+`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`, so spans stream to the
+collector while the conversation runs. The stack then waits for trace
+normalization and validates the exported OTLP JSON on the host.
+
+Prerequisites:
+
+- Docker with Compose v2;
+- a Go toolchain (validation runs as `go test` on the host);
+- an `LLM_API_KEY` holding a key for whatever provider `LLM_MODEL` names
+  (an Anthropic API key for the default model);
+- network access to build images and call the model.
+
+Run it only when you intend to incur the model request:
+
+```bash
+export LLM_API_KEY=...   # key for the provider behind LLM_MODEL
+./scripts/e2e-openhands.sh
+```
+
+Optional overrides:
+
+```bash
+OPENHANDS_SDK_VERSION=1.43.1 E2E_AGENT_TIMEOUT=10m ./scripts/e2e-openhands.sh
+```
+
+Override the model with `LLM_MODEL`; `LLM_API_KEY` must stay valid for the
+provider that model routes to.
+
+### Fixture refresh
+
+A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`, the
+same flow the OpenCode stack documents. Captured traces feed the committed
+connector fixtures under
+`internal/openhands/testdata/`; after updating them, rerun
+`go test ./internal/openhands/` from `connector/codingagentconnector/` to
+confirm the fixtures still replay green.
