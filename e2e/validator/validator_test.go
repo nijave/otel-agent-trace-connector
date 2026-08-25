@@ -69,9 +69,51 @@ func TestValidateTracesRejectsSensitiveAttrOnGrandchild(t *testing.T) {
 	require.ErrorContains(t, validateTraces(traces, "run-1"), "sensitive attribute")
 }
 
-// TestValidateTracesAcceptsRunWithAnIncompleteTurn covers a run that contains more
-// than one root: the Codex connector emits a root per turn, and a turn finalized by
-// inactivity timeout is incomplete by design. Validation must keep looking rather
+// TestValidateTracesAcceptsRunWithAnIncompleteTurn covers a run that contains
+// more than one root candidate: the Codex connector emits a root per turn, and
+// a turn finalized by inactivity timeout is incomplete (here: still attached to
+// its turn parent, with no conversation id of its own). That broken candidate
+// must not veto the run when a later candidate validates.
+func TestValidateTracesAcceptsRunWithAnIncompleteTurn(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	incomplete := spans.AppendEmpty()
+	incomplete.SetName("invoke_agent codex")
+	incomplete.SetTraceID(pcommon.TraceID{1})
+	incomplete.SetSpanID(pcommon.SpanID{2})
+	incomplete.SetParentSpanID(pcommon.SpanID{3})
+
+	traceID := pcommon.TraceID{9}
+	complete := spans.AppendEmpty()
+	complete.SetName("invoke_agent codex")
+	complete.SetTraceID(traceID)
+	complete.SetSpanID(pcommon.SpanID{10})
+	complete.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	complete.Attributes().PutStr("gen_ai.conversation.id", "conversation-1")
+
+	chat := spans.AppendEmpty()
+	chat.SetName("chat test")
+	chat.SetTraceID(traceID)
+	chat.SetParentSpanID(pcommon.SpanID{10})
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutInt("gen_ai.usage.input_tokens", 1)
+
+	tool := spans.AppendEmpty()
+	tool.SetName("execute_tool shell")
+	tool.SetTraceID(traceID)
+	tool.SetParentSpanID(pcommon.SpanID{10})
+	tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+
+	require.NoError(t, validateTraces(traces, "run-1"))
+
+	// With no valid candidate left, the diagnostic from the last one surfaces.
+	complete.Attributes().Remove("gen_ai.conversation.id")
+	require.ErrorContains(t, validateTraces(traces, "run-1"), "conversation")
+}
+
 func TestValidateClaudeRawAndCanonicalTraces(t *testing.T) {
 	raw := validClaudeTraces("run-claude", false)
 	canonical := validClaudeTraces("run-claude", true)
@@ -505,6 +547,34 @@ func TestValidateOpenCodeRawFileParsesActualOTLPJSON(t *testing.T) {
 func TestOpenHandsCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "openhands", "testdata", "openhands-canonical.otlp.json")
 	require.NoError(t, validateOpenHandsCanonicalFile(path))
+}
+
+// TestValidateOpenHandsCanonicalIgnoresOtherRuns pins run-id filtering: spans
+// from another agent sharing the same live export file must not be validated
+// as openhands output.
+func TestValidateOpenHandsCanonicalIgnoresOtherRuns(t *testing.T) {
+	traces := ptrace.NewTraces()
+
+	target := traces.ResourceSpans().AppendEmpty()
+	target.Resource().Attributes().PutStr("e2e.run.id", "run-1")
+	targetSpans := target.ScopeSpans().AppendEmpty().Spans()
+	root := targetSpans.AppendEmpty()
+	root.SetName("invoke_agent openhands")
+	root.Attributes().PutStr("gen_ai.conversation.id", "session-1")
+	root.Attributes().PutStr("gen_ai.agent.name", "openhands")
+	chat := targetSpans.AppendEmpty()
+	chat.SetName("chat glm-4.7")
+	chat.SetParentSpanID(root.SpanID())
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+
+	foreign := traces.ResourceSpans().AppendEmpty()
+	foreign.Resource().Attributes().PutStr("e2e.run.id", "run-2")
+	junk := foreign.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	junk.SetName("sql.execute")
+
+	require.NoError(t, validateCanonicalTraces(traces, "run-1", "openhands"))
+	require.ErrorContains(t, validateCanonicalTraces(traces, "run-2", "openhands"),
+		"unexpected span")
 }
 
 // TestOpenHandsRawFixtureValidates exercises validateOpenHandsRawFile over the
