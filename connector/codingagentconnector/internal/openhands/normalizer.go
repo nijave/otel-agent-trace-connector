@@ -6,6 +6,7 @@ package openhands
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"sort"
 	"strings"
 
@@ -105,6 +106,7 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 		canonical.FilterResource(rs)
 		ss := rs.ScopeSpans().AppendEmpty()
 		ss.Scope().SetName(scopeName)
+		ss.Scope().SetVersion(scopeVersion(inputRS))
 		for _, key := range order {
 			emitGroup(ss.Spans(), groups[key])
 		}
@@ -113,6 +115,18 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 		return nil
 	}
 	return n.next.ConsumeTraces(ctx, output)
+}
+
+// scopeVersion returns the version of the first lmnr.tracer scope in the
+// resource so the rewritten output scope preserves the wire SDK version.
+func scopeVersion(rs ptrace.ResourceSpans) string {
+	for i := 0; i < rs.ScopeSpans().Len(); i++ {
+		ss := rs.ScopeSpans().At(i)
+		if ss.Scope().Name() == scopeName {
+			return ss.Scope().Version()
+		}
+	}
+	return ""
 }
 
 // ContainsOpenHandsSpans reports whether any lmnr.tracer scope in the group
@@ -287,7 +301,10 @@ func emitGroup(dst ptrace.SpanSlice, g *traceGroup) {
 
 // rootSpanID keeps the conversation span's ID when present; fragment groups
 // exported before their root ends get a derived stable ID that cannot
-// collide with the SDK's random IDs.
+// collide with the SDK's random IDs. Successive fragments of one
+// conversation share a trace ID but carry different windows, so the window
+// bounds fold into the hash: each fragment gets its own stable root instead
+// of IDs backends would merge or reject as (traceID, spanID) conflicts.
 func rootSpanID(g *traceGroup) pcommon.SpanID {
 	if g.root != nil {
 		return g.root.SpanID()
@@ -295,6 +312,10 @@ func rootSpanID(g *traceGroup) pcommon.SpanID {
 	h := sha256.New()
 	_, _ = h.Write(g.traceID[:])
 	_, _ = h.Write([]byte(syntheticRootDiscriminator))
+	var bounds [16]byte
+	binary.BigEndian.PutUint64(bounds[:8], uint64(g.minStart))
+	binary.BigEndian.PutUint64(bounds[8:], uint64(g.maxEnd))
+	_, _ = h.Write(bounds[:])
 	var id pcommon.SpanID
 	copy(id[:], h.Sum(nil)[:8])
 	return id
