@@ -158,9 +158,24 @@ jobs:
                      and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)
                      and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
                      and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)'
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       - name: Build container images
         run: |
-          docker build --tag otelcol-coding-agents:ci .
+          # Each image gets its own GitHub Actions layer cache (scope=<tag>), so an
+          # unchanged image — the Rust responses-proxy and the pinned-version e2e
+          # tool images, which dominate this step — is a near-instant cache hit on
+          # every run rather than a full recompile. --load keeps the :ci tag in the
+          # local daemon so nothing downstream changes.
+          build() {
+            docker buildx build \
+              --load \
+              --cache-from "type=gha,scope=$1" \
+              --cache-to "type=gha,mode=max,scope=$1" \
+              --tag "$1:ci" \
+              "$2"
+          }
+          build otelcol-coding-agents .
           # Every e2e directory with a Dockerfile gets built, so a new stack is
           # covered automatically. The Codex stack cannot run without the
           # responses-proxy image, and that image is the only one built from a
@@ -169,7 +184,7 @@ jobs:
           # someone's paid e2e run.
           for d in e2e/*/; do
             if [ -f "${d}Dockerfile" ]; then
-              docker build --tag "$(basename "$d")-e2e:ci" "$d"
+              build "$(basename "$d")-e2e" "$d"
             fi
           done
       - name: Verify GoReleaser configuration
