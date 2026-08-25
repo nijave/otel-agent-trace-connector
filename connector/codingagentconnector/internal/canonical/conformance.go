@@ -272,8 +272,8 @@ func spans(traces ptrace.Traces) []ptrace.Span {
 }
 
 // numericValue coerces numeric-looking attribute values to int64 following
-// cursor.Int64Value semantics: int/int32/int64 pass through, doubles
-// truncate, uint64 is guarded against overflow, strings parse as integers.
+// cursor.Int64Value semantics: ints pass through, doubles truncate, strings
+// parse as integers.
 func numericValue(v pcommon.Value) (int64, bool) {
 	switch v.Type() {
 	case pcommon.ValueTypeInt:

@@ -45,16 +45,12 @@ before the strip.
 
 ## Vocabulary
 
-Connector-owned provenance namespace:
+The block below is kept identical to `canonicalAttributeKeys` in
+[`connector/codingagentconnector/internal/canonical/vocabulary.go`](../connector/codingagentconnector/internal/canonical/vocabulary.go)
+by `TestVocabularyDocsMirror`, which fails CI on drift. Edit the vocabulary
+there, never here. Keys appear in declaration order:
 
-- `coding_agent.source`
-- `coding_agent.source.scope`
-- `coding_agent.source.event`
-- `coding_agent.client.name`
-- `coding_agent.client.version`
-
-Operation, request, and response:
-
+<!-- vocabulary:generated -->
 - `gen_ai.operation.name`
 - `gen_ai.provider.name`
 - `gen_ai.request.model`
@@ -63,11 +59,7 @@ Operation, request, and response:
 - `gen_ai.response.finish_reasons`
 - `gen_ai.response.id`
 - `gen_ai.response.model`
-- `gen_ai.response.time_to_first_chunk` (seconds, double — every edge converts
-  its wire unit to seconds at normalization time)
-
-Agent, conversation, and tool:
-
+- `gen_ai.response.time_to_first_chunk`
 - `gen_ai.agent.id`
 - `gen_ai.agent.name`
 - `gen_ai.agent.version`
@@ -76,27 +68,32 @@ Agent, conversation, and tool:
 - `gen_ai.tool.name`
 - `gen_ai.tool.type`
 - `gen_ai.tool.status`
-
-Timing and server identity:
-
 - `gen_ai.event.start_time`
 - `gen_ai.event.end_time`
-- `server.address`
-- `server.port`
-
-Usage (enumerated explicitly; there is no `gen_ai.usage.` prefix exemption):
-
 - `gen_ai.usage.input_tokens`
 - `gen_ai.usage.output_tokens`
 - `gen_ai.usage.total_tokens`
 - `gen_ai.usage.cache_read.input_tokens`
 - `gen_ai.usage.cache_creation.input_tokens`
 - `gen_ai.usage.reasoning.output_tokens`
+- `server.address`
+- `server.port`
+- `exception.type`
+- `exception.message`
+- `exception.escaped`
+- `exception.stacktrace`
+- `coding_agent.source`
+- `coding_agent.source.scope`
+- `coding_agent.source.event`
+- `coding_agent.client.name`
+- `coding_agent.client.version`
+<!-- /vocabulary:generated -->
 
-Exceptions (standard OTel companions on error spans):
+`gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
 
-- `exception.type`, `exception.message`, `exception.escaped`,
-  `exception.stacktrace` (any key under the `exception.` prefix)
+
+Beyond the enumerated keys, any key under the `exception.` prefix is allowed:
+exception details are standard OTel companions on error spans.
 
 That is the complete list. Everything else — vendor namespaces such as
 `github.copilot.*`, `ai.*`, `claude_code.*`, `lmnr.*`, `llm.usage.*`,
