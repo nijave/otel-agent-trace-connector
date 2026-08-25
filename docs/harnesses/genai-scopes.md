@@ -22,8 +22,11 @@ never synthesizes values.
 
 ## opentelemetry-instrumentation-openai_v2
 
-Scope `opentelemetry.instrumentation.openai_v2` (renaming to
-`opentelemetry.instrumentation.genai_openai`; the prefix match tolerates both).
+Scope `opentelemetry.instrumentation.openai_v2`. Upstream renamed the
+package to `opentelemetry-instrumentation-genai-openai` (the old package now
+receives only security patches), but the renamed package emits through the
+util-genai handler scope in the next section — this scope covers only the
+deprecated package.
 
 | Raw key | Span type | Canonical key | Status |
 |---|---|---|---|
@@ -120,6 +123,7 @@ Copilot CLI and VS Code Chat extensions.
 | `github.copilot.context.custom_agent_names` / `mcp_server_names` / `skills` | invoke_agent | — | dropped |
 | `github.copilot.agent.type` | invoke_agent | — | dropped (`gen_ai.agent.id` carries the identity) |
 | `github.copilot.hook.decision` | execute_hook | — | dropped |
+| `github.copilot.initiator` | chat | — | dropped |
 | `copilot_chat.repo.remote_url` | invoke_agent | — | dropped (legacy namespace) |
 | `enduser.pseudo.id` | all | — | dropped |
 | `github.copilot.user.message` / `session.usage_info` / `session.shutdown` | events | event names survive, attributes stripped | kept as bare events |

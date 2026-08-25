@@ -34,6 +34,14 @@ provider returned. A `response.completed` from a provider that reports no
 usage (e.g. a chat-completions stream without `stream_options.include_usage`)
 still builds its chat span, with no `gen_ai.usage.*` keys at all.
 
+Wire drift (audited 2026-08-25 against upstream HEAD): newer Codex builds
+add `cache_write_token_count`, optional `service_tier`, and
+`model_reasoning_effort` to `response.completed`, and detail fields to
+`codex.tool_result` (`tool_namespace`, `tool_result_seq`, `output_truncated`,
+length/count and origin fields). The pinned research and e2e (0.144.1)
+predate these; the builder copies only the keys in this matrix, so the new
+fields stay out of canonical output until mapped.
+
 ### codex.sse_event (response.completed) → chat
 
 | Raw key | Canonical key | Status |
@@ -101,7 +109,7 @@ they appear on every emitted span except where noted:
 |---|---|
 | `gen_ai.response.finish_reasons` | not provided (Codex logs no model stop reason; see the dropped connector-derived `finish_reason` above) |
 | `gen_ai.response.id` / `gen_ai.response.model` | not provided |
-| `gen_ai.usage.cache_creation.input_tokens` | not provided |
+| `gen_ai.usage.cache_creation.input_tokens` | not provided by the pinned wire (upstream HEAD adds `cache_write_token_count`; unmapped until the pin bumps) |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `gen_ai.tool.call.id` / `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |

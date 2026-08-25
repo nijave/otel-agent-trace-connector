@@ -79,10 +79,10 @@ two modes:
 - Experimental mode (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`,
   semconv v1.37.0): the `opentelemetry-util-genai` package emits the spans
   (scope `opentelemetry.util.genai.handler`), uses
-  `gen_ai.provider.name=openai`, adds Responses API coverage
-  (`openai.api.type`), and can place content on span attributes
-  (`gen_ai.input.messages`, `gen_ai.output.messages`) when capture is
-  enabled. `opentelemetry-util-genai` also exposes inference, embedding,
+  `gen_ai.provider.name=openai`, adds Responses API coverage (a
+  `fetch_response` operation), and can place content on span attributes
+  (`gen_ai.input.messages`, `gen_ai.output.messages`) under the
+  `span_only`/`event_only`/`span_and_event` capture modes. `opentelemetry-util-genai` also exposes inference, embedding,
   tool, workflow, and local/remote agent invocations, so hand-rolled agents
   can emit the full `invoke_agent`/`chat`/`execute_tool` vocabulary through
   the same scope.
@@ -105,9 +105,12 @@ attributes. Redaction is opt-in via the
 `gen_ai_unredacted_attributes=<list>` token; absent the token, Strands
 exports content unredacted.
 
-Upstream is renaming the package to
-`opentelemetry-instrumentation-genai-openai` in the new
-`opentelemetry-python-genai` repository, which will change its scope name.
+Upstream renamed the package to `opentelemetry-instrumentation-genai-openai`
+in the new `opentelemetry-python-genai` repository (verified 2026-08-24; the
+old package now receives only security patches). The rename did not change
+the wire scope: the renamed package still emits through
+`opentelemetry.util.genai.handler`, which the existing
+`opentelemetry.util.genai` prefix already claims.
 
 Research reflects the Cursor wire reference as of 2026-08-21.
 
@@ -461,7 +464,7 @@ Scope-name matching, evaluated per scope-spans block:
 | --- | --- |
 | `opentelemetry.instrumentation.openai_v2` (prefix) | openai-v2 default mode |
 | `opentelemetry.util.genai` (prefix) | openai-v2 experimental mode and direct util-genai users |
-| `opentelemetry.instrumentation.genai` (prefix) | the announced upstream package rename |
+| `opentelemetry.instrumentation.genai` (prefix) | reserved: no shipping package emits this scope — the renamed genai-openai package kept the util-genai scope |
 | `strands.telemetry` (prefix) | Strands Agents SDK built-in tracer |
 
 Within a claimed group, the normalizer rewrites a span only when its scope
@@ -863,9 +866,9 @@ make stale-output detection ineffective.
   config flag behind which the connector synthesizes `invoke_agent` parents is
   future work if rootless traces prove common).
 - Configurable scope allowlist extension.
-- Upstream scope names are pre-1.0 and will change with the announced package
-  rename; prefix matching mitigates, and rerun fixtures and E2Es before
-  bumping pins.
+- Upstream scope names are pre-1.0. The announced package rename landed
+  without a scope change (the renamed genai-openai package kept the
+  util-genai scope); rerun fixtures and E2Es before bumping pins.
 - Cursor: implemented as native-log synthesis with fixture-based validation.
   A live Cursor E2E stays blocked on Enterprise-only server-side configuration
   (no Enterprise access available); tool-call children would need Cursor to

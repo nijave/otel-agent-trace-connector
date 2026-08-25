@@ -211,11 +211,12 @@ backends as standalone plugins, not core.
 ## OpenCode
 
 OpenCode (`sst/opencode`, Anomaly/SST) is the most-starred open-source coding
-agent (~172K stars, ~7.5M MAU per opencode.ai). Native OTel exists in-tree on
-the dev branch (traces + logs only), but it's new and undocumented — on
-released versions (`opencode-ai` 1.1.51–1.1.65) the `experimental.openTelemetry`
-flag alone produced no spans. The richer story (metrics, cost, repo identity)
-comes from plugins.
+agent (~172K stars, ~7.5M MAU per opencode.ai). Native OTel (traces + logs
+only) is new and undocumented — released versions through the `opencode-ai`
+1.1.x series produced no spans under the `experimental.openTelemetry` flag
+alone, and releases since 1.18.21 (2026-08-21) ship the native tracer and
+emit the Vercel AI SDK spans the connector claims. The richer story
+(metrics, cost, repo identity) comes from plugins.
 
 Two independent native paths:
 - **Vercel AI SDK spans** (`ai.streamText`, `ai.toolCall`), enabled by
