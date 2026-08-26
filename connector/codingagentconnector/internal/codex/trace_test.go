@@ -122,6 +122,25 @@ func TestUsageStaysOnChatSpansNotRoot(t *testing.T) {
 	}
 }
 
+func TestBuildTraceMapsCacheWriteTokens(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind":              "response.completed",
+				"model":                   "glm-test",
+				"input_token_count":       5,
+				"cache_write_token_count": 42,
+			}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	chat := findSpan(t, spans, "chat glm-test")
+	require.Equal(t, int64(42), attrInt(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
+}
+
 func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{
