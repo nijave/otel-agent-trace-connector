@@ -340,6 +340,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "ai.usage.inputTokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum, RawSpanName: "ai.streamText.doStream", OutputSpanPrefix: "chat"},
 				{RawKey: "ai.usage.outputTokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum, RawSpanName: "ai.streamText.doStream", OutputSpanPrefix: "chat"},
 				{RawKey: "ai.usage.totalTokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum, RawSpanName: "ai.streamText.doStream", OutputSpanPrefix: "chat"},
+				{RawKey: "ai.usage.reasoningTokens", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Presence},
 				{RawKey: "ai.response.msToFirstChunk", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 			},

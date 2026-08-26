@@ -127,6 +127,7 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 		attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 		attrs.PutStr("gen_ai.agent.name", agentName)
 		copyUsage(wire.Attributes(), attrs)
+		copyReasoning(wire.Attributes(), attrs)
 		span.SetName("invoke_agent " + agentName)
 	case wireDoStream:
 		model := firstString(wire.Attributes(), "gen_ai.request.model")
@@ -137,16 +138,10 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 		}
 		attrs.PutStr("gen_ai.operation.name", "chat")
 		copyUsage(wire.Attributes(), attrs)
+		copyReasoning(wire.Attributes(), attrs)
 		passthroughCanonicalUsage(wire.Attributes(), attrs)
 		if total, ok := intValue(wire.Attributes(), "ai.usage.totalTokens"); ok {
 			attrs.PutInt("gen_ai.usage.total_tokens", total)
-		}
-		reasoning, ok := intValue(wire.Attributes(), "ai.usage.reasoningTokens")
-		if !ok {
-			reasoning, ok = intValue(wire.Attributes(), "ai.usage.outputTokenDetails.reasoningTokens")
-		}
-		if ok {
-			attrs.PutInt("gen_ai.usage.reasoning.output_tokens", reasoning)
 		}
 		if ttft, ok := floatValue(wire.Attributes(), "ai.response.msToFirstChunk"); ok {
 			// Wire units are fractional milliseconds; canonical stores seconds.
@@ -199,6 +194,19 @@ func copyUsage(from, to pcommon.Map) {
 		if value, ok := from.Get(pair[0]); ok && value.Type() == pcommon.ValueTypeInt {
 			to.PutInt(pair[1], value.Int())
 		}
+	}
+}
+
+// copyReasoning maps the step's reasoning counter onto the canonical key,
+// falling back to the outputTokenDetails spelling. Both ai.streamText and
+// ai.streamText.doStream carry it on the wire (opencode >= 1.18.21).
+func copyReasoning(from, to pcommon.Map) {
+	reasoning, ok := intValue(from, "ai.usage.reasoningTokens")
+	if !ok {
+		reasoning, ok = intValue(from, "ai.usage.outputTokenDetails.reasoningTokens")
+	}
+	if ok {
+		to.PutInt("gen_ai.usage.reasoning.output_tokens", reasoning)
 	}
 }
 

@@ -573,8 +573,10 @@ becomes `invoke_agent opencode`, carrying `gen_ai.conversation.id` mapped from
 `session.id` on the span (falling back to the resource) and the step's usage
 totals: `ai.usage.inputTokens`/`outputTokens` map onto
 `gen_ai.usage.input_tokens`/`output_tokens`, and `ai.usage.cachedInputTokens`
-maps onto `gen_ai.usage.cache_read.input_tokens`; reasoning and token-detail
-counters have no established canonical key and stay out. Each
+maps onto `gen_ai.usage.cache_read.input_tokens`, and
+`ai.usage.reasoningTokens` (with its `outputTokenDetails` fallback) maps
+onto `gen_ai.usage.reasoning.output_tokens`; other token-detail counters
+stay out. Each
 `ai.streamText.doStream` child becomes `chat <model>` from its own
 `gen_ai.request.model` (bare `chat` when absent), and each `ai.toolCall` child
 becomes `execute_tool <tool>` from `ai.toolCall.name`. Renamed spans are

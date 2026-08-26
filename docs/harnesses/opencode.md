@@ -55,7 +55,7 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.usage.inputTokenDetails.noCacheTokens` | — | dropped |
 | `ai.usage.inputTokenDetails.cacheReadTokens` | — | dropped (redundant duplicate of `ai.usage.cachedInputTokens`) |
 | `ai.usage.outputTokenDetails.textTokens` | — | dropped |
-| `ai.usage.reasoningTokens` / `ai.usage.outputTokenDetails.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | not provided on this span (mapped on `doStream` only) |
+| `ai.usage.reasoningTokens` / `ai.usage.outputTokenDetails.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (fallback order as listed; absent for non-reasoning steps; on the wire from opencode 1.18.21) |
 | `operation.name`, `resource.name` | — | dropped (Effect bookkeeping) |
 
 ### ai.streamText.doStream → chat
