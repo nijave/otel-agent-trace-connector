@@ -1,265 +1,221 @@
-# Responses-proxy Fork Switch Implementation Plan
+# Responses-proxy Fork Replacement Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to execute this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the actively maintained `xeonvs/responses-proxy` line the code
-base of the prebuilt proxy binary the Codex e2e uses, via a reviewed merge
-into `nijave/responses-proxy`, a new prebuilt release, and a pin bump here.
+**Goal:** Point the Codex e2e at the actively maintained
+`xeonvs/responses-proxy` line (source-built at a pinned commit), then
+archive `nijave/responses-proxy` so only the newer upstream remains.
 
-**Architecture:** Two repos. Tasks 1-4 operate on the local clone of
-`nijave/responses-proxy` (Rust): merge `xeonvs/integration/all-prs` at a
-pinned SHA, resolve the two known decision points, reconcile the fork's own
-usage-capture fix, then release. Task 5 bumps
-`e2e/responses-proxy/Dockerfile` in this repo. Task 6 closes the loop on the
-tracking issue.
+**Architecture:** Task 1 verifies the one blocking dependency (usage
+capture from content chunks) in the local proxy clone. Task 2 rewrites
+`e2e/responses-proxy/Dockerfile` from prebuilt-asset download to a pinned
+source build. Task 3 sweeps remaining fork references and runs the full
+gate. Task 4 closes out the fork repo, in that order.
 
-**Tech Stack:** git/gh, Rust (cargo), GitHub Actions release workflow, this
-repo's `./scripts/check.sh` e2e stack.
+**Tech Stack:** Docker multi-stage build (rust builder), git/gh, Rust
+(cargo) for verification only, this repo's `./scripts/check.sh` e2e stack.
 
 **Spec:** [docs/superpowers/specs/2026-08-27-responses-proxy-fork-switch-design.md](../specs/2026-08-27-responses-proxy-fork-switch-design.md)
 
 ## Global Constraints
 
-- Proxy clone: `/home/nick/Documents/workspace/3rd/responses-proxy`
-  (remotes already configured: `origin` = nijave, `xeonvs`, `CallOrRet`,
-  plus the other survey forks). Leave its untracked `CLAUDE.md` alone.
-- Merge target SHA (fixed): `dbfcd29c5bf6d7831784d1f4fd24addc4682462f`
-  (`xeonvs/integration/all-prs` tip, 2026-08-19).
-- Proxy gates: mirror the repo's own CI (read
-  `.github/workflows/` for the authoritative job list); the floor is
-  `cargo test` and `cargo fmt --check` passing.
+- Pin (fixed unless Task 1 moves it):
+  `dbfcd29c5bf4…` — full SHA `dbfcd29c5bf6d7831784d1f4fd24addc4682462f`,
+  tip of `xeonvs/integration/all-prs`. `xeonvs` publishes no releases and
+  its `main` mirrors dormant upstream; only `integration/all-prs` counts.
+- The line's MSRV is 1.88 (xeonvs raised it for let-chains); the builder
+  image must meet it.
+- Proxy verification clone: `/home/nick/Documents/workspace/3rd/responses-proxy`
+  (remotes `origin` = nijave, `xeonvs`, `CallOrRet` already configured).
+  Leave its untracked `CLAUDE.md` alone.
 - Connector repo gates: prefix every `go` command with `GOTOOLCHAIN=auto`;
   run `GOTOOLCHAIN=auto ./scripts/check.sh` before any push and require
   `ALL CHECKS PASSED`.
-- Never run `git branch -d`/`-D` (a dcg hook blocks agents); never
-  force-push either repo's `main`.
-- Conflict resolution rules (from the spec): keep our release workflow
-  (`3a0af2f`, linux-only) and take xeonvs's CI test/MSRV changes; unify the
-  compaction id prefix on `cmp_` unless tests fail, then keep `rcmp_` and
-  record why in the PR body.
+- Never run `git branch -d`/`-D` (a dcg hook blocks agents from ref
+  deletion); never force-push.
+- Archive the fork LAST — nothing may still reference
+  `nijave/responses-proxy` when it happens.
 
 ---
 
-### Task 1: Sync the proxy clone and baseline it
+### Task 1: Verify usage capture covers content chunks
+
+The current prebuilt binary carries the fork's
+`fix/usage-capture-on-content-chunk` patch because z.ai attaches token
+usage to the final content chunk. The switch is safe only if xeonvs's
+`6085090` covers that case.
 
 **Files:**
-- No edits; repo state only.
+- No connector edits; verification in the proxy clone only.
 
 **Interfaces:**
-- Produces: local `main` == `origin/main` (`3a0af2f`), remotes fetched,
-  and a recorded baseline test result later tasks compare against.
+- Produces: a go/no-go on pin `dbfcd29…` — and if no-go, the replacement
+  pin SHA that includes the contributed fix.
 
-- [ ] **Step 1: Fetch and fast-forward**
+- [ ] **Step 1: Fetch and inspect both fixes**
 
 ```bash
 cd /home/nick/Documents/workspace/3rd/responses-proxy
-git fetch origin xeonvs CallOrRet
-git checkout main
-git merge --ff-only origin/main
-git log --oneline -2   # expect 3a0af2f then 70e1825
-```
-
-- [ ] **Step 2: Record the baseline**
-
-```bash
-cargo test 2>&1 | tail -5
-cargo fmt --check
-```
-
-Expected: tests pass; note the passing-test count in the eventual PR body.
-If the baseline fails, stop — report before merging anything.
-
-### Task 2: Merge the xeonvs line
-
-**Files:**
-- Change: whatever the merge touches (expect `src/`, `Cargo.toml`,
-  `.github/workflows/`, README)
-
-**Interfaces:**
-- Consumes: the pinned SHA and conflict rules from Global Constraints.
-- Produces: branch `merge/xeonvs-integration-all-prs` whose tree passes the
-  proxy gates; later tasks build on this branch.
-
-- [ ] **Step 1: Create the branch and merge**
-
-```bash
-git checkout -b merge/xeonvs-integration-all-prs
-git merge --no-ff dbfcd29c5bf6d7831784d1f4fd24addc4682462f \
-  -m "merge: adopt xeonvs integration/all-prs as the codex-compat base"
-```
-
-- [ ] **Step 2: Resolve conflicts by the spec's rules**
-
-For `.github/workflows/` conflicts: keep our release workflow, take their
-CI test/MSRV changes. For `src/` conflicts: prefer theirs, except the
-compaction id prefix (next step decides it deliberately).
-
-- [ ] **Step 3: Decide the compaction prefix**
-
-```bash
-rg -n "rcmp_|\"cmp_|comp_" src/
-```
-
-Unify on `cmp_` (OpenAI's real prefix). If a test in Step 5 fails on
-history compatibility, keep `rcmp_` instead and record the reason in the
-PR body.
-
-- [ ] **Step 4: Verify the session-store default**
-
-```bash
-rg -n "namespace" src/ | head -20
-```
-
-Confirm the isolation header from `d82a64b` stays opt-in: with no header
-set, storage paths match pre-merge behavior. If the merge changed a
-default, restore the pre-merge default and note it in the PR body.
-
-- [ ] **Step 5: Run the proxy gates**
-
-```bash
-cargo test
-cargo fmt --check
-```
-
-Expected: pass, with at least the baseline count from Task 1 (the merge
-brings new tests, so more is normal).
-
-- [ ] **Step 6: Review the whole delta**
-
-```bash
-git diff origin/main...HEAD --stat
-git diff origin/main...HEAD
-```
-
-Read the full diff. This is the review the xeonvs branch never had: flag
-anything that phones home, changes defaults silently, or looks unrelated
-to the issue-#1 list. Anything suspicious gets reverted in a follow-up
-commit on this branch before the PR opens.
-
-### Task 3: Reconcile the usage-capture fix
-
-**Files:**
-- Possibly change: the streamed-usage capture path in `src/` (exact file
-  visible from the diff below)
-
-**Interfaces:**
-- Consumes: branch from Task 2; our fix lives on
-  `origin/fix/usage-capture-on-content-chunk` (upstream PR CallOrRet#4).
-- Produces: one resolved usage-capture implementation on the merge branch.
-
-- [ ] **Step 1: Compare the two fixes**
-
-```bash
-git diff main...origin/fix/usage-capture-on-content-chunk
+git fetch origin xeonvs
 git show 608509062e7e65839f669acca4c29b7ce026a45e
+git diff main...origin/fix/usage-capture-on-content-chunk
 ```
 
-- [ ] **Step 2: Keep or combine**
+Compare the guards: does `6085090` read usage from a chunk whose `choices`
+is non-empty (content + usage together), or only from usage-only chunks?
 
-If xeonvs's `6085090` (already merged in Task 2) covers every chunk shape
-ours handles, do nothing — record "superseded by 6085090" for the PR body.
-If ours guards shapes theirs misses:
+- [ ] **Step 2: Confirm with the line's tests**
 
 ```bash
-git cherry-pick origin/fix/usage-capture-on-content-chunk
+git checkout dbfcd29c5bf6d7831784d1f4fd24addc4682462f
+cargo test 2>&1 | tail -5
+rg -l "usage" tests/ src/ | head
 ```
 
-Resolve overlaps keeping both guards, then re-run `cargo test`.
+Read the usage-capture tests on the pinned commit; confirm a case covers
+usage arriving on a content-bearing chunk. `cargo test` must pass — that
+run is the pre-adoption sanity check for the pin itself.
 
-### Task 4: PR, merge, and release on nijave/responses-proxy
+- [ ] **Step 3: Go / no-go**
+
+Covered → proceed to Task 2 with pin `dbfcd29…`. Not covered → open a PR
+against `xeonvs/responses-proxy` cherry-picking
+`origin/fix/usage-capture-on-content-chunk` (adapting to their changed
+capture code), wait for it to land on `integration/all-prs`, and move the
+pin to the SHA that includes it. Everything downstream blocks on the
+verified pin; report the wait rather than working around it.
+
+### Task 2: Rewrite the e2e Dockerfile to a pinned source build
 
 **Files:**
-- No new edits; publishing only.
+- Change: `e2e/responses-proxy/Dockerfile`
 
 **Interfaces:**
-- Produces: a new `prebuilt-<shortsha>` release tag and its asset sha256 —
-  Task 5 consumes both.
+- Consumes: the verified pin from Task 1.
+- Produces: an image identical in runtime shape (same binary path, config,
+  port, healthcheck) built from source.
 
-- [ ] **Step 1: Push and open the PR**
+- [ ] **Step 1: Replace the fetch stage with a build stage**
 
-```bash
-git push -u origin merge/xeonvs-integration-all-prs
-gh pr create -R nijave/responses-proxy \
-  --title "feat: adopt xeonvs integration line as the codex-compat base" \
-  --body-file /tmp/rp-merge-pr-body.md
+Replace the `FROM debian:trixie-slim AS fetch` stage and its two `RUN`
+blocks with:
+
+```dockerfile
+FROM rust:1.90-slim AS build
+ARG RESPONSES_PROXY_COMMIT=dbfcd29c5bf6d7831784d1f4fd24addc4682462f
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+        ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/xeonvs/responses-proxy.git /src \
+    && git -C /src checkout "${RESPONSES_PROXY_COMMIT}" \
+    && test "$(git -C /src rev-parse HEAD)" = "${RESPONSES_PROXY_COMMIT}"
+WORKDIR /src
+RUN cargo build --release --locked \
+    && install -D -m 0755 target/release/responses-proxy /out/bin/responses-proxy
 ```
 
-Body: the decision record (issue #1, maintainer call), conflict
-resolutions made (workflows, prefix, session-store), the usage-capture
-outcome, and gate results. Link issue #1; do not close it.
+Update the runtime stage's `COPY --from=fetch` to `COPY --from=build`.
+If `rust:1.90-slim` does not exist as a tag, use the lowest existing slim
+tag ≥ 1.88 (`docker pull` locally to confirm before committing). If
+`--locked` fails because the pinned commit ships no `Cargo.lock`, drop
+`--locked` and note in the commit body that the lockfile is absent
+upstream.
 
-- [ ] **Step 2: Merge after the maintainer approves**
+- [ ] **Step 2: Rewrite the header comment**
 
-The merge to the proxy's `main` is the maintainer's approval point — do
-not self-merge without it.
+Replace the header's fork/prebuilt story: the e2e builds
+`xeonvs/responses-proxy` (the maintained line; upstream `CallOrRet` went
+dormant, our old fork `nijave/responses-proxy` closed down) at a pinned
+commit; the commit hash is the integrity anchor; the SSE event-name fix
+and content-chunk usage capture both ship in this line; buildx layer
+caching bounds the compile cost to once per pin change. Keep the first
+paragraph (what the proxy is for) as-is.
 
-- [ ] **Step 3: Cut the prebuilt release**
-
-Read `.github/workflows/` in the proxy repo to confirm the release
-trigger (the existing `prebuilt-d2b5d04` release suggests pushing a
-`prebuilt-<shortsha>` tag on `main`). Trigger it for the new merge commit,
-wait for the `x86_64-unknown-linux-gnu` asset, then verify:
+- [ ] **Step 3: Build the image alone**
 
 ```bash
-gh release view prebuilt-<shortsha> -R nijave/responses-proxy
-curl -sL <asset-url> | sha256sum
+docker build e2e/responses-proxy/ -t responses-proxy:pin-test
+docker run --rm responses-proxy:pin-test responses-proxy --help
 ```
 
-Record the tag and sha256.
+Expected: build succeeds; the binary runs.
 
-### Task 5: Bump the connector pin
+### Task 3: Sweep references and run the full gate
 
 **Files:**
-- Change: `e2e/responses-proxy/Dockerfile` (`RESPONSES_PROXY_TAG`,
-  `RESPONSES_PROXY_SHA256`)
+- Change: `e2e/README.md` (says the proxy "builds from a pinned commit on
+  a fork") and any other hit from the sweep below.
 
 **Interfaces:**
-- Consumes: tag + sha256 from Task 4.
-- Produces: the connector e2e running against the new proxy.
+- Consumes: Task 2's Dockerfile.
+- Produces: the branch that becomes the connector PR.
 
-- [ ] **Step 1: Branch and edit**
+- [ ] **Step 1: Sweep**
 
-In `/home/nick/Documents/workspace/go/src/github.com/nijave/otel-agent-trace-connector`,
-branch `fix/responses-proxy-xeonvs-base` off `origin/main`; set the new
-`RESPONSES_PROXY_TAG` and `RESPONSES_PROXY_SHA256` values in
-`e2e/responses-proxy/Dockerfile`.
+```bash
+rg -in 'nijave/responses-proxy|RESPONSES_PROXY_TAG|RESPONSES_PROXY_SHA256|prebuilt-' --hidden -g '!.git' -g '!docs/superpowers/**'
+```
 
-- [ ] **Step 2: Run the full gate**
+Update every live reference (docs, compose, CI) to the new source-build
+story. Dated records under `docs/superpowers/` stay untouched.
+
+- [ ] **Step 2: Full gate**
 
 ```bash
 GOTOOLCHAIN=auto ./scripts/check.sh
 ```
 
-Expected: `ALL CHECKS PASSED` — this builds the proxy image from the new
-asset and runs the Codex e2e against pinned Codex 0.144.1. A failure here
-is a compatibility finding: report it against the merge, do not patch
-around it in this repo.
+Expected: `ALL CHECKS PASSED`. The Codex e2e validator's usage assertions
+are the acceptance test for the usage-capture dependency. A failure here
+is a finding against the pin — report it; do not patch around it in this
+repo.
 
 - [ ] **Step 3: Commit, push, PR**
 
 ```bash
-git add e2e/responses-proxy/Dockerfile
-git commit -m "fix(e2e): pin responses-proxy to the xeonvs-based release"
+git add e2e/responses-proxy/Dockerfile e2e/README.md   # plus sweep hits
+git commit -m "fix(e2e): build responses-proxy from the xeonvs line"
 git push -u origin fix/responses-proxy-xeonvs-base
-gh pr create --draft --title "fix(e2e): pin responses-proxy to the xeonvs-based release" --body-file <body>
+gh pr create --draft --title "fix(e2e): build responses-proxy from the xeonvs line" --body-file <body>
 ```
 
-Body: two sentences — what the new base brings (issue #1 list) and that
-check.sh passed; link the proxy merge PR.
+Body: what the xeonvs line brings (link issue #1), the usage-capture
+verification outcome from Task 1, and that check.sh passed. Note the fork
+archive follows the merge.
 
-### Task 6: Update tracking issue #1
+### Task 4: Close out the fork (after the connector PR merges)
 
-- [ ] **Step 1: Tick and annotate**
+**Files:**
+- None here; GitHub state only. Requires maintainer sign-off on each step.
 
-On [nijave/responses-proxy#1](https://github.com/nijave/responses-proxy/issues/1):
-check every xeonvs item the merge landed, add a comment naming the merge
-commit, release tag, and the usage-capture outcome, and leave the
-airly0201/ilylty items and the re-survey cadence note open.
+- [ ] **Step 1: Close the tracking issue**
+
+Final comment on
+[nijave/responses-proxy#1](https://github.com/nijave/responses-proxy/issues/1):
+the e2e now consumes `xeonvs/responses-proxy` directly at a pinned commit;
+list the adopted items; future re-surveys track pin bumps in the connector
+repo. Close the issue.
+
+- [ ] **Step 2: Disposition the upstream PR**
+
+Comment on [CallOrRet#4](https://github.com/CallOrRet/responses-proxy/pull/4):
+the fix lives on in the xeonvs line; the source fork is closing down.
+Leave the PR open for upstream to decide; archiving may make it unmergeable
+as-is — accepted, upstream is dormant.
+
+- [ ] **Step 3: Archive**
+
+```bash
+gh repo archive nijave/responses-proxy --yes
+```
+
+Reversible via un-archive if the xeonvs line ever stalls and the fork
+posture needs restoring.
 
 ## Explicitly out of scope
 
 - Bumping the pinned Codex e2e version (0.144.1) — unlocked by this switch
   (the xeonvs fixes target Codex 0.149+ wire behavior) but its own task.
-- Upstream PR CallOrRet#4 — stays open; upstream's queue is not ours.
-- airly0201's ops script and ilylty's CI-only commits — tracked in issue
-  #1, deliberately not merged.
+- Any new fork, release workflow, or prebuilt-asset pipeline.
+- airly0201's ops script and ilylty's CI-only commits.
