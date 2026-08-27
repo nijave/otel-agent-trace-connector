@@ -213,7 +213,7 @@ OPENCODE_VERSION=1.18.21 E2E_OPENCODE_MODEL=ox-alpha-free E2E_AGENT_TIMEOUT=10m 
 A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`. The
 committed regression fixture,
 `connector/codingagentconnector/internal/opencode/testdata/opencode-native-traces.json`,
-is sliced from that file. The first jq command keeps the first resource group
+comes from slicing that file. The first jq command keeps the first resource group
 whose scope contains an `ai.streamText` subtree (its Effect-noise siblings come
 along, which the replay test needs); the second keeps every `ai.*` span and
 samples at most 20 noise spans per scope so the fixture stays small:
@@ -256,8 +256,8 @@ E2E_PI_MODEL=zai/glm-4.7 ./scripts/e2e-pi.sh
 
 The Copilot stack builds the custom Collector and runs a real non-interactive
 `copilot -p` session against a BYOK provider configured through environment
-variables. No GitHub authentication or Copilot subscription is involved; only
-the provider account behind the key is billed. Native telemetry activates
+variables. The run needs no GitHub authentication or Copilot subscription;
+charges land only on the provider account behind the key. Native telemetry activates
 through `COPILOT_OTEL_ENABLED` plus `OTEL_EXPORTER_OTLP_ENDPOINT`, so spans
 stream to the collector while the CLI runs. The prompt forces one harmless
 shell tool call. Validation accepts any valid `invoke_agent` root (the
@@ -297,7 +297,7 @@ Pin the CLI version with `COPILOT_CLI_VERSION`.
 A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`, the
 same flow the OpenCode stack documents. Captured traces feed the committed
 connector fixtures: the GenAI edge's
-`internal/genai/testdata/copilot-native.otlp.json` was authored from the
+`internal/genai/testdata/copilot-native.otlp.json` originated from the
 documented schema, and real captures are how that fixture gets refreshed
 against actual CLI output. After updating it, rerun
 `go test ./internal/genai/` from `connector/codingagentconnector/` to confirm
@@ -309,7 +309,7 @@ The OpenHands stack builds the custom Collector and runs a real headless
 [OpenHands SDK](https://github.com/OpenHands/software-agent-sdk) conversation
 (pinned via the `OPENHANDS_SDK_VERSION` image arg) with one terminal tool the
 prompt forces. The agent reaches its model directly through litellm — no
-proxy service is needed — with default model `anthropic/claude-sonnet-4-5`.
+proxy service — with default model `anthropic/claude-sonnet-4-5`.
 The SDK's Laminar instrumentation exports OTLP/HTTP traces through
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
 `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`, so spans stream to the
