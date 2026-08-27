@@ -54,7 +54,6 @@ func TestGenAINormalizerClaimsKnownScopes(t *testing.T) {
 	for _, scope := range []string{
 		"opentelemetry.instrumentation.openai_v2",
 		"opentelemetry.util.genai.handler",
-		"opentelemetry.instrumentation.genai_openai",
 		"strands.telemetry.tracer",
 		"github.copilot",
 	} {

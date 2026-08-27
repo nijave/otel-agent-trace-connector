@@ -2,13 +2,13 @@
 
 The GenAI edge claims groups whose scopes match the prefixes
 `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
-`opentelemetry.instrumentation.genai`, `strands.telemetry`, and
-`github.copilot`. Most keys from these emitters arrive already canonical; the
-edge remaps the few divergent spellings (`gen_ai.system`, Strands' underscore
-cache counters) and strips everything outside the vocabulary. Scopes that do
-not match the prefixes drop from a claimed group — spans on unmatched
-scopes riding along in the same resource group never reach canonical output;
-the raw pipelines preserve the originals.
+`strands.telemetry`, and `github.copilot`. Most keys from these emitters
+arrive already canonical; the edge remaps the few divergent spellings
+(`gen_ai.system`, Strands' underscore cache counters) and strips everything
+outside the vocabulary. Scopes that do not match the prefixes drop from a
+claimed group — spans on unmatched scopes riding along in the same resource
+group never reach canonical output; the raw pipelines preserve the
+originals.
 See [canonical attributes](../canonical-attributes.md) for the
 shared vocabulary and the policy behind it.
 
