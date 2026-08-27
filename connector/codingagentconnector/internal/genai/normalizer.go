@@ -32,14 +32,15 @@ import (
 )
 
 // scopePrefixes lists the instrumentation-scope names this edge claims.
-// Prefixes rather than exact names: upstream is renaming
+// Prefixes rather than exact names: util-genai emits from a module whose
+// path may shift below opentelemetry.util.genai. Upstream renamed
 // opentelemetry-instrumentation-openai-v2 to
-// opentelemetry-instrumentation-genai-openai, and util-genai emits from a
-// module whose path may shift below opentelemetry.util.genai.
+// opentelemetry-instrumentation-genai-openai, but the renamed package still
+// emits through opentelemetry.util.genai.handler, so that rename needs no
+// prefix of its own.
 var scopePrefixes = []string{
 	"opentelemetry.instrumentation.openai_v2",
 	"opentelemetry.util.genai",
-	"opentelemetry.instrumentation.genai",
 	"strands.telemetry",
 	// GitHub Copilot CLI / VS Code Chat; prefix form tolerates sub-scopes.
 	"github.copilot",

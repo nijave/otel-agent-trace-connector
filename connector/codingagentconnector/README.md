@@ -58,8 +58,8 @@ trace vocabulary. It exposes two edges under a single component type,
   `execute_tool <tool>`.
 - **GenAI semconv (traces → traces):** claims resource groups whose
   instrumentation scope starts with `opentelemetry.instrumentation.openai_v2`,
-  `opentelemetry.util.genai`, `opentelemetry.instrumentation.genai`, or
-  `strands.telemetry`; normalizes `chat`/`invoke_agent`/`execute_tool` spans
+  `opentelemetry.util.genai`, or `strands.telemetry`; normalizes
+  `chat`/`invoke_agent`/`execute_tool` spans
   into the canonical vocabulary and strips content-bearing attributes and
   events. Claude Code groups keep priority, so a group is never emitted twice.
 - **OpenHands (traces → traces):** normalizes native OpenTelemetry traces from

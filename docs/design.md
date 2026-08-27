@@ -110,7 +110,10 @@ in the new `opentelemetry-python-genai` repository (verified 2026-08-24; the
 old package now receives only security patches). The rename did not change
 the wire scope: the renamed package still emits through
 `opentelemetry.util.genai.handler`, which the existing
-`opentelemetry.util.genai` prefix already claims.
+`opentelemetry.util.genai` prefix already claims. The
+`opentelemetry.instrumentation.genai` prefix pre-added for this rename
+matched no shipping package as a result, so the edge no longer claims it;
+it can return if upstream ever changes the emitted scope name.
 
 Research reflects the Cursor wire reference as of 2026-08-21.
 
@@ -464,7 +467,6 @@ Scope-name matching, evaluated per scope-spans block:
 | --- | --- |
 | `opentelemetry.instrumentation.openai_v2` (prefix) | openai-v2 default mode |
 | `opentelemetry.util.genai` (prefix) | openai-v2 experimental mode and direct util-genai users |
-| `opentelemetry.instrumentation.genai` (prefix) | reserved: no shipping package emits this scope — the renamed genai-openai package kept the util-genai scope |
 | `strands.telemetry` (prefix) | Strands Agents SDK built-in tracer |
 
 Within a claimed group, the normalizer rewrites a span only when its scope
