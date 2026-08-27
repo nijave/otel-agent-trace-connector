@@ -407,6 +407,25 @@ func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
 	}
 }
 
+func TestNormalizerMapsRootReasoningTokens(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "opencode")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("opencode")
+	root := ss.Spans().AppendEmpty()
+	root.SetName("ai.streamText")
+	root.Attributes().PutStr("session.id", "ses_r")
+	root.Attributes().PutInt("ai.usage.reasoningTokens", 17)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	got, ok := out.Attributes().Get("gen_ai.usage.reasoning.output_tokens")
+	require.True(t, ok, "root reasoning tokens must map")
+	require.Equal(t, int64(17), got.Int())
+}
+
 func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

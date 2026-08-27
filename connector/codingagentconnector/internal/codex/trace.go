@@ -30,6 +30,7 @@ var tokenUsageAttrs = []struct{ source, dest string }{
 	{"input_token_count", "gen_ai.usage.input_tokens"},
 	{"output_token_count", "gen_ai.usage.output_tokens"},
 	{"cached_token_count", "gen_ai.usage.cache_read.input_tokens"},
+	{"cache_write_token_count", "gen_ai.usage.cache_creation.input_tokens"},
 	{"tool_token_count", "gen_ai.usage.total_tokens"},
 	{"reasoning_token_count", "gen_ai.usage.reasoning.output_tokens"},
 }
