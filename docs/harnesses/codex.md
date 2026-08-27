@@ -38,7 +38,7 @@ Wire drift (audited 2026-08-25 against upstream HEAD): newer Codex builds
 add optional `service_tier` and `model_reasoning_effort` to
 `response.completed`, and detail fields to
 `codex.tool_result` (`tool_namespace`, `tool_result_seq`, `output_truncated`,
-length/count and origin fields). The pinned research and e2e (0.144.1)
+length/count and origin fields). The pinned research captures (0.144.1)
 predate these; the builder copies only the keys in this matrix, so the new
 fields stay out of canonical output until mapped.
 

@@ -48,7 +48,7 @@ export OPENAI_API_KEY=...   # your z.ai key
 Optional overrides:
 
 ```bash
-CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
+CODEX_VERSION=0.149.0 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
 
 The E2E defaults to `glm-4.7`, the model the pinned connector regression
