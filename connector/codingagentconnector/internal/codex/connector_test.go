@@ -308,7 +308,7 @@ func TestEmittedScopeVersionUsesBuildInfo(t *testing.T) {
 	require.Equal(t, "1.2.3", scope.Version())
 }
 
-// TestConnectorAgainstRealCodexCapture pins the connector to real Codex 0.144.1
+// TestConnectorAgainstRealCodexCapture pins the connector to real Codex 0.150.1
 // telemetry captured by the e2e harness (GLM-4.7 via the responses-proxy). It
 // guards against Codex log-schema drift and, specifically, the timing-only
 // duplicate response.completed that must not become a usage-less chat span. The
@@ -318,10 +318,11 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := NewDefaultConfig()
-	// The capture is fed as four separate batches, and the turn looks finalizable
-	// after the second one. The window has to outlast the gaps between those calls or
-	// a scheduling stall on a loaded runner splits the capture into two turns, so it
-	// is generous rather than as short as the other tests here can afford.
+	// The capture is fed as six separate batches, and the turn looks finalizable
+	// before the last one arrives. The window has to outlast the gaps between
+	// those calls or a scheduling stall on a loaded runner splits the capture
+	// into two turns, so it is generous rather than as short as the other tests
+	// here can afford.
 	cfg.ReorderWindow = 250 * time.Millisecond
 	cfg.TurnTimeout = time.Second
 	sink := &traceSink{}

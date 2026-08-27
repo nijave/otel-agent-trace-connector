@@ -34,12 +34,14 @@ provider returned. A `response.completed` from a provider that reports no
 usage (e.g. a chat-completions stream without `stream_options.include_usage`)
 still builds its chat span, with no `gen_ai.usage.*` keys at all.
 
-Wire drift (audited 2026-08-25 against upstream HEAD): newer Codex builds
-add optional `service_tier` and `model_reasoning_effort` to
-`response.completed`, and detail fields to
-`codex.tool_result` (`tool_namespace`, `tool_result_seq`, `output_truncated`,
-length/count and origin fields). The pinned research captures (0.144.1)
-predate these; the builder copies only the keys in this matrix, so the new
+Wire drift (audited 2026-08-25 against upstream HEAD): the pinned e2e capture
+now comes from Codex 0.150.1. That version sends `cache_write_token_count` on
+usage-bearing `response.completed` records (mapped above) and extra detail
+fields on `codex.tool_result` (`tool_namespace`, `tool_result_seq`,
+`output_truncated`, `agent_name`); `codex.tool_decision` gains
+`tool_namespace` too. Upstream builds can also add optional `service_tier`
+and `model_reasoning_effort` to `response.completed`; neither appears in this
+capture. The builder copies only the keys in this matrix, so the unmapped
 fields stay out of canonical output until mapped.
 
 ### codex.sse_event (response.completed) → chat
@@ -49,7 +51,7 @@ fields stay out of canonical output until mapped.
 | `input_token_count` | `gen_ai.usage.input_tokens` | mapped (absent when the provider reports no usage) |
 | `output_token_count` | `gen_ai.usage.output_tokens` | mapped (absent when the provider reports no usage) |
 | `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the provider's usage carries no cached-token field) |
-| `cache_write_token_count` | `gen_ai.usage.cache_creation.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; upstream added the field after the pinned 0.144.1 capture) |
+| `cache_write_token_count` | `gen_ai.usage.cache_creation.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; the pinned 0.150.1 capture reports 0) |
 | `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (absent when the provider's usage carries no total; the connector never computes one) |
 | `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
 | `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
