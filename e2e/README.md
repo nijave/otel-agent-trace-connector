@@ -3,7 +3,11 @@
 The live e2e tests build the custom Collector, run a real coding agent in a
 container, and check the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
-they are opt-in and never run in CI.
+they are opt-in and never run in CI. Because of that, run the affected stack
+locally before opening a PR whenever a change can alter canonical output, the
+collector config, or an e2e harness — `scripts/check.sh` builds these stacks
+but does not exercise them, so a local run is the only check that catches
+regressions in what the live validator asserts.
 
 The stacks share `compose.e2e-base.yaml` (the collector); each defines only
 its own `agent` service. Each stack writes output under `.e2e-output/`.
@@ -48,7 +52,7 @@ export OPENAI_API_KEY=...   # your z.ai key
 Optional overrides:
 
 ```bash
-CODEX_VERSION=0.144.1 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
+CODEX_VERSION=0.149.0 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
 
 The E2E defaults to `glm-4.7`, the model the pinned connector regression
@@ -213,7 +217,7 @@ OPENCODE_VERSION=1.18.21 E2E_OPENCODE_MODEL=ox-alpha-free E2E_AGENT_TIMEOUT=10m 
 A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`. The
 committed regression fixture,
 `connector/codingagentconnector/internal/opencode/testdata/opencode-native-traces.json`,
-is sliced from that file. The first jq command keeps the first resource group
+comes from slicing that file. The first jq command keeps the first resource group
 whose scope contains an `ai.streamText` subtree (its Effect-noise siblings come
 along, which the replay test needs); the second keeps every `ai.*` span and
 samples at most 20 noise spans per scope so the fixture stays small:
@@ -256,8 +260,8 @@ E2E_PI_MODEL=zai/glm-4.7 ./scripts/e2e-pi.sh
 
 The Copilot stack builds the custom Collector and runs a real non-interactive
 `copilot -p` session against a BYOK provider configured through environment
-variables. No GitHub authentication or Copilot subscription is involved; only
-the provider account behind the key is billed. Native telemetry activates
+variables. The run needs no GitHub authentication or Copilot subscription;
+charges land only on the provider account behind the key. Native telemetry activates
 through `COPILOT_OTEL_ENABLED` plus `OTEL_EXPORTER_OTLP_ENDPOINT`, so spans
 stream to the collector while the CLI runs. The prompt forces one harmless
 shell tool call. Validation accepts any valid `invoke_agent` root (the
@@ -297,7 +301,7 @@ Pin the CLI version with `COPILOT_CLI_VERSION`.
 A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`, the
 same flow the OpenCode stack documents. Captured traces feed the committed
 connector fixtures: the GenAI edge's
-`internal/genai/testdata/copilot-native.otlp.json` was authored from the
+`internal/genai/testdata/copilot-native.otlp.json` originated from the
 documented schema, and real captures are how that fixture gets refreshed
 against actual CLI output. After updating it, rerun
 `go test ./internal/genai/` from `connector/codingagentconnector/` to confirm
@@ -309,7 +313,7 @@ The OpenHands stack builds the custom Collector and runs a real headless
 [OpenHands SDK](https://github.com/OpenHands/software-agent-sdk) conversation
 (pinned via the `OPENHANDS_SDK_VERSION` image arg) with one terminal tool the
 prompt forces. The agent reaches its model directly through litellm — no
-proxy service is needed — with default model `anthropic/claude-sonnet-4-5`.
+proxy service — with default model `anthropic/claude-sonnet-4-5`.
 The SDK's Laminar instrumentation exports OTLP/HTTP traces through
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
 `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`, so spans stream to the

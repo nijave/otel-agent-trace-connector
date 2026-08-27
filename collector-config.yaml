@@ -54,5 +54,8 @@ service:
       exporters: [file/raw-traces, coding_agent/claude]
     traces/canonical:
       receivers: [coding_agent, coding_agent/claude]
-      processors: [batch]
+      # resource/e2e must re-stamp here: the connector's canonical resource
+      # contract strips non-contract attributes, including the pre-connector
+      # e2e.run.id stamp the validator correlates on.
+      processors: [resource/e2e, batch]
       exporters: [file/canonical]

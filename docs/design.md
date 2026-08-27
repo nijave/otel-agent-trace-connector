@@ -787,7 +787,7 @@ regression captures came from. Its image installs Debian's standard
 `codex login` step exists: the model provider reads its key from `env_key`
 directly.
 
-Codex 0.144.1 speaks only the Responses API, which z.ai does not serve, so a third
+Codex (since 0.144.1) speaks only the Responses API, which z.ai does not serve, so a third
 Compose service (`responses-proxy`) translates Responses to Chat Completions and
 injects `stream_options.include_usage` so token usage survives the stream.
 The proxy builds from a pinned fork commit, exists only for this test, and is not

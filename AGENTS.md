@@ -48,6 +48,11 @@ tests cover it — before cleverness, flexibility, or feature breadth.
   globs discover `scripts/*.sh`, `e2e/*/run.sh`, `compose.e2e-*.yaml`, and every
   `e2e/*/Dockerfile` automatically — adding a stack needs no CI or check.sh
   edits; the only per-stack work is its credential-split assertion.
+- **Run the affected live e2e locally before opening a PR** whenever a change
+  can alter canonical output, the collector config, or an e2e harness. Neither
+  CI nor `check.sh` runs the paid e2es — they build the stacks without
+  exercising them — so only a local run catches regressions in what the live
+  validator asserts. See `e2e/README.md` for per-stack instructions.
 - **Commit atomic, related units of work and push them promptly.** Do not let a
   large pile of unrelated changes accumulate into one commit.
 - **If you push something broken, fix it** — forward, or by amending and (only
