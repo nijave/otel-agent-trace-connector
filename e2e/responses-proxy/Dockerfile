@@ -13,8 +13,10 @@
 #      Upstream v0.2.0 sets the SSE event name, which turn-completion needs.
 #   2. v0.2.0 still only captures token usage from a trailing usage-only chunk
 #      (choices empty); z.ai attaches usage to the final content chunk, so usage
-#      was dropped. Our fork patch captures usage from any chunk that carries it.
-# Fork branch: fix/usage-capture-on-content-chunk (PR-able back upstream).
+#      was dropped. The pinned release captures usage from any chunk carrying it.
+# Since prebuilt-480cfd4 the fork's base is the xeonvs integration line
+# (nijave/responses-proxy#2), which ships the usage fix natively (with our
+# regression test) plus Codex-compat work targeting 0.149+ wire behavior.
 #
 # The tag names one immutable fork commit; the fork's release workflow compiled
 # it once with a locked Cargo.lock, so the whole dependency graph stays pinned.
@@ -22,9 +24,9 @@
 # a checksum-verified download. Refresh the tag and sha256 together when the fork
 # commit changes.
 FROM debian:trixie-slim AS fetch
-ARG RESPONSES_PROXY_TAG=prebuilt-d2b5d04
+ARG RESPONSES_PROXY_TAG=prebuilt-480cfd4
 ARG RESPONSES_PROXY_TARGET=x86_64-unknown-linux-gnu
-ARG RESPONSES_PROXY_SHA256=f14a17a2ec41aefd7f1d81597c5817ae4ee4172d8d92316e86c714fcbed4ac06
+ARG RESPONSES_PROXY_SHA256=84cc318237a0a7bd6eda1212ce8dae98c9f335f890b5f82fb15802bc427375c5
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates curl \
