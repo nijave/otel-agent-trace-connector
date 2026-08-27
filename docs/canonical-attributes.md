@@ -71,6 +71,7 @@ there, never here. Keys appear in declaration order:
 - `gen_ai.request.model`
 - `gen_ai.request.max_tokens`
 - `gen_ai.request.stream`
+- `gen_ai.request.reasoning.level`
 - `gen_ai.response.finish_reasons`
 - `gen_ai.response.id`
 - `gen_ai.response.model`
@@ -97,6 +98,7 @@ there, never here. Keys appear in declaration order:
 - `exception.message`
 - `exception.escaped`
 - `exception.stacktrace`
+- `coding_agent.request.service_tier`
 - `coding_agent.source`
 - `coding_agent.source.scope`
 - `coding_agent.source.event`
@@ -105,6 +107,10 @@ there, never here. Keys appear in declaration order:
 <!-- /vocabulary:generated -->
 
 `gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
+
+`gen_ai.request.reasoning.level` records the reasoning effort the request asked for (Codex's `model_reasoning_effort`; it corresponds to OpenAI's `reasoning.effort` request parameter), copied verbatim from the wire when present.
+
+`coding_agent.request.service_tier` records the provider service tier a request ran in, copied verbatim from the wire when present. The connector namespace holds it rather than a provider namespace because providers beyond OpenAI have tier concepts and other harnesses pass tiers through; one key keeps cross-provider queries uniform.
 
 
 Beyond the enumerated keys, any key under the `exception.` prefix may appear:
