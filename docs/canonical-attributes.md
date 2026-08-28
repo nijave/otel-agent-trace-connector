@@ -6,8 +6,9 @@ this list and nothing else. The list is the single source of truth in
 this page mirrors it.
 
 The vocabulary is a **subset** of the upstream
-[OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/):
-canonical output optimizes for tracking LLM usage, cost, and performance
+[OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai),
+last audited against commit `67dff024` of that repo: canonical output optimizes
+for tracking LLM usage, cost, and performance
 uniformly across harnesses. Vendor detail outside that scope is deliberately
 dropped rather than carried through — see [Raw preservation](#raw-preservation)
 for how to recover it.

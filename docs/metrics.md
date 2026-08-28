@@ -103,6 +103,10 @@ from `opentelemetry-instrumentation-openai-v2`; the experimental mode
 
 ### Default mode (Source)
 
+The table records the semconv v1.30.0 spellings this mode pins to; the current
+GenAI registry renames `gen_ai.system` to `gen_ai.provider.name` and moves the
+service tier into the `openai.` namespace.
+
 | Metric | Type | Attributes |
 | --- | --- | --- |
 | `gen_ai.client.operation.duration` | Histogram (s) | `gen_ai.operation.name`, `gen_ai.system` (=`openai`), `gen_ai.request.model` + conditional `error.type`, `gen_ai.response.model`, `gen_ai.openai.response.service_tier`, `gen_ai.openai.response.system_fingerprint`, `server.address`, `server.port` |
@@ -358,7 +362,7 @@ layer).
   https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2
 - util-genai:
   https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-genai
-- GenAI semconv metrics: https://opentelemetry.io/docs/specs/semconv/gen-ai/
+- GenAI semconv metrics: https://github.com/open-telemetry/semantic-conventions-genai
 - Strands metrics: https://strandsagents.com/docs/user-guide/observability-evaluation/metrics/
   and https://github.com/strands-agents/sdk-python (strands-py/src/strands/telemetry/)
 - Cline telemetry source: https://github.com/cline/cline/blob/main/src/services/telemetry
