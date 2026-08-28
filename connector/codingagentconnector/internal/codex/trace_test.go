@@ -201,6 +201,54 @@ func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
 	require.False(t, ok, "no usage was reported, so none should be invented")
 }
 
+// TestChatSpanCopiesReasoningEffortAndServiceTier pins the two optional
+// request fields newer Codex builds add to usage-bearing response.completed
+// records: the chat span copies each wire string verbatim, only when present.
+func TestChatSpanCopiesReasoningEffortAndServiceTier(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind":             "response.completed",
+				"model":                  "gpt-test",
+				"model_reasoning_effort": "high",
+				"service_tier":           "priority",
+				"ttft_ms":                30,
+			}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	chat := findSpan(t, spans, "chat gpt-test")
+	require.Equal(t, "high", attrString(t, chat, "gen_ai.request.reasoning.level"))
+	require.Equal(t, "priority", attrString(t, chat, "coding_agent.request.service_tier"))
+}
+
+// TestChatSpanOmitsReasoningEffortAndServiceTierWhenAbsent pins the presence
+// guards: a completion without these fields (reasoning effort "none", a tier
+// the provider did not return) yields a chat span with neither canonical key.
+func TestChatSpanOmitsReasoningEffortAndServiceTierWhenAbsent(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind": "response.completed",
+				"model":      "gpt-test",
+				"ttft_ms":    30,
+			}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	chat := findSpan(t, spans, "chat gpt-test")
+	for _, key := range []string{"gen_ai.request.reasoning.level", "coding_agent.request.service_tier"} {
+		_, ok := chat.Attributes().Get(key)
+		require.False(t, ok, "%s must stay absent when the wire omits it", key)
+	}
+}
+
 func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{conversationID: "c", first: base, last: base,

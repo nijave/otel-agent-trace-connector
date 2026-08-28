@@ -160,6 +160,12 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if model != "" {
 			span.Attributes().PutStr("gen_ai.request.model", model)
 		}
+		if effort := stringValue(event.attrs["model_reasoning_effort"]); effort != "" {
+			span.Attributes().PutStr("gen_ai.request.reasoning.level", effort)
+		}
+		if tier := stringValue(event.attrs["service_tier"]); tier != "" {
+			span.Attributes().PutStr("coding_agent.request.service_tier", tier)
+		}
 		for _, m := range tokenUsageAttrs {
 			copyIntAttr(span.Attributes(), event.attrs, m.source, m.dest)
 		}

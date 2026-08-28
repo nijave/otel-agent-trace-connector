@@ -39,10 +39,8 @@ now comes from Codex 0.150.1. That version sends `cache_write_token_count` on
 usage-bearing `response.completed` records (mapped above) and extra detail
 fields on `codex.tool_result` (`tool_namespace`, `tool_result_seq`,
 `output_truncated`, `agent_name`); `codex.tool_decision` gains
-`tool_namespace` too. Upstream builds can also add optional `service_tier`
-and `model_reasoning_effort` to `response.completed`; neither appears in this
-capture. The builder copies only the keys in this matrix, so the unmapped
-fields stay out of canonical output until mapped.
+`tool_namespace` too. The builder copies only the keys in this matrix, so
+those detail fields stay out of canonical output.
 
 ### codex.sse_event (response.completed) → chat
 
@@ -56,6 +54,8 @@ fields stay out of canonical output until mapped.
 | `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
 | `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
+| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when the build sends no effort value — reasoning effort "none" sends nothing — and absent from the pinned 0.150.1 capture) |
+| `service_tier` | `coding_agent.request.service_tier` | mapped (absent when the build sends no tier or the provider returns none; absent from the pinned 0.150.1 capture) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
 | `slug`, `originator`, `terminal.type`, `attempt`, `endpoint`, auth/http detail | — | dropped |
