@@ -613,3 +613,78 @@ func TestOpenHandsCanonicalFixtureRejectsContent(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "survived normalization")
 }
+
+func TestStrandsCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "genai", "testdata", "strands-canonical.otlp.json")
+	require.NoError(t, validateCanonicalFile(path, "strands-otel-1787880919-619255", "strands"))
+}
+
+func TestOpenAIAdhocCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "genai", "testdata", "openai-adhoc-canonical.otlp.json")
+	require.NoError(t, validateCanonicalFile(path, "openai-otel-1787880965-636343", "openai_adhoc"))
+}
+
+func TestCopilotCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "genai", "testdata", "copilot-cli-canonical.otlp.json")
+	require.NoError(t, validateCanonicalFile(path, "copilot-byok-1787498490", "copilot"))
+}
+
+func TestCodexCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "codex", "testdata", "codex-canonical.otlp.json")
+	require.NoError(t, validateCanonicalFile(path, "codex-otel-1787881086-648014", "codex"))
+}
+
+func TestClaudeCanonicalFixtureValidates(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "claude", "testdata", "claude-canonical.otlp.json")
+	require.NoError(t, validateCanonicalFile(path, "claude-otel-1787956985-1645736", "claude_code"))
+}
+
+// firstFixtureBatch parses the first JSONL line of a committed canonical
+// fixture so a rejection test can inject forbidden content into it.
+func firstFixtureBatch(t *testing.T, path string) ptrace.Traces {
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	line, _, _ := bytes.Cut(raw, []byte("\n"))
+	traces, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(line)
+	require.NoError(t, err)
+	require.Positive(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().Len())
+	return traces
+}
+
+// writeInjected serializes an injected batch the same way the collector's file
+// exporter does, so validateCanonicalFile reads it back through the live path.
+func writeInjected(t *testing.T, traces ptrace.Traces) string {
+	temp := filepath.Join(t.TempDir(), "leaky.json")
+	data, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(temp, data, 0o600))
+	return temp
+}
+
+// TestClaudeCanonicalFixtureRejectsContent injects the span event
+// rejectClaudeTraceContent must catch on the committed fixture; canonical
+// validation cannot pass content.
+func TestClaudeCanonicalFixtureRejectsContent(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "claude", "testdata", "claude-canonical.otlp.json")
+	traces := firstFixtureBatch(t, path)
+	span := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	span.Events().AppendEmpty().SetName("api_request_body")
+
+	err := validateCanonicalFile(writeInjected(t, traces), "claude-otel-1787956985-1645736", "claude_code")
+	require.Error(t, err)
+	require.ErrorContains(t, err, `sensitive Claude span event "api_request_body"`)
+}
+
+// TestCodexCanonicalFixtureRejectsContent injects an attribute from the shared
+// sensitive-attribute check; the codex edge has no agent-specific content
+// rejector beyond it.
+func TestCodexCanonicalFixtureRejectsContent(t *testing.T) {
+	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "codex", "testdata", "codex-canonical.otlp.json")
+	traces := firstFixtureBatch(t, path)
+	span := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	span.Attributes().PutStr("prompt", "leak")
+
+	err := validateCanonicalFile(writeInjected(t, traces), "codex-otel-1787881086-648014", "codex")
+	require.Error(t, err)
+	require.ErrorContains(t, err, `sensitive attribute "prompt"`)
+}
