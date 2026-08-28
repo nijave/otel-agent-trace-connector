@@ -344,7 +344,7 @@ elsewhere should mount their own config over it.
 
 - [OpenTelemetry Collector Builder](https://opentelemetry.io/docs/collector/extend/ocb/)
 - [OpenTelemetry Collector connectors](https://opentelemetry.io/docs/collector/components/connector/)
-- [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+- [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai)
 - [Codex observability and telemetry](https://developers.openai.com/codex/config-advanced#observability-and-telemetry)
 - [Cursor OpenTelemetry Export](https://cursor.com/docs/enterprise/opentelemetry-export)
 - [Cursor OpenTelemetry wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire)

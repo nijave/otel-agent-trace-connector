@@ -37,10 +37,9 @@ still builds its chat span, with no `gen_ai.usage.*` keys at all.
 Wire drift (audited 2026-08-25 against upstream HEAD): the pinned e2e capture
 now comes from Codex 0.150.1. That version sends `cache_write_token_count` on
 usage-bearing `response.completed` records (mapped above) and extra detail
-fields on `codex.tool_result` (`tool_namespace`, `tool_result_seq`,
-`output_truncated`, `agent_name`); `codex.tool_decision` gains
-`tool_namespace` too. The builder copies only the keys in this matrix, so
-those detail fields stay out of canonical output.
+fields on `codex.tool_result` and `codex.tool_decision`; those detail fields
+appear as dropped rows in the matrix below. The builder copies only the keys
+in this matrix, so they stay out of canonical output.
 
 ### codex.sse_event (response.completed) → chat
 
@@ -70,6 +69,10 @@ those detail fields stay out of canonical output.
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `arguments`, `output` | — | dropped (tool content, stripped at parse time) |
 | `mcp_server`, `mcp_server_origin` | — | dropped |
+| `tool_namespace` | — | dropped (tool provenance detail, outside the usage/cost/performance scope) |
+| `tool_result_seq` | — | dropped (process-wide result counter, not a per-turn ordinal) |
+| `output_truncated` | — | dropped (qualifies tool output content that the connector strips at parse time) |
+| `agent_name` | — | dropped (subagent identity; upstream uses the field for two different meanings and values include per-run UUIDs; per-subagent `invoke_agent` spans would be the semconv-shaped path if this is ever wanted) |
 
 ### invoke_agent codex root
 
@@ -92,7 +95,8 @@ those detail fields stay out of canonical output.
 Dropped entirely, including the decision→result pairing: its only canonical
 outputs were `coding_agent.tool.decision` / `coding_agent.tool.decision_source`
 (both vendor keys outside the vocabulary), and once those went the join had no
-remaining purpose.
+remaining purpose. Codex 0.150.1 also sends `tool_namespace` on this event; it
+drops with the event.
 
 ## Connector-written attributes
 
