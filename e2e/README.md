@@ -3,11 +3,14 @@
 The live e2e tests build the custom Collector, run a real coding agent in a
 container, and check the exported OTLP traces on the host with
 `go test -tags=e2e ./e2e/validator`. They call real models and incur API cost, so
-they are opt-in and never run in CI. Because of that, run the affected stack
-locally before opening a PR whenever a change can alter canonical output, the
-collector config, or an e2e harness — `scripts/check.sh` builds these stacks
-but does not exercise them, so a local run is the only check that catches
-regressions in what the live validator asserts.
+they are opt-in and never run in CI. Because of that, any change that impacts a
+harness requires that harness's live e2e to run locally before opening a PR. A
+change to a shared surface — canonical vocabulary/normalizers, the collector
+config, the validator, `compose.e2e-base.yaml` — impacts every harness, so run
+every live stack (Cursor has no live stack; its unit fixtures are the only
+check). `scripts/check.sh` builds these stacks but does not exercise them, so
+a local run is the only check that catches regressions in what the live
+validator asserts.
 
 The stacks share `compose.e2e-base.yaml` (the collector); each defines only
 its own `agent` service. Each stack writes output under `.e2e-output/`.
