@@ -18,6 +18,11 @@ services:
       # guard would only fire later and less clearly.
       LLM_API_KEY: "${LLM_API_KEY:-}"
       LLM_MODEL: "${LLM_MODEL:-anthropic/claude-sonnet-4-5}"
+      # Optional provider endpoint override, passed to the SDK LLM as
+      # base_url. Points litellm at a provider-compatible endpoint such as
+      # z.ai's Anthropic-compatible https://api.z.ai/api/anthropic; empty
+      # keeps the provider default for LLM_MODEL.
+      LLM_BASE_URL: "${LLM_BASE_URL:-}"
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://collector:4318/v1/traces"
       OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
