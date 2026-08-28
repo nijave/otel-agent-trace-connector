@@ -23,7 +23,7 @@ var chatTokenAttrs = []struct{ source, dest string }{
 	{"cursor.api.request.input_tokens", "gen_ai.usage.input_tokens"},
 	{"cursor.api.request.output_tokens", "gen_ai.usage.output_tokens"},
 	{"cursor.api.request.cache_read_tokens", "gen_ai.usage.cache_read.input_tokens"},
-	{"cursor.api.request.cache_creation_tokens", "gen_ai.usage.cache_creation.input_tokens"},
+	{"cursor.api.request.cache_creation_tokens", "gen_ai.usage.cache_write.input_tokens"},
 }
 
 func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, error) {

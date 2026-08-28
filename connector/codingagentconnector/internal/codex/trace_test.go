@@ -138,7 +138,7 @@ func TestBuildTraceMapsCacheWriteTokens(t *testing.T) {
 	}
 	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	chat := findSpan(t, spans, "chat glm-test")
-	require.Equal(t, int64(42), attrInt(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
+	require.Equal(t, int64(42), attrInt(t, chat, "gen_ai.usage.cache_write.input_tokens"))
 }
 
 func TestChatRetryIsNotReusedByLaterCompletion(t *testing.T) {

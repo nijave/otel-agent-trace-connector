@@ -188,29 +188,33 @@ func mapLegacyTokens(attrs pcommon.Map, legacyKey, currentKey string) {
 
 // usageRemaps maps emitter-specific usage spellings onto their canonical
 // dotted keys. Strands Agents SDK emits cache counters with underscores where
-// the semconv uses a nested segment.
+// the semconv uses a nested segment, and instrumentation built on the
+// pre-rename semconv emits the old cache_creation spelling; both land on the
+// current registry key.
 var usageRemaps = []struct{ raw, canonical string }{
 	{"gen_ai.usage.cache_read_input_tokens", "gen_ai.usage.cache_read.input_tokens"},
-	{"gen_ai.usage.cache_write_input_tokens", "gen_ai.usage.cache_creation.input_tokens"},
+	{"gen_ai.usage.cache_write_input_tokens", "gen_ai.usage.cache_write.input_tokens"},
+	{"gen_ai.usage.cache_creation.input_tokens", "gen_ai.usage.cache_write.input_tokens"},
 }
 
 // allowedUsageKeys enumerates the entire canonical usage vocabulary. There is
 // deliberately no gen_ai.usage. wildcard: any other member of that namespace
 // is a vendor key and is removed here rather than relying on the strip.
 var allowedUsageKeys = map[string]bool{
-	"gen_ai.usage.input_tokens":                true,
-	"gen_ai.usage.output_tokens":               true,
-	"gen_ai.usage.total_tokens":                true,
-	"gen_ai.usage.cache_read.input_tokens":     true,
-	"gen_ai.usage.cache_creation.input_tokens": true,
-	"gen_ai.usage.reasoning.output_tokens":     true,
+	"gen_ai.usage.input_tokens":             true,
+	"gen_ai.usage.output_tokens":            true,
+	"gen_ai.usage.total_tokens":             true,
+	"gen_ai.usage.cache_read.input_tokens":  true,
+	"gen_ai.usage.cache_write.input_tokens": true,
+	"gen_ai.usage.reasoning.output_tokens":  true,
 }
 
-// remapUsageKeys copies Strands' underscore cache variants onto their dotted
-// counterparts (the dotted key wins when both are present) and removes the
-// raw keys. Values coerce through intAttr so a double- or string-typed
-// counter still lands on its canonical key instead of being deleted unmapped;
-// only genuinely malformed values drop.
+// remapUsageKeys copies emitter-specific usage spellings (Strands' underscore
+// cache variants, the pre-rename cache_creation dotted spelling) onto their
+// canonical counterparts (the canonical key wins when both are present) and
+// removes the raw keys. Values coerce through intAttr so a double- or
+// string-typed counter still lands on its canonical key instead of being
+// deleted unmapped; only genuinely malformed values drop.
 func remapUsageKeys(attrs pcommon.Map) {
 	for _, remap := range usageRemaps {
 		count, ok := intAttr(attrs, remap.raw)

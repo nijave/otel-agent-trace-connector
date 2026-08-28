@@ -125,10 +125,10 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.Equal(t, "glm-4.7", attrString(t, chat, "gen_ai.request.model"))
 	// Totals span both llm_request spans in the capture.
 	usage := map[string]int64{
-		"gen_ai.usage.input_tokens":                477,
-		"gen_ai.usage.output_tokens":               166,
-		"gen_ai.usage.cache_read.input_tokens":     1216,
-		"gen_ai.usage.cache_creation.input_tokens": 0,
+		"gen_ai.usage.input_tokens":             477,
+		"gen_ai.usage.output_tokens":            166,
+		"gen_ai.usage.cache_read.input_tokens":  1216,
+		"gen_ai.usage.cache_write.input_tokens": 0,
 	}
 	for key, want := range usage {
 		total := int64(0)

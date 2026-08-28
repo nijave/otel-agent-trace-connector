@@ -360,7 +360,7 @@ func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
 	require.Equal(t, int64(42), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
 		"gen_ai.usage.cache_read.input_tokens"))
 	require.Equal(t, int64(7), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
-		"gen_ai.usage.cache_creation.input_tokens"))
+		"gen_ai.usage.cache_write.input_tokens"))
 	for _, key := range []string{
 		"gen_ai.usage.cache_read_input_tokens",
 		"gen_ai.usage.cache_write_input_tokens",
@@ -385,7 +385,7 @@ func TestGenAINormalizerCoercesNonIntCacheCounters(t *testing.T) {
 	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, int64(42), attrInt(t, out, "gen_ai.usage.cache_read.input_tokens"))
-	require.Equal(t, int64(7), attrInt(t, out, "gen_ai.usage.cache_creation.input_tokens"))
+	require.Equal(t, int64(7), attrInt(t, out, "gen_ai.usage.cache_write.input_tokens"))
 	for _, key := range []string{
 		"gen_ai.usage.cache_read_input_tokens",
 		"gen_ai.usage.cache_write_input_tokens",
@@ -409,6 +409,50 @@ func TestGenAINormalizerKeepsDottedUsageOverUnderscoreVariant(t *testing.T) {
 		"the dotted semconv key wins over the underscore variant")
 	_, exists := out.Attributes().Get("gen_ai.usage.cache_read_input_tokens")
 	require.False(t, exists)
+}
+
+// TestGenAINormalizerMapsCacheWriteRawForms pins both wire spellings of the
+// cache-write counter onto the current registry key: the pre-rename
+// cache_creation spelling (still emitted by upstream instrumentation) remaps,
+// the current spelling passes through, and the current spelling wins when a
+// span carries both.
+func TestGenAINormalizerMapsCacheWriteRawForms(t *testing.T) {
+	build := func(attrs map[string]int64) ptrace.Traces {
+		input := ptrace.NewTraces()
+		span := newGroup(input, "github.copilot", "invoke_agent copilot-cli")
+		span.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+		for key, value := range attrs {
+			span.Attributes().PutInt(key, value)
+		}
+		return input
+	}
+	normalizeOneSpan := func(t *testing.T, input ptrace.Traces) ptrace.Span {
+		t.Helper()
+		sink := &traceSink{}
+		require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+		return sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	}
+
+	remapped := normalizeOneSpan(t, build(map[string]int64{
+		"gen_ai.usage.cache_creation.input_tokens": 10,
+	}))
+	require.Equal(t, int64(10), attrInt(t, remapped, "gen_ai.usage.cache_write.input_tokens"),
+		"the pre-rename spelling must land on the current registry key")
+	_, exists := remapped.Attributes().Get("gen_ai.usage.cache_creation.input_tokens")
+	require.False(t, exists, "the pre-rename spelling must not survive normalization")
+
+	passed := normalizeOneSpan(t, build(map[string]int64{
+		"gen_ai.usage.cache_write.input_tokens": 10,
+	}))
+	require.Equal(t, int64(10), attrInt(t, passed, "gen_ai.usage.cache_write.input_tokens"),
+		"the current spelling passes through onto the canonical key")
+
+	both := normalizeOneSpan(t, build(map[string]int64{
+		"gen_ai.usage.cache_creation.input_tokens": 10,
+		"gen_ai.usage.cache_write.input_tokens":    12,
+	}))
+	require.Equal(t, int64(12), attrInt(t, both, "gen_ai.usage.cache_write.input_tokens"),
+		"the current spelling wins over the pre-rename one")
 }
 
 func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
@@ -754,6 +798,10 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 		}
 	}
 	require.True(t, shutdownSeen, "lifecycle span events survive")
+	require.Equal(t, int64(10), attrInt(t, cliRoot, "gen_ai.usage.cache_write.input_tokens"),
+		"the capture's pre-rename cache_creation spelling remaps onto the registry key")
+	_, hasLegacyCacheWrite := cliRoot.Attributes().Get("gen_ai.usage.cache_creation.input_tokens")
+	require.False(t, hasLegacyCacheWrite, "the pre-rename spelling must not reach canonical output")
 
 	chat, ok := names["chat gpt-5.2"]
 	require.True(t, ok)

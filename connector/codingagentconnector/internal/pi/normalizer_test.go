@@ -105,7 +105,7 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 	// The dotted semconv cache keys must be renamed even when the wire value
 	// is zero, not dropped with the source key.
 	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_read.input_tokens"))
-	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
+	require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.cache_write.input_tokens"))
 	// Stop reason and response id land under their canonical keys.
 	require.Equal(t, "stop", attrStrSliceElem(t, chat, "gen_ai.response.finish_reasons"))
 	require.Equal(t, "router-abc123", attrString(t, chat, "gen_ai.response.id"))

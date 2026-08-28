@@ -51,7 +51,7 @@ fields stay out of canonical output until mapped.
 | `input_token_count` | `gen_ai.usage.input_tokens` | mapped (absent when the provider reports no usage) |
 | `output_token_count` | `gen_ai.usage.output_tokens` | mapped (absent when the provider reports no usage) |
 | `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the provider's usage carries no cached-token field) |
-| `cache_write_token_count` | `gen_ai.usage.cache_creation.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; the pinned 0.150.1 capture reports 0) |
+| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; the pinned 0.150.1 capture reports 0) |
 | `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (absent when the provider's usage carries no total; the connector never computes one) |
 | `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
 | `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |

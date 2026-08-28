@@ -27,7 +27,7 @@ raw key that would map there).
 | `gen_ai.usage.output_tokens` | `gen_ai.usage.output_tokens` | mapped (absent for streamed completions, which carry no usage upstream) |
 | `llm.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (absent when the wire omits it; responses-style spans report only input/output) |
 | `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the request did no prompt caching) |
-| `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_creation.input_tokens` | mapped (absent when the request did no prompt caching) |
+| `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_write.input_tokens` | mapped (absent when the request did no prompt caching) |
 | `gen_ai.input.messages`, `lmnr.span.input` | — | dropped (prompt/response content never leaves the edge) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
 

@@ -151,7 +151,7 @@ var usageIntKeys = [][2]string{
 	{"input_tokens", "gen_ai.usage.input_tokens"},
 	{"output_tokens", "gen_ai.usage.output_tokens"},
 	{"cache_read_tokens", "gen_ai.usage.cache_read.input_tokens"},
-	{"cache_creation_tokens", "gen_ai.usage.cache_creation.input_tokens"},
+	{"cache_creation_tokens", "gen_ai.usage.cache_write.input_tokens"},
 }
 
 const (

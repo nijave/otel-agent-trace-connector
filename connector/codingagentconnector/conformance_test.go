@@ -252,7 +252,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 				{RawKey: "output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "cache_read_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-				{RawKey: "cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+				{RawKey: "cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 				{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 				{RawKey: "stop_reason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
 			},
@@ -267,7 +267,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "input_token_count", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 				{RawKey: "output_token_count", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "cached_token_count", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-				{RawKey: "cache_write_token_count", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+				{RawKey: "cache_write_token_count", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 				{RawKey: "tool_token_count", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
 				{RawKey: "reasoning_token_count", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
 				{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
@@ -283,7 +283,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "cursor.api.request.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 				{RawKey: "cursor.api.request.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "cursor.api.request.cache_read_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-				{RawKey: "cursor.api.request.cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+				{RawKey: "cursor.api.request.cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			},
 		}},
 		// Three fixture edges, one wired GenAI pipeline: genai.New claims
@@ -300,7 +300,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "gen_ai.usage.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.cache_read_input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-				{RawKey: "gen_ai.usage.cache_write_input_tokens", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+				{RawKey: "gen_ai.usage.cache_write_input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			},
 		}},
 		{wired: "genai", edge: canonical.Edge{
@@ -325,6 +325,13 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "gen_ai.usage.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.cache_read.input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.reasoning.output_tokens", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
+				// Upstream Copilot instrumentation straddles the semconv
+				// cache-write rename: captures carry the old cache_creation
+				// spelling, registry-aligned emitters carry the new one. Both
+				// raw forms map onto the same canonical key. Signals stay
+				// dormant until a capture carries the key.
+				{RawKey: "gen_ai.usage.cache_creation.input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				{RawKey: "gen_ai.usage.cache_write.input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			},
 		}},
 		{wired: "opencode", edge: canonical.Edge{
@@ -368,7 +375,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "usage.output", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
 				{RawKey: "usage.cache_read", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-				{RawKey: "usage.cache_write", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+				{RawKey: "usage.cache_write", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 				{RawKey: "stopReason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
 			},
 		}},

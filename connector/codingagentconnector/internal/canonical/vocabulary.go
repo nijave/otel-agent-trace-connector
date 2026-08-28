@@ -38,7 +38,7 @@ var canonicalAttributeKeys = []string{
 	"gen_ai.usage.output_tokens",
 	"gen_ai.usage.total_tokens",
 	"gen_ai.usage.cache_read.input_tokens",
-	"gen_ai.usage.cache_creation.input_tokens",
+	"gen_ai.usage.cache_write.input_tokens",
 	"gen_ai.usage.reasoning.output_tokens",
 	"server.address",
 	"server.port",

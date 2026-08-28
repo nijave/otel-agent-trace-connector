@@ -125,7 +125,7 @@ The connector writes these itself rather than remapping them from raw keys:
 
 | Canonical key | Status |
 |---|---|
-| `gen_ai.usage.cache_creation.input_tokens` | not provided |
+| `gen_ai.usage.cache_write.input_tokens` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `gen_ai.request.stream` | not provided (all calls stream) |
 | `gen_ai.conversation.id` on chat/execute_tool spans | not mapped (parent carries it) |

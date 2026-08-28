@@ -29,7 +29,7 @@ func TestGenAIConformance(t *testing.T) {
 				{RawKey: "gen_ai.usage.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.cache_read_input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-				{RawKey: "gen_ai.usage.cache_write_input_tokens", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+				{RawKey: "gen_ai.usage.cache_write_input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			},
 		})
 	})
@@ -56,6 +56,13 @@ func TestGenAIConformance(t *testing.T) {
 				{RawKey: "gen_ai.usage.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.cache_read.input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.reasoning.output_tokens", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
+				// Upstream Copilot instrumentation straddles the semconv
+				// cache-write rename: captures carry the old cache_creation
+				// spelling, registry-aligned emitters carry the new one. Both
+				// raw forms map onto the same canonical key. Signals stay
+				// dormant until a capture carries the key.
+				{RawKey: "gen_ai.usage.cache_creation.input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				{RawKey: "gen_ai.usage.cache_write.input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			},
 		})
 	})

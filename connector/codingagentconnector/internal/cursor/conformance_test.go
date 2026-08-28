@@ -29,7 +29,7 @@ func TestCursorConformance(t *testing.T) {
 			{RawKey: "cursor.api.request.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 			{RawKey: "cursor.api.request.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 			{RawKey: "cursor.api.request.cache_read_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-			{RawKey: "cursor.api.request.cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+			{RawKey: "cursor.api.request.cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 		},
 	})
 }

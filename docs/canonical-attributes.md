@@ -89,7 +89,7 @@ there, never here. Keys appear in declaration order:
 - `gen_ai.usage.output_tokens`
 - `gen_ai.usage.total_tokens`
 - `gen_ai.usage.cache_read.input_tokens`
-- `gen_ai.usage.cache_creation.input_tokens`
+- `gen_ai.usage.cache_write.input_tokens`
 - `gen_ai.usage.reasoning.output_tokens`
 - `server.address`
 - `server.port`
@@ -105,6 +105,11 @@ there, never here. Keys appear in declaration order:
 <!-- /vocabulary:generated -->
 
 `gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
+
+`gen_ai.usage.cache_write.input_tokens` follows the current GenAI registry
+name. The pre-rename `gen_ai.usage.cache_creation.input_tokens` spelling still
+appears on some wires; the GenAI edge remaps it onto the registry key, and the
+other edges map their native cache-write counters onto it directly.
 
 
 Beyond the enumerated keys, any key under the `exception.` prefix may appear:
