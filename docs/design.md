@@ -887,11 +887,11 @@ make stale-output detection ineffective.
   needed): provider type/base URL/key/model arrive via `COPILOT_PROVIDER_*`
   environment variables. A renamed producer scope (`COPILOT_OTEL_SOURCE_NAME`)
   does not claim.
-- Generate committed OTLP fixtures from real Codex, Claude, and GenAI runs
-  (sanitized) so trace building and validation can exercise against real data
-  as fast, unpaid unit tests, reducing reliance on the paid live E2E. The e2e
-  validation logic already lives in plain Go tests (`e2e/validator`), so fixtures
-  would slot in as table cases there.
+- Committed OTLP fixtures from real Codex, Claude, and GenAI runs (sanitized)
+  run through `e2e/validator` as fast, unpaid unit tests: every harness with a
+  committed canonical fixture (codex, claude, cursor, copilot, openhands,
+  strands, openai-adhoc) is one table case there. The paid live E2Es remain the
+  check that captures stay fresh.
 - Provider schemas are not stable APIs; fixtures and E2E should be rerun before
   upgrading pinned client or Collector versions.
 - Upstream semantic-convention changes may replace some `coding_agent.*` fields.
