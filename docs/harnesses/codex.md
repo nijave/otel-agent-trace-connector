@@ -53,7 +53,7 @@ in this matrix, so they stay out of canonical output.
 | `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
 | `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
-| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when the build sends no effort value — reasoning effort "none" sends nothing — and absent from the pinned 0.150.1 capture) |
+| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when the build sends no effort value — reasoning effort "none" sends nothing; the pinned 0.150.1 capture carries `low`) |
 | `service_tier` | `coding_agent.request.service_tier` | mapped (absent when the build sends no tier or the provider returns none; absent from the pinned 0.150.1 capture) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |

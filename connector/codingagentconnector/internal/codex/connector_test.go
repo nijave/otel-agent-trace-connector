@@ -318,7 +318,7 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := NewDefaultConfig()
-	// The capture is fed as six separate batches, and the turn looks finalizable
+	// The capture is fed as four separate batches, and the turn looks finalizable
 	// before the last one arrives. The window has to outlast the gaps between
 	// those calls or a scheduling stall on a loaded runner splits the capture
 	// into two turns, so it is generous rather than as short as the other tests

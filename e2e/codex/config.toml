@@ -13,6 +13,12 @@ sandbox_mode = "danger-full-access"
 # proxy config.
 model_provider = "zai-proxy"
 
+# Stamp model_reasoning_effort on telemetry events so captures carry the field
+# the connector maps to gen_ai.request.reasoning.level. The proxy forwards or
+# drops the request-side reasoning parameter; the log attribute comes from this
+# config either way.
+model_reasoning_effort = "low"
+
 [model_providers.zai-proxy]
 name = "z.ai via responses-proxy"
 base_url = "http://responses-proxy:3000/v1"
