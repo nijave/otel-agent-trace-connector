@@ -23,12 +23,14 @@ Anthropic-compatible endpoint (the Copilot CLI stack defaults there too).
 The OpenAI Completions-compatible stacks point at either
 [z.ai](https://docs.z.ai/)'s GLM models or OpenCode Go (the OpenCode stack).
 OpenHands reaches its model directly through litellm and defaults to
-Anthropic's API with model `anthropic/claude-sonnet-4-5`.
+Anthropic's API with model `anthropic/claude-sonnet-4-5`; set `LLM_BASE_URL`
+to point it at a compatible endpoint such as z.ai's
+`https://api.z.ai/api/anthropic` instead.
 Nothing about the connector is provider-specific — these tests simply connect
 to whatever each stack points at. A single z.ai API key covers every stack
-except OpenCode (which needs its own `OPENCODE_API_KEY`) and OpenHands (whose
-`LLM_API_KEY` must be valid for whatever provider `LLM_MODEL` names — an
-Anthropic API key by default).
+except OpenCode, which needs its own `OPENCODE_API_KEY`; for OpenHands that
+coverage needs `LLM_BASE_URL` pointed at z.ai, since its `LLM_API_KEY` must be
+valid for whatever endpoint the stack calls (Anthropic's API by default).
 
 ## Live Codex E2E
 
@@ -345,7 +347,14 @@ OPENHANDS_SDK_VERSION=1.43.1 E2E_AGENT_TIMEOUT=10m ./scripts/e2e-openhands.sh
 ```
 
 Override the model with `LLM_MODEL`; `LLM_API_KEY` must stay valid for the
-provider that model routes to.
+provider that model routes to. `LLM_BASE_URL` overrides the provider endpoint
+(litellm `base_url`), which lets the default Anthropic-named model run against
+z.ai's Anthropic-compatible endpoint:
+
+```bash
+export LLM_API_KEY=...   # z.ai API key
+LLM_BASE_URL=https://api.z.ai/api/anthropic ./scripts/e2e-openhands.sh
+```
 
 ### Fixture refresh
 

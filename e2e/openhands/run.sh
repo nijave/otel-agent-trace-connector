@@ -15,10 +15,15 @@ from pydantic import SecretStr
 from openhands.sdk import Agent, Conversation, LLM, Tool
 from openhands.tools.terminal import TerminalTool
 
+llm_kwargs = {}
+if os.environ.get("LLM_BASE_URL"):
+    llm_kwargs["base_url"] = os.environ["LLM_BASE_URL"]
+
 llm = LLM(
     usage_id="agent",
     model=os.environ["LLM_MODEL"],
     api_key=SecretStr(os.environ["LLM_API_KEY"]),
+    **llm_kwargs,
 )
 agent = Agent(llm=llm, tools=[Tool(name=TerminalTool.name)])
 conversation = Conversation(agent=agent, workspace="/work")
