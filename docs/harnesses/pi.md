@@ -30,7 +30,7 @@ raw key that would map there).
 | `usage.output` | `gen_ai.usage.output_tokens` | mapped |
 | `usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped |
 | `usage.cache_read` | `gen_ai.usage.cache_read.input_tokens` | mapped (the extension reports no-cache as `0`, not by omission) |
-| `usage.cache_write` | `gen_ai.usage.cache_creation.input_tokens` | mapped (same zero-not-absent behavior) |
+| `usage.cache_write` | `gen_ai.usage.cache_write.input_tokens` | mapped (same zero-not-absent behavior) |
 | `stopReason` | `gen_ai.response.finish_reasons` | mapped (single-element slice, when non-empty; yields to a pre-existing canonical value) |
 | `responseId` | `gen_ai.response.id` | mapped (when non-empty) |
 | `usage`, `usage.cost.total` | — | dropped (deliberate: cost has no canonical counterpart) |

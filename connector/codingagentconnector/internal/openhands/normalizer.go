@@ -42,7 +42,7 @@ var usageKeys = [][2]string{
 	{"gen_ai.usage.output_tokens", "gen_ai.usage.output_tokens"},
 	{"llm.usage.total_tokens", "gen_ai.usage.total_tokens"},
 	{"gen_ai.usage.cache_read_input_tokens", "gen_ai.usage.cache_read.input_tokens"},
-	{"gen_ai.usage.cache_creation_input_tokens", "gen_ai.usage.cache_creation.input_tokens"},
+	{"gen_ai.usage.cache_creation_input_tokens", "gen_ai.usage.cache_write.input_tokens"},
 }
 
 // markerSpanNames are the conversation- and agent-family names only the

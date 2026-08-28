@@ -164,7 +164,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 		mapUsageCount(attrs, "usage.output", "gen_ai.usage.output_tokens")
 		mapUsageCount(attrs, "usage.total_tokens", "gen_ai.usage.total_tokens")
 		mapUsageCount(attrs, "usage.cache_read", "gen_ai.usage.cache_read.input_tokens")
-		mapUsageCount(attrs, "usage.cache_write", "gen_ai.usage.cache_creation.input_tokens")
+		mapUsageCount(attrs, "usage.cache_write", "gen_ai.usage.cache_write.input_tokens")
 		putPiCommon(attrs, version)
 	}
 	stripPiBaggage(span)

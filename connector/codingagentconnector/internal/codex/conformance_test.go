@@ -29,7 +29,7 @@ func TestCodexConformance(t *testing.T) {
 			{RawKey: "input_token_count", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 			{RawKey: "output_token_count", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 			{RawKey: "cached_token_count", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-			{RawKey: "cache_write_token_count", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+			{RawKey: "cache_write_token_count", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			{RawKey: "tool_token_count", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
 			{RawKey: "reasoning_token_count", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
 			{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},

@@ -42,7 +42,7 @@ raw key that would map there).
 | `cursor.api.request.input_tokens` | `gen_ai.usage.input_tokens` | mapped |
 | `cursor.api.request.output_tokens` | `gen_ai.usage.output_tokens` | mapped |
 | `cursor.api.request.cache_read_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped |
-| `cursor.api.request.cache_creation_tokens` | `gen_ai.usage.cache_creation.input_tokens` | mapped |
+| `cursor.api.request.cache_creation_tokens` | `gen_ai.usage.cache_write.input_tokens` | mapped |
 | `cursor.model.name` | `gen_ai.request.model` | mapped (also names the span; the wire marks the model optional, so a request without it yields a bare `chat` span with no key) |
 | `cursor.conversation.id` | `gen_ai.conversation.id` | mapped (on the root; also the burst key) |
 | `cursor.api.billable` → `coding_agent.cursor.billable` | — | dropped (billing detail outside the vocabulary) |

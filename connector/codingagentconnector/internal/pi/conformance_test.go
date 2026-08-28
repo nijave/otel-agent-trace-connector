@@ -25,7 +25,7 @@ func TestPiConformance(t *testing.T) {
 			{RawKey: "usage.output", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 			{RawKey: "usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
 			{RawKey: "usage.cache_read", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-			{RawKey: "usage.cache_write", CanonicalKey: "gen_ai.usage.cache_creation.input_tokens", Kind: canonical.Sum},
+			{RawKey: "usage.cache_write", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 			{RawKey: "stopReason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
 		},
 	})

@@ -48,7 +48,7 @@ raw key that would map there).
 | `input_tokens` | llm_request | `gen_ai.usage.input_tokens` | mapped (each counter only when the native span carries it; a usage-less llm_request still emits its chat span) |
 | `output_tokens` | llm_request | `gen_ai.usage.output_tokens` | mapped (same condition) |
 | `cache_read_tokens` | llm_request | `gen_ai.usage.cache_read.input_tokens` | mapped (same condition; the wire reports zero as `0`, not by omission) |
-| `cache_creation_tokens` | llm_request | `gen_ai.usage.cache_creation.input_tokens` | mapped (same condition) |
+| `cache_creation_tokens` | llm_request | `gen_ai.usage.cache_write.input_tokens` | mapped (same condition) |
 | `ttft_ms` | llm_request | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when the native span carries no `ttft_ms`) |
 | `stop_reason` | llm_request | `gen_ai.response.finish_reasons` | mapped (when present; appended only if the canonical key is absent) |
 | `model` | llm_request | `gen_ai.request.model` | mapped (fallback when the canonical key is absent; with neither, the span keeps the bare `chat` name and no key) |

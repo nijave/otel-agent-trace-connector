@@ -4,7 +4,8 @@ The GenAI edge claims groups whose scopes match the prefixes
 `opentelemetry.instrumentation.openai_v2`, `opentelemetry.util.genai`,
 `strands.telemetry`, and `github.copilot`. Most keys from these emitters
 arrive already canonical; the edge remaps the few divergent spellings
-(`gen_ai.system`, Strands' underscore cache counters) and strips everything
+(`gen_ai.system`, Strands' underscore cache counters, the pre-rename
+`cache_creation` dotted spelling) and strips everything
 outside the vocabulary. Scopes that do not match the prefixes drop from a
 claimed group — spans on unmatched scopes riding along in the same resource
 group never reach canonical output; the raw pipelines preserve the
@@ -43,7 +44,7 @@ deprecated package.
 | `server.address` / `server.port` | chat | `server.address` / `server.port` | kept (`server.port` absent for default-port HTTPS endpoints) |
 | TTFT (either spelling) | chat | — | not provided (metric-only: openai-v2 emits TTFT as a metric histogram, never as a span attribute) |
 | `gen_ai.usage.total_tokens` | chat | `gen_ai.usage.total_tokens` | not provided |
-| `gen_ai.usage.cache_read.input_tokens` / `cache_creation` | chat | — | not provided |
+| `gen_ai.usage.cache_read.input_tokens` / `cache_creation` / `cache_write` | chat | — | not provided |
 | `gen_ai.usage.reasoning.output_tokens` | chat | — | not provided |
 
 ## opentelemetry-util-genai
@@ -75,7 +76,7 @@ as span events by default; this edge strips those events.
 | `gen_ai.usage.completion_tokens` | chat, invoke_agent | `gen_ai.usage.output_tokens` | dropped (same dedupe) |
 | `gen_ai.usage.total_tokens` | chat, invoke_agent | `gen_ai.usage.total_tokens` | kept (same exception condition) |
 | `gen_ai.usage.cache_read_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_read.input_tokens` | mapped (underscore variant; same exception condition) |
-| `gen_ai.usage.cache_write_input_tokens` | invoke_agent | `gen_ai.usage.cache_creation.input_tokens` | mapped (underscore variant; invoke_agent only on the wire, so chat spans never carry the canonical key) |
+| `gen_ai.usage.cache_write_input_tokens` | invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (underscore variant; invoke_agent only on the wire, so chat spans never carry the canonical key) |
 | `gen_ai.server.time_to_first_token` | chat | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; the legacy key drops after the copy; absent when the chat ends in an exception) |
 | `gen_ai.event.start_time` / `end_time` | all | same | kept |
 | `gen_ai.request.model` | chat, invoke_agent | `gen_ai.request.model` | kept |
@@ -109,7 +110,7 @@ Copilot CLI and VS Code Chat extensions.
 | `gen_ai.response.time_to_first_chunk` | chat | `gen_ai.response.time_to_first_chunk` | kept (seconds, double) |
 | `gen_ai.usage.input_tokens` / `output_tokens` | chat, invoke_agent | same | kept |
 | `gen_ai.usage.cache_read.input_tokens` | chat, invoke_agent | same | kept (only on requests that hit prompt cache; a session's first turn carries none) |
-| `gen_ai.usage.cache_creation.input_tokens` | invoke_agent | same | kept (only when the wire reports cache writes) |
+| `gen_ai.usage.cache_creation.input_tokens` / `cache_write.input_tokens` | invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (the pre-rename `cache_creation` spelling remaps onto the current registry key; a raw `cache_write` spelling already matches canonical and passes through; absent when the wire reports no cache writes) |
 | `gen_ai.usage.reasoning.output_tokens` | chat, invoke_agent | same | kept (only when the model reports reasoning tokens for that turn) |
 | `gen_ai.agent.id` / `agent.version` | invoke_agent | same | kept (e.g. `github.copilot.default`) |
 | `gen_ai.tool.call.id` / `gen_ai.tool.name` / `gen_ai.tool.type` | execute_tool | same | kept |
@@ -135,7 +136,7 @@ Across all four emitters there is no raw source for:
 | Canonical key | Emitter | Status |
 |---|---|---|
 | `gen_ai.usage.total_tokens` | openai_v2, util-genai, copilot | not provided (Strands provides it) |
-| `gen_ai.usage.cache_creation.input_tokens` | openai_v2, util-genai | not provided (Strands provides the underscore variant; Copilot emits it natively on invoke_agent) |
+| `gen_ai.usage.cache_write.input_tokens` | openai_v2, util-genai | not provided (Strands provides the underscore variant; Copilot emits the pre-rename spelling natively on invoke_agent) |
 | `gen_ai.usage.reasoning.output_tokens` | openai_v2, util-genai, strands | not provided (Copilot provides it) |
 | `gen_ai.response.time_to_first_chunk` | openai_v2, util-genai | not provided in traces (openai-v2 reports TTFT only as a metric); Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) |
 

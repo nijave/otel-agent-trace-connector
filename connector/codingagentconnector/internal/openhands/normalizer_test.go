@@ -339,7 +339,7 @@ func TestLLMAndToolChildrenReparentAndRename(t *testing.T) {
 	require.Equal(t, int64(200), intValue(t, chat, "gen_ai.usage.output_tokens"))
 	require.Equal(t, int64(360), intValue(t, chat, "gen_ai.usage.total_tokens"))
 	require.Equal(t, int64(50), intValue(t, chat, "gen_ai.usage.cache_read.input_tokens"))
-	require.Equal(t, int64(10), intValue(t, chat, "gen_ai.usage.cache_creation.input_tokens"))
+	require.Equal(t, int64(10), intValue(t, chat, "gen_ai.usage.cache_write.input_tokens"))
 	_, hasRawTotal := chat.Attributes().Get("llm.usage.total_tokens")
 	require.False(t, hasRawTotal, "raw total_tokens must be remapped")
 	_, ok := chat.Attributes().Get("gen_ai.input.messages")
