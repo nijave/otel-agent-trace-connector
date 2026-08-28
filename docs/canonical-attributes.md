@@ -5,13 +5,13 @@ this list and nothing else. The list is the single source of truth in
 [`connector/codingagentconnector/internal/canonical/vocabulary.go`](../connector/codingagentconnector/internal/canonical/vocabulary.go);
 this page mirrors it.
 
-The vocabulary is a **subset** of the upstream
+Most of the vocabulary comes from the upstream
 [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai),
-last audited against commit `67dff024` of that repo: canonical output optimizes
-for tracking LLM usage, cost, and performance
-uniformly across harnesses. Vendor detail outside that scope is deliberately
-dropped rather than carried through — see [Raw preservation](#raw-preservation)
-for how to recover it.
+audited against commit `67dff024` of that repo; [Provenance](#provenance)
+records the exact split. Canonical output optimizes for tracking LLM usage,
+cost, and performance uniformly across harnesses. Vendor detail outside that
+scope is deliberately dropped rather than carried through — see
+[Raw preservation](#raw-preservation) for how to recover it.
 
 ## Policy
 
@@ -128,6 +128,34 @@ That is the complete list. Everything else — vendor namespaces such as
 pass-through leftovers — stays out of canonical output. Nothing disappears
 silently: each harness document records every dropped key and where it came
 from.
+
+## Provenance
+
+- **GenAI registry**: 22 of the 26 `gen_ai.*` keys above come verbatim from
+  the GenAI semantic-conventions registry at commit `67dff024` of
+  [open-telemetry/semantic-conventions-genai](https://github.com/open-telemetry/semantic-conventions-genai).
+- **General OTel semconv**: `server.address`, `server.port`, and the
+  `exception.*` keys come from the main
+  [open-telemetry/semantic-conventions](https://github.com/open-telemetry/semantic-conventions)
+  registry, not the GenAI registry.
+- **Connector extensions under `gen_ai.`** — not in the registry, and kept
+  spelled as the wire spells them; renaming pass-through keys would add remap
+  complexity without a query benefit:
+  - `gen_ai.usage.total_tokens`: the registry defines no total-tokens key
+    (consumers sum input+output), but five sources report a provider total on
+    the wire — Codex `tool_token_count`, OpenHands `llm.usage.total_tokens`,
+    OpenCode `ai.usage.totalTokens`, Pi `usage.total_tokens`, and Strands'
+    native `gen_ai.usage.total_tokens` on the GenAI edge. A provider total is
+    not always input+output, so dropping it would lose information.
+  - `gen_ai.tool.status`: Strands emits it natively on execute_tool spans and
+    the GenAI edge keeps it verbatim. It is distinct from the registry's
+    `gen_ai.response.status`, which tracks response lifecycle.
+  - `gen_ai.event.start_time`, `gen_ai.event.end_time`: Strands emits them
+    natively on every span and the GenAI edge keeps them verbatim.
+- **Connector namespace**: `coding_agent.request.service_tier`,
+  `coding_agent.source`, `coding_agent.source.scope`,
+  `coding_agent.source.event`, `coding_agent.client.name`, and
+  `coding_agent.client.version` are connector-defined.
 
 ## Raw preservation
 
