@@ -63,8 +63,8 @@ raw key that would map there).
 | `user_prompt_length` | interaction | — | dropped |
 | `interaction.sequence` | interaction | — | dropped |
 | `interaction.duration_ms` | interaction | — | dropped |
-| `user.id` | interaction | — | dropped |
-| `terminal.type` | interaction | — | dropped |
+| `user.id` | interaction | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
+| `terminal.type` | interaction | `coding_agent.terminal.type` | mapped (unconditionally; the flag does not control it) |
 | `span.type` | interaction | — | dropped |
 
 ##### claude_code.llm_request

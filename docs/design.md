@@ -724,7 +724,15 @@ Recommended endpoint defaults:
 - leave Claude `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`,
   `OTEL_LOG_TOOL_CONTENT`, and `OTEL_LOG_RAW_API_BODIES` disabled;
 - authenticate and encrypt OTLP outside the local Compose test;
-- filter user identity attributes if they are not required.
+- set `capture_identity: false` if user identity is not required.
+
+`capture_identity` (default `true`) controls the PII-bearing identity keys
+every edge can emit: `coding_agent.user.id`, `coding_agent.user.email`,
+`coding_agent.team.id`, and the resource `host.name`. Because the default is
+on, an upgrade to this connector version starts emitting identity
+immediately; set the flag to `false` to restore the prior no-identity
+output. `coding_agent.terminal.type` carries no identity, so it ships
+regardless of the setting.
 
 ## Restart and delivery behavior
 

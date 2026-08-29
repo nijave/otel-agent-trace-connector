@@ -149,7 +149,8 @@ raw key that would map there).
 | `conversation.id` | `gen_ai.conversation.id` | mapped |
 | first event body | `coding_agent.source.event` | mapped |
 | `cursor.surface`, `cursor.entrypoint` (resource) | — | dropped |
-| `cursor.team.id`, `cursor.user.id` (resource) | — | dropped |
+| `cursor.user.id` (resource) | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
+| `cursor.team.id` (resource) | `coding_agent.team.id` | mapped (only when `capture_identity` is on) |
 | turn-total usage rollup (summed token counts on the root) | — | dropped (usage lives on chat spans only; sum them for turn totals) |
 | connector close reason (`quiet`/`timeout`/`evicted`/`shutdown`) | — | dropped (was **connector-derived**, never a model stop reason; timeouts surface as root span Status Error and every close shows up in the `otelcol_coding_agent_turns_emitted` metric's `finish_reason` label) |
 | events-truncated flag | — | dropped (still exposed via `otelcol_coding_agent_turns_truncated`) |

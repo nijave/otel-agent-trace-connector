@@ -125,6 +125,9 @@ in this matrix, so they stay out of canonical output.
 | `conversation.id` | `gen_ai.conversation.id` | mapped |
 | `model` | `gen_ai.request.model` | mapped (last observed value in the turn) |
 | `app.version` | `coding_agent.client.version` | mapped |
+| `user.account_id` | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
+| `user.email` | `coding_agent.user.email` | mapped (only when `capture_identity` is on) |
+| `terminal.type` | `coding_agent.terminal.type` | mapped (unconditionally; the flag does not control it) |
 | `provider_name` | — | dropped (operator-authored display label from config.toml, not a known provider identifier; `gen_ai.provider.name` stays `openai`, the wire protocol). Only the session's first turn logs it anyway |
 | `coding_agent.turn.finish_reason` | — | dropped (was **connector-derived** — `completed`/`superseded`/`timeout`/`evicted`/`shutdown` finalization reasons, not a model stop reason; still exposed as the `otelcol_coding_agent_turns_emitted` metric's `finish_reason` label. Timeouts surface as root span Status Error) |
 | `coding_agent.turn.complete` | — | dropped (derivable from the metric label above) |
@@ -133,6 +136,10 @@ in this matrix, so they stay out of canonical output.
 | turn-total usage (summed token counts on the root) | — | dropped (usage lives on chat spans only; sum them for turn totals) |
 | root-event `error.message` copy | — | dropped (root events keep their names only) |
 | root-event `event.kind` copy | — | dropped |
+
+The turn resource's `host.name` survives `FilterResource` as a resource
+identity key only when `capture_identity` is on; with the flag off, the
+connector strips it along with the other identity keys above.
 
 ##### codex.tool_decision
 
