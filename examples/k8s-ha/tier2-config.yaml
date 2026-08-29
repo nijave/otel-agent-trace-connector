@@ -1,4 +1,9 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: coding-agent-telemetry
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: coding-agent-collector-config

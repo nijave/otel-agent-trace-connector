@@ -15,12 +15,10 @@ covers the full analysis behind this topology.
 
 ## Prerequisites
 
-- Build and push the root `Dockerfile` to a registry the cluster can pull
-  from, then point the `image:` field in `tier2.yaml` at it:
-  ```
-  docker build --tag <registry>/otelcol-coding-agents:<tag> .
-  ```
-  This repository does not publish a container image.
+- Pull `ghcr.io/nijave/otel-agent-trace-connector:v0.4.2`, the image the
+  repo's release workflow builds and pushes on each `v*` tag; `tier2.yaml`
+  already points at it. A fork can instead build the root `Dockerfile` and
+  point the `image:` field in `tier2.yaml` at its own registry.
 - Point `CANONICAL_OTLP_ENDPOINT` in `tier2.yaml` at a trace backend that
   accepts OTLP gRPC.
 
