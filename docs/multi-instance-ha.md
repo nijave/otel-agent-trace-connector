@@ -8,7 +8,7 @@ RBAC. The analysis below stays as the rationale record.
 
 This document records what it would take to run this Collector distribution as
 N instances for high availability, and which issues block that today, as
-analysis rather than an implementation plan: none of it exists as code yet.
+analysis rather than an implementation plan.
 
 Facts about upstream components reflect `loadbalancingexporter` documentation
 and source at Collector v0.159.0, the version pinned in
