@@ -17,6 +17,7 @@ var canonicalResourceKeys = []string{
 	"telemetry.sdk.name",
 	"telemetry.sdk.language",
 	"telemetry.sdk.version",
+	"host.name",
 }
 
 // requiredResourceKeys lists the resource attributes every emitted canonical

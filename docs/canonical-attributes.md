@@ -105,6 +105,10 @@ there, never here. Keys appear in declaration order:
 - `coding_agent.source.event`
 - `coding_agent.client.name`
 - `coding_agent.client.version`
+- `coding_agent.user.id`
+- `coding_agent.user.email`
+- `coding_agent.team.id`
+- `coding_agent.terminal.type`
 <!-- /vocabulary:generated -->
 
 `gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
@@ -148,7 +152,7 @@ from.
     native `gen_ai.usage.total_tokens` on the GenAI edge. A provider total is
     not always input+output, so dropping it would lose information.
   - `gen_ai.tool.status`: Strands emits it natively on execute_tool spans and
-    the GenAI edge keeps it verbatim. It is distinct from the registry's
+    the GenAI edge keeps it verbatim, distinct from the registry's
     `gen_ai.response.status`, which tracks response lifecycle.
   - `gen_ai.event.start_time`, `gen_ai.event.end_time`: Strands emits them
     natively on every span and the GenAI edge keeps them verbatim.
