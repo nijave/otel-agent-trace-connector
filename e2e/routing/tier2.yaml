@@ -1,0 +1,56 @@
+# Tier-2 config for the routing e2e: this distribution, unchanged in behavior
+# from collector-config.yaml, with the canonical file path env-parameterized so
+# collector-a and collector-b write distinct files into the shared volume.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+connectors:
+  coding_agent:
+    turn_timeout: 30s
+    reorder_window: 2s
+    max_active_turns: 100
+    max_events_per_turn: 1000
+  coding_agent/claude:
+
+processors:
+  resource/e2e:
+    attributes:
+      - key: e2e.run.id
+        value: ${env:E2E_RUN_ID:-unscoped}
+        action: upsert
+  batch:
+    timeout: 500ms
+
+exporters:
+  file/canonical:
+    path: ${env:CANONICAL_OUT:-/output/canonical-traces.json}
+    format: json
+    flush_interval: 100ms
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs/vendor:
+      receivers: [otlp]
+      processors: [resource/e2e, batch]
+      exporters: [coding_agent]
+    traces/native:
+      receivers: [otlp]
+      processors: [resource/e2e, batch]
+      exporters: [coding_agent/claude]
+    traces/canonical:
+      receivers: [coding_agent, coding_agent/claude]
+      # resource/e2e must re-stamp here: the connector's canonical resource
+      # contract strips non-contract attributes, including the pre-connector
+      # e2e.run.id stamp the validator correlates on.
+      processors: [resource/e2e, batch]
+      exporters: [file/canonical]

@@ -1,0 +1,40 @@
+# Tier-1 gateway for the routing e2e: stock otelcol-contrib. Routes each
+# record by conversation attribute so every event of one conversation reaches
+# the same tier-2 replica. The static resolver stands in for the k8s resolver
+# the examples/k8s-ha manifests use; the routing semantics are identical.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  load_balancing:
+    routing_key: attributes
+    routing_attributes:
+      - conversation.id
+      - cursor.conversation.id
+    protocol:
+      otlp:
+        tls:
+          insecure: true
+        retry_on_failure:
+          enabled: true
+        sending_queue:
+          enabled: true
+    resolver:
+      static:
+        hostnames:
+          - collector-a:4317
+          - collector-b:4317
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [load_balancing]
+    traces:
+      receivers: [otlp]
+      exporters: [load_balancing]
