@@ -57,7 +57,7 @@ func buildTrace(turn *turnState, reason, scopeVersion string, captureIdentity bo
 	root.SetKind(ptrace.SpanKindInternal)
 	root.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
 	root.SetEndTimestamp(pcommon.NewTimestampFromTime(end))
-	putRootAttributes(root.Attributes(), turn, events)
+	putRootAttributes(root.Attributes(), turn, events, captureIdentity)
 	if reason == "timeout" {
 		root.Status().SetCode(ptrace.StatusCodeError)
 		root.Status().SetMessage("turn finalized after inactivity timeout")
@@ -94,7 +94,7 @@ func turnBounds(turn *turnState, events []agentEvent) (time.Time, time.Time) {
 	return start, end
 }
 
-func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent) {
+func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, captureIdentity bool) {
 	attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 	attrs.PutStr("gen_ai.agent.name", "codex")
 	attrs.PutStr("gen_ai.provider.name", "openai")
@@ -111,6 +111,18 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent) 
 	}
 	if version := lastStringAttr(events, "app.version"); version != "" {
 		attrs.PutStr("coding_agent.client.version", version)
+	}
+	// terminal.type carries no identity, so the flag does not control it.
+	if terminal := lastStringAttr(events, "terminal.type"); terminal != "" {
+		attrs.PutStr("coding_agent.terminal.type", terminal)
+	}
+	if captureIdentity {
+		if id := lastStringAttr(events, "user.account_id"); id != "" {
+			attrs.PutStr("coding_agent.user.id", id)
+		}
+		if email := lastStringAttr(events, "user.email"); email != "" {
+			attrs.PutStr("coding_agent.user.email", email)
+		}
 	}
 }
 
