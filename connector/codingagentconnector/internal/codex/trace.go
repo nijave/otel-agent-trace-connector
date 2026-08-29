@@ -116,6 +116,7 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 	if terminal := lastStringAttr(events, "terminal.type"); terminal != "" {
 		attrs.PutStr("coding_agent.terminal.type", terminal)
 	}
+	// user id and email are identity, emitted only when capture_identity is on.
 	if captureIdentity {
 		if id := lastStringAttr(events, "user.account_id"); id != "" {
 			attrs.PutStr("coding_agent.user.id", id)

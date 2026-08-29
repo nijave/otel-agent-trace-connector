@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/confmap"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -48,4 +49,16 @@ func TestDefaultConfigCapturesIdentity(t *testing.T) {
 	if !cfg.CaptureIdentity {
 		t.Fatal("capture_identity must default to true")
 	}
+}
+
+// TestConfigDecodeCaptureIdentityFalse complements the default-true test:
+// capture_identity must also be settable to false through the same
+// mapstructure decoding OCB uses, not just constructible in Go.
+func TestConfigDecodeCaptureIdentityFalse(t *testing.T) {
+	cfg := createDefaultConfig()
+	require.True(t, cfg.CaptureIdentity, "precondition: default must start true")
+
+	conf := confmap.NewFromStringMap(map[string]any{"capture_identity": false})
+	require.NoError(t, conf.Unmarshal(cfg))
+	require.False(t, cfg.CaptureIdentity)
 }

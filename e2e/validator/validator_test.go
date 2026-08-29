@@ -638,13 +638,25 @@ func TestCodexCanonicalFixtureValidates(t *testing.T) {
 	// invoke_agent root keeps the user and terminal identity keys, and the
 	// resource keeps host.name, rather than relying only on the absence of a
 	// canonical-vocabulary rejection to prove they're present.
-	require.NoError(t, validateTraceFile(path, runID, func(traces ptrace.Traces, runID string) error {
-		require.True(t, rootHasAttr(traces, runID, "coding_agent.user.id"))
-		require.True(t, rootHasAttr(traces, runID, "coding_agent.user.email"))
-		require.True(t, rootHasAttr(traces, runID, "coding_agent.terminal.type"))
-		require.True(t, resourceHasAttr(traces, runID, "host.name"))
+	traces := loadTraceFile(t, path)
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.user.id"))
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.user.email"))
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.terminal.type"))
+	require.True(t, resourceHasAttr(traces, runID, "host.name"))
+}
+
+// loadTraceFile reads and merges every OTLP batch line in path the same way
+// validateTraceFile does, so a caller can assert directly on the merged
+// traces instead of wrapping assertions in a validate callback that never
+// itself fails.
+func loadTraceFile(t *testing.T, path string) ptrace.Traces {
+	t.Helper()
+	var merged ptrace.Traces
+	require.NoError(t, validateTraceFile(path, "", func(traces ptrace.Traces, _ string) error {
+		merged = traces
 		return nil
 	}))
+	return merged
 }
 
 // rootHasAttr reports whether the invoke_agent root among runID's spans
@@ -678,7 +690,16 @@ func resourceHasAttr(traces ptrace.Traces, runID, key string) bool {
 
 func TestClaudeCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "claude", "testdata", "claude-canonical.otlp.json")
-	require.NoError(t, validateCanonicalFile(path, "claude-otel-1787956985-1645736", "claude_code"))
+	runID := "claude-otel-1787956985-1645736"
+	require.NoError(t, validateCanonicalFile(path, runID, "claude_code"))
+
+	// The claude canonical fixture carries capture_identity output: assert the
+	// invoke_agent root keeps the user and terminal identity keys. Claude has
+	// no email attribute and no host.name resource attribute, so unlike codex
+	// those are not asserted here.
+	traces := loadTraceFile(t, path)
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.user.id"))
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.terminal.type"))
 }
 
 // firstFixtureBatch parses the first JSONL line of a committed canonical
