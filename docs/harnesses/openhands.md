@@ -1,15 +1,51 @@
-# OpenHands — raw → canonical attribute matrix
+# OpenHands — OpenTelemetry signal reference
 
-OpenHands emits OTLP **traces** on scope `lmnr.tracer` (Laminar's SDK), with
-LiteLLM-style attributes on LLM spans and conversation-level state in
-`lmnr.association.properties.*`. The connector claims only groups carrying an
-explicit OpenHands marker (a conversation-/agent-family span name or a delegate
-metadata flag), then rewrites each trace as one `invoke_agent openhands` root
-with reparented `chat <model>` and `execute_tool <tool>` children. See
+OpenHands (`OpenHands/OpenHands`, formerly All-Hands-AI) runs on the
+`software-agent-sdk` (Python), where native OTel lives via the Laminar SDK
+(`lmnr`) as the OTel layer. The connector claims only groups carrying an
+explicit OpenHands marker (a conversation-/agent-family span name or a
+delegate metadata flag), then rewrites each trace as one
+`invoke_agent openhands` root with reparented `chat <model>` and
+`execute_tool <tool>` children. See
 [canonical attributes](../canonical-attributes.md) for the shared vocabulary
 and the policy behind it.
 
-## Attribute matrix
+## Signal support
+
+| Signal | Native support | Connector support |
+| --- | --- | --- |
+| Traces | native, via Laminar SDK (`lmnr`), scope `lmnr.tracer` | traces edge — this file's mapping |
+| Logs | none | not applicable |
+| Metrics | none exported (in-process only) | not applicable |
+
+Last verified: Traces 2026-08-27, Logs 2026-08-29, Metrics 2026-08-21 (see
+Sources).
+
+## Traces
+
+### Native support
+
+OpenHands emits OTLP **traces** on scope `lmnr.tracer` (Laminar's SDK), with
+LiteLLM-style attributes on LLM spans and conversation-level state in
+`lmnr.association.properties.*`. Enable export with
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus
+`OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`. The main repo itself is
+now the Electron/TypeScript desktop app with PostHog analytics, not OTel —
+tracing lives entirely in the SDK the desktop app drives.
+
+**Desktop-UI env-forwarding gap.** The Electron app does not forward
+operator-set environment to the agent-server process that hosts the SDK, so
+the OTLP traces endpoint must reach the agent-server's own process
+environment; setting it in the desktop shell is not enough.
+
+### Connector mapping
+
+The connector claims only groups carrying an explicit OpenHands marker (a
+conversation-/agent-family span name or a delegate metadata flag), then
+rewrites each trace as one `invoke_agent openhands` root with reparented
+`chat <model>` and `execute_tool <tool>` children.
+
+#### Attribute matrix
 
 Status is one of **mapped** (remapped onto the canonical key; a parenthetical
 names any wire condition under which the key is absent), **dropped**
@@ -17,7 +53,7 @@ names any wire condition under which the key is absent), **dropped**
 preservation pipeline branch), or **not provided** (the source never emits a
 raw key that would map there).
 
-### LLM span → chat
+##### LLM span → chat
 
 | Raw key | Canonical key | Status |
 |---|---|---|
@@ -31,14 +67,14 @@ raw key that would map there).
 | `gen_ai.input.messages`, `lmnr.span.input` | — | dropped (prompt/response content never leaves the edge) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
 
-### TOOL span → execute_tool
+##### TOOL span → execute_tool
 
 | Raw key | Canonical key | Status |
 |---|---|---|
 | span name | `gen_ai.tool.name` (also names the span) | mapped |
 | `gen_ai.tool.description` | — | dropped |
 
-### conversation span → invoke_agent root
+##### conversation span → invoke_agent root
 
 | Raw key | Canonical key | Status |
 |---|---|---|
@@ -60,7 +96,7 @@ preserved trace/conversation IDs; the linkage detail itself (task ID,
 subagent type, parent session) is recoverable only through a raw-preservation
 branch.
 
-## Connector-written attributes
+#### Connector-written attributes
 
 The connector writes these itself rather than remapping them from raw keys;
 they appear on every emitted span except where noted:
@@ -72,7 +108,7 @@ they appear on every emitted span except where noted:
 - `coding_agent.source.scope` = `lmnr.tracer` (invoke_agent root only)
 - `gen_ai.tool.name` (execute_tool children, from the wire span name)
 
-## Canonical keys with no OpenHands source
+#### Canonical keys with no OpenHands source
 
 | Canonical key | Status |
 |---|---|
@@ -84,3 +120,40 @@ they appear on every emitted span except where noted:
 | `server.address` / `server.port` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `exception.*` | not provided |
+
+## Logs
+
+### Native support
+
+None. OpenHands has no OTel logs signal. Workspace and session identity
+exist in-process but never reach spans or logs; the desktop app deliberately
+does not forward repo/branch/workspace to the agent-server.
+
+### Connector mapping
+
+Not applicable — no native logs signal exists for the connector to consume.
+
+## Metrics
+
+### Native support
+
+None exported. `llm.metrics` (`accumulated_cost`, `accumulated_token_usage`
+with prompt/completion/cache_read/cache_write/reasoning tokens,
+`context_window`, `costs`, `token_usages`, `response_latencies`) and
+`conversation.conversation_stats` are in-process Python objects only — no
+OTLP metrics endpoint exists to export them.
+
+### Connector mapping
+
+Not applicable — the connector only registers `logs-to-traces` and
+`traces-to-traces` connector pipelines (see
+`connector/codingagentconnector/factory.go`); it does not process,
+transform, or filter OTel metrics for any harness. Moot here regardless,
+since OpenHands exports no OTel metrics to pass through.
+
+## Sources
+
+- OpenHands SDK observability: https://docs.openhands.dev/sdk/guides/observability
+- OpenHands SDK metrics: https://docs.openhands.dev/sdk/guides/metrics
+- [docs/otel-signals.md](../otel-signals.md) (repo-internal signal matrix, refreshed 2026-08-29)
+- [docs/metrics.md](../metrics.md) (repo-internal metrics catalog, refreshed 2026-08-21)

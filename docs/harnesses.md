@@ -16,13 +16,17 @@ the closed canonical vocabulary, and [docs/harnesses/](harnesses/) holds one
 raw → canonical mapping matrix per harness. The summary below describes the
 wire, not canonical output: a "yes" in the token-usage column means the
 harness can put usage on the wire, not that every emitted span carries it.
-Conditional availability lives in each harness's matrix file.
+Conditional availability lives in each harness's matrix file. For the
+narrower question of which OTel signal types (traces, logs, metrics) each
+harness natively supports, see [docs/otel-signals.md](otel-signals.md) — it
+answers that question directly and corrects the Signal column below for
+Claude Code, whose native logs signal falls outside this file's scope.
 
 ## Summary
 
 | Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics | Connector today |
 | --- | --- | --- | --- | --- | --- |
-| **Claude Code** | native traces (beta) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) | yes (traces edge) |
+| **Claude Code** | native traces (beta) + native logs (see [docs/otel-signals.md](otel-signals.md)) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) | yes (traces edge) |
 | **Codex** | structured logs | provider-dependent (`response.completed` relays what the provider returns) | conversation ID, no repo path | yes (native) | yes (logs edge) |
 | **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) | no |
 | **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions | yes (traces edge, `@amaster.ai/pi-telemetry`) |
