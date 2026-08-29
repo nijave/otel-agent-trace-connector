@@ -52,6 +52,8 @@ canonical resource vocabulary is the standard OTel identity keys:
 - `telemetry.sdk.name`
 - `telemetry.sdk.language`
 - `telemetry.sdk.version`
+- `host.name` (an identity key; `FilterResource` keeps it only when
+  `capture_identity` is on and strips it otherwise)
 
 Every other key — vendor resources such as `cursor.surface`, raw keys such as
 `session.id` — stays out of canonical output. Edges that consume raw
@@ -158,8 +160,10 @@ from.
     natively on every span and the GenAI edge keeps them verbatim.
 - **Connector namespace**: `coding_agent.request.service_tier`,
   `coding_agent.source`, `coding_agent.source.scope`,
-  `coding_agent.source.event`, `coding_agent.client.name`, and
-  `coding_agent.client.version` are connector-defined.
+  `coding_agent.source.event`, `coding_agent.client.name`,
+  `coding_agent.client.version`, `coding_agent.user.id`,
+  `coding_agent.user.email`, `coding_agent.team.id`, and
+  `coding_agent.terminal.type` are connector-defined.
 
 ## Raw preservation
 
