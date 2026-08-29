@@ -28,6 +28,7 @@ const (
 
 	attrSpanType   = "lmnr.span.type"
 	attrSessionID  = "lmnr.association.properties.session_id"
+	attrUserID     = "lmnr.association.properties.user_id"
 	attrMetadata   = "lmnr.association.properties.metadata."
 	attrToolCallID = attrMetadata + "tool_call_id"
 	attrIsDelegate = attrMetadata + "is_delegate"
@@ -109,7 +110,7 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 		ss.Scope().SetName(scopeName)
 		ss.Scope().SetVersion(scopeVersion(inputRS))
 		for _, key := range order {
-			emitGroup(ss.Spans(), groups[key])
+			emitGroup(ss.Spans(), groups[key], n.captureIdentity)
 		}
 	}
 	if output.SpanCount() == 0 {
@@ -250,7 +251,7 @@ func collect(rs ptrace.ResourceSpans) (map[pcommon.TraceID]*traceGroup, []pcommo
 
 // emitGroup writes one canonical trace: the invoke_agent root followed by
 // its reparented chat and execute_tool children in deterministic order.
-func emitGroup(dst ptrace.SpanSlice, g *traceGroup) {
+func emitGroup(dst ptrace.SpanSlice, g *traceGroup, captureIdentity bool) {
 	root := dst.AppendEmpty()
 	if g.root != nil {
 		copySpanMetadata(*g.root, root)
@@ -263,7 +264,7 @@ func emitGroup(dst ptrace.SpanSlice, g *traceGroup) {
 	root.SetName("invoke_agent " + agentName)
 	root.SetStartTimestamp(g.minStart)
 	root.SetEndTimestamp(g.maxEnd)
-	putRootAttributes(root.Attributes(), g)
+	putRootAttributes(root.Attributes(), g, captureIdentity)
 
 	children := append([]kept(nil), g.children...)
 	sort.Slice(children, func(i, j int) bool {
@@ -322,7 +323,7 @@ func rootSpanID(g *traceGroup) pcommon.SpanID {
 	return id
 }
 
-func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
+func putRootAttributes(attrs pcommon.Map, g *traceGroup, captureIdentity bool) {
 	// Root attributes read from the conversation span when present.
 	// Fragment groups exported before their root ends inherit the
 	// conversation-level attributes from their kept children instead —
@@ -346,6 +347,11 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup) {
 	attrs.PutStr("gen_ai.agent.name", agentName)
 	if sid := firstString(src, attrSessionID); sid != "" {
 		attrs.PutStr("gen_ai.conversation.id", sid)
+	}
+	if captureIdentity {
+		if uid := firstString(src, attrUserID); uid != "" {
+			attrs.PutStr("coding_agent.user.id", uid)
+		}
 	}
 	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.client.name", clientName)

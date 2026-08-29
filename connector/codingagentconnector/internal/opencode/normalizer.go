@@ -71,7 +71,7 @@ func (n *opencodeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrac
 				}
 				span := spans.AppendEmpty()
 				copySpanMetadata(wire, span)
-				normalizeSpan(wire, span, version, resourceSessionID)
+				normalizeSpan(wire, span, version, resourceSessionID, n.captureIdentity)
 			}
 		}
 		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool { return ss.Spans().Len() == 0 })
@@ -106,7 +106,7 @@ func isClaimedSpan(name string) bool {
 	return false
 }
 
-func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
+func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string, captureIdentity bool) {
 	attrs := span.Attributes()
 	putCommon(attrs, version)
 	copyWireStrings(wire.Attributes(), attrs)
@@ -124,6 +124,11 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string) {
 		}
 		if sessionID != "" {
 			attrs.PutStr("gen_ai.conversation.id", sessionID)
+		}
+		if captureIdentity {
+			if uid := firstString(wire.Attributes(), "ai.telemetry.metadata.userId"); uid != "" {
+				attrs.PutStr("coding_agent.user.id", uid)
+			}
 		}
 		attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 		attrs.PutStr("gen_ai.agent.name", agentName)

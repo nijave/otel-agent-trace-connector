@@ -296,6 +296,36 @@ func assertRequiredKeys(t *testing.T, span ptrace.Span) {
 	}
 }
 
+// TestClaudeCapturesIdentity pins the identity mapping onto the interaction
+// root: coding_agent.user.id is gated behind captureIdentity, but
+// coding_agent.terminal.type is not (terminal type is not personal data).
+func TestClaudeCapturesIdentity(t *testing.T) {
+	buildInput := func() ptrace.Traces {
+		input := ptrace.NewTraces()
+		rs := input.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "claude-code")
+		root := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		root.SetName("claude_code.interaction")
+		root.Attributes().PutStr("user.id", "u-1")
+		root.Attributes().PutStr("terminal.type", "iterm")
+		return input
+	}
+
+	onSink := &traceSink{}
+	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), buildInput()))
+	onRoot := findSpan(t, reassemble(onSink), "invoke_agent claude_code")
+	require.Equal(t, "u-1", attrString(t, onRoot, "coding_agent.user.id"))
+	require.Equal(t, "iterm", attrString(t, onRoot, "coding_agent.terminal.type"))
+
+	offSink := &traceSink{}
+	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), buildInput()))
+	offRoot := findSpan(t, reassemble(offSink), "invoke_agent claude_code")
+	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
+	require.Equal(t, "iterm", attrString(t, offRoot, "coding_agent.terminal.type"),
+		"terminal type is not gated behind captureIdentity")
+}
+
 func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

@@ -426,6 +426,36 @@ func TestNormalizerMapsRootReasoningTokens(t *testing.T) {
 	require.Equal(t, int64(17), got.Int())
 }
 
+// TestNormalizerCapturesIdentity pins coding_agent.user.id on the
+// invoke_agent root, sourced from the wire's userId telemetry metadata and
+// gated behind captureIdentity.
+func TestNormalizerCapturesIdentity(t *testing.T) {
+	buildInput := func() ptrace.Traces {
+		input := ptrace.NewTraces()
+		rs := input.ResourceSpans().AppendEmpty()
+		ss := rs.ScopeSpans().AppendEmpty()
+		ss.Scope().SetName("opencode")
+		root := ss.Spans().AppendEmpty()
+		root.SetName("ai.streamText")
+		root.Attributes().PutStr("ai.telemetry.metadata.userId", "u-2")
+		return input
+	}
+
+	onSink := &traceSink{}
+	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), buildInput()))
+	onRoot := onSink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "invoke_agent opencode", onRoot.Name())
+	v, ok := onRoot.Attributes().Get("coding_agent.user.id")
+	require.True(t, ok)
+	require.Equal(t, "u-2", v.Str())
+
+	offSink := &traceSink{}
+	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), buildInput()))
+	offRoot := offSink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
+}
+
 func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()

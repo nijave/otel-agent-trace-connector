@@ -100,7 +100,7 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 			spans := ss.Spans()
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				normalizeSpan(span, ss.Scope().Name(), serviceName, serviceVersion)
+				normalizeSpan(span, ss.Scope().Name(), serviceName, serviceVersion, n.captureIdentity)
 				content.Strip(span)
 			}
 		}
@@ -137,7 +137,7 @@ var nameSubjectByOperation = map[string]string{
 	"execute_tool": "gen_ai.tool.name",
 }
 
-func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion string) {
+func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion string, captureIdentity bool) {
 	attrs := span.Attributes()
 	operationValue, ok := attrs.Get("gen_ai.operation.name")
 	if !ok {
@@ -147,6 +147,11 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 	if subjectKey, canonical := nameSubjectByOperation[operation]; canonical {
 		if subjectValue, ok := attrs.Get(subjectKey); ok && subjectValue.Str() != "" {
 			span.SetName(operation + " " + subjectValue.Str())
+		}
+	}
+	if captureIdentity && operation == "invoke_agent" {
+		if v, ok := attrs.Get("enduser.pseudo.id"); ok && v.Str() != "" {
+			attrs.PutStr("coding_agent.user.id", v.Str())
 		}
 	}
 	if _, ok := attrs.Get("gen_ai.provider.name"); !ok {

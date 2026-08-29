@@ -479,6 +479,44 @@ func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
 	}
 	require.Equal(t, int64(25), attrInt(t, out, "gen_ai.usage.reasoning.output_tokens"),
 		"the reasoning-token key survives normalization")
+	// enduser.pseudo.id is a vendor key on the wire, but its value is copied
+	// onto the canonical coding_agent.user.id before the raw key is stripped.
+	require.Equal(t, "user-42", attrString(t, out, "coding_agent.user.id"),
+		"the raw enduser.pseudo.id value must be copied onto the canonical key before it is dropped")
+}
+
+// TestGenAINormalizerCapturesIdentity pins coding_agent.user.id on the
+// invoke_agent root of the committed copilot-native fixture (it carries
+// enduser.pseudo.id="user-42"), gated behind captureIdentity.
+func TestGenAINormalizerCapturesIdentity(t *testing.T) {
+	findInvokeAgentRoot := func(t *testing.T, traces ptrace.Traces) ptrace.Span {
+		t.Helper()
+		var root ptrace.Span
+		var found bool
+		eachFixtureSpan(t, traces, func(span ptrace.Span) {
+			if span.Name() == "invoke_agent copilot-cli" {
+				root = span
+				found = true
+			}
+		})
+		require.True(t, found, "invoke_agent copilot-cli root must be present")
+		return root
+	}
+
+	input := loadFixtureLines(t, filepath.Join("testdata", "copilot-native.otlp.json"))
+
+	onSink := &traceSink{}
+	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), input))
+	require.Len(t, onSink.all(), 1)
+	onRoot := findInvokeAgentRoot(t, onSink.all()[0])
+	require.Equal(t, "user-42", attrString(t, onRoot, "coding_agent.user.id"))
+
+	offSink := &traceSink{}
+	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), input))
+	require.Len(t, offSink.all(), 1)
+	offRoot := findInvokeAgentRoot(t, offSink.all()[0])
+	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
 }
 
 func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {

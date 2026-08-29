@@ -577,6 +577,27 @@ func TestNoLaminarBookkeepingInOutput(t *testing.T) {
 	}
 }
 
+// TestConversationCapturesIdentity pins coding_agent.user.id on the
+// invoke_agent root, sourced from the conversation span's Laminar user-id
+// association property and gated behind captureIdentity.
+func TestConversationCapturesIdentity(t *testing.T) {
+	attrs := baseAttrs()
+	attrs[attrUserID] = "42"
+	conv := conversationSpec()
+	conv.attrs = attrs
+
+	on := normalizeOne(t, makeTraces(makeSpan(traceA, conv)))
+	onRoot := findByName(t, on, "invoke_agent openhands")[0]
+	require.Equal(t, "42", attrString(onRoot, "coding_agent.user.id"))
+
+	s := &sink{}
+	require.NoError(t, New(s, false).ConsumeTraces(context.Background(), makeTraces(makeSpan(traceA, conv))))
+	require.Len(t, s.batches, 1)
+	offRoot := findByName(t, s.batches[0], "invoke_agent openhands")[0]
+	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
+}
+
 func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
