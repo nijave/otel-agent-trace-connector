@@ -258,6 +258,11 @@ separate S3 prefixes. Each S3 exporter uses a bounded `sending_queue` backed by
 the Collector file-storage extension, so completed batches waiting for S3 can
 survive a Collector restart.
 
+For more than one Collector instance, see
+[`examples/k8s-ha/`](examples/k8s-ha/) for the two-tier Kubernetes deployment
+and [`docs/multi-instance-ha.md`](docs/multi-instance-ha.md) for the analysis
+behind it.
+
 Build the distribution, provide a pre-existing bucket, and run the example:
 
 ```bash

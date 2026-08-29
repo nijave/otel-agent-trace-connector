@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: coding-agent-gateway
+  namespace: coding-agent-telemetry
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: coding-agent-gateway-endpoints
+  namespace: coding-agent-telemetry
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: coding-agent-gateway-endpoints
+  namespace: coding-agent-telemetry
+subjects:
+  - kind: ServiceAccount
+    name: coding-agent-gateway
+    namespace: coding-agent-telemetry
+roleRef:
+  kind: Role
+  name: coding-agent-gateway-endpoints
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coding-agent-gateway
+  namespace: coding-agent-telemetry
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: coding-agent-gateway
+  template:
+    metadata:
+      labels:
+        app: coding-agent-gateway
+    spec:
+      serviceAccountName: coding-agent-gateway
+      containers:
+        - name: gateway
+          image: otel/opentelemetry-collector-contrib:0.159.0
+          args: ["--config=/etc/otelcol/gateway.yaml"]
+          ports:
+            - containerPort: 4317
+            - containerPort: 4318
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: coding-agent-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coding-agent-ingest
+  namespace: coding-agent-telemetry
+spec:
+  selector:
+    app: coding-agent-gateway
+  ports:
+    - name: otlp-grpc
+      port: 4317
+    - name: otlp-http
+      port: 4318

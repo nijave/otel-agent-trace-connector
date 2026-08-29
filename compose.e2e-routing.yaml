@@ -1,0 +1,67 @@
+# Two-tier consistent-hash routing e2e (spec: docs/multi-instance-ha.md,
+# Option B). Costs nothing: the "agent" replays the pinned codex fixture as
+# synthetic conversations through a stock contrib gateway running the
+# load_balancing exporter; the validator asserts each conversation lands whole
+# on exactly one tier-2 replica. Does not include compose.e2e-base.yaml
+# because the topology needs two collectors with distinct output paths.
+services:
+  gateway:
+    image: otel/opentelemetry-collector-contrib:0.159.0
+    command: ["--config=/etc/otelcol/gateway.yaml"]
+    volumes:
+      - ./e2e/routing/gateway.yaml:/etc/otelcol/gateway.yaml:ro
+    # Distroless image: no exec healthcheck possible; the agent probes it.
+    depends_on:
+      collector-a:
+        condition: service_healthy
+      collector-b:
+        condition: service_healthy
+
+  collector-a:
+    build:
+      context: .
+      args:
+        OCB_VERSION: "0.159.0"
+    command: ["--config=/etc/otelcol/tier2.yaml"]
+    volumes:
+      - ./e2e/routing/tier2.yaml:/etc/otelcol/tier2.yaml:ro
+      - ./.e2e-output:/output
+    environment:
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-routing.sh}"
+      CANONICAL_OUT: /output/canonical-a.json
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:13133/"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  collector-b:
+    build:
+      context: .
+      args:
+        OCB_VERSION: "0.159.0"
+    command: ["--config=/etc/otelcol/tier2.yaml"]
+    volumes:
+      - ./e2e/routing/tier2.yaml:/etc/otelcol/tier2.yaml:ro
+      - ./.e2e-output:/output
+    environment:
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-routing.sh}"
+      CANONICAL_OUT: /output/canonical-b.json
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:13133/"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  agent:
+    build:
+      context: e2e/routing
+    volumes:
+      - ./connector/codingagentconnector/internal/codex/testdata/codex-native-logs.json:/fixture/codex-native-logs.json:ro
+    environment:
+      GATEWAY_ENDPOINT: "http://gateway:4318"
+      E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-routing.sh}"
+      CONVERSATIONS: "${CONVERSATIONS:-8}"
+    depends_on:
+      gateway:
+        condition: service_started

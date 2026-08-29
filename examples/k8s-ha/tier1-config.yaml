@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coding-agent-gateway-config
+  namespace: coding-agent-telemetry
+data:
+  gateway.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    exporters:
+      load_balancing:
+        routing_key: attributes
+        routing_attributes:
+          - conversation.id
+          - cursor.conversation.id
+        protocol:
+          otlp:
+            tls:
+              insecure: true
+            retry_on_failure:
+              enabled: true
+            sending_queue:
+              enabled: true
+        resolver:
+          k8s:
+            service: coding-agent-collector.coding-agent-telemetry
+
+    service:
+      pipelines:
+        logs:
+          receivers: [otlp]
+          exporters: [load_balancing]
+        traces:
+          receivers: [otlp]
+          exporters: [load_balancing]

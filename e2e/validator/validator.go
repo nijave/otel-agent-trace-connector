@@ -685,6 +685,50 @@ func validateOpenHandsRawTraces(traces ptrace.Traces, _ string) error {
 	return nil
 }
 
+// routingHome records what one tier-2 replica's canonical output holds for a
+// synthetic routing conversation: the invoke_agent root and, joined by trace
+// ID (conversation.id lives only on the root), at least one chat child.
+type routingHome struct {
+	HasRoot bool
+	HasChat bool
+}
+
+// routingHomes maps each routing conversation id found in the run's spans to
+// what this file holds for it. The affinity test computes one map per tier-2
+// output file: a conversation split across replicas shows up in both maps.
+func routingHomes(traces ptrace.Traces, runID string) map[string]routingHome {
+	spans := collectRunSpans(traces, runID)
+	homes := map[string]routingHome{}
+	traceConv := map[pcommon.TraceID]string{}
+	for _, span := range spans {
+		if op, ok := span.Attributes().Get("gen_ai.operation.name"); !ok || op.Str() != "invoke_agent" {
+			continue
+		}
+		conv, ok := span.Attributes().Get("gen_ai.conversation.id")
+		if !ok || !strings.HasPrefix(conv.Str(), "routing-"+runID+"-") {
+			continue
+		}
+		home := homes[conv.Str()]
+		home.HasRoot = true
+		homes[conv.Str()] = home
+		traceConv[span.TraceID()] = conv.Str()
+	}
+	for _, span := range spans {
+		op, ok := span.Attributes().Get("gen_ai.operation.name")
+		if !ok || op.Str() != "chat" {
+			continue
+		}
+		conv, ok := traceConv[span.TraceID()]
+		if !ok {
+			continue
+		}
+		home := homes[conv]
+		home.HasChat = true
+		homes[conv] = home
+	}
+	return homes
+}
+
 func validateOpenHandsSpans(spans []ptrace.Span) error {
 	var roots, others int
 	for _, span := range spans {
