@@ -3,7 +3,9 @@
 This document records, for each coding-agent harness that emits OpenTelemetry
 metrics, the instrument names and the attributes/dimensions each instrument
 carries. It complements `docs/harnesses.md`, which covers trace and log
-surfaces; this file drills into the metrics dimension only. It does not propose
+surfaces, and [docs/otel-signals.md](otel-signals.md), which answers
+directly whether each harness supports traces, logs, and metrics at all;
+this file drills into the metrics dimension only. It does not propose
 connector support; it records what the sources say so a decision can rest on
 evidence.
 

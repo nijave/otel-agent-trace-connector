@@ -64,7 +64,9 @@ Canonical output uses a closed attribute vocabulary documented in
 [docs/canonical-attributes.md](docs/canonical-attributes.md), with a raw →
 canonical mapping matrix per harness under
 [docs/harnesses/](docs/harnesses/) and the upstream research record in
-[docs/harnesses.md](docs/harnesses.md).
+[docs/harnesses.md](docs/harnesses.md). For which OTel signal types
+(traces, logs, metrics) each harness natively supports, independent of what
+the connector normalizes, see [docs/otel-signals.md](docs/otel-signals.md).
 
 ## Supported harnesses
 
