@@ -688,3 +688,42 @@ func TestCodexCanonicalFixtureRejectsContent(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, `sensitive attribute "prompt"`)
 }
+
+func TestRoutingHomes(t *testing.T) {
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", "run1")
+	ss := rs.ScopeSpans().AppendEmpty()
+
+	traceID := pcommon.TraceID([16]byte{1})
+	root := ss.Spans().AppendEmpty()
+	root.SetName("invoke_agent codex")
+	root.SetTraceID(traceID)
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.conversation.id", "routing-run1-3")
+
+	chat := ss.Spans().AppendEmpty()
+	chat.SetName("chat glm-4.7")
+	chat.SetTraceID(traceID)
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+
+	// A root from another run must not appear.
+	other := traces.ResourceSpans().AppendEmpty()
+	other.Resource().Attributes().PutStr("e2e.run.id", "other")
+	otherSpan := other.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	otherSpan.SetName("invoke_agent codex")
+	otherSpan.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	otherSpan.Attributes().PutStr("gen_ai.conversation.id", "routing-other-1")
+
+	homes := routingHomes(traces, "run1")
+	if len(homes) != 1 {
+		t.Fatalf("expected exactly one conversation, got %d", len(homes))
+	}
+	home, ok := homes["routing-run1-3"]
+	if !ok {
+		t.Fatal("conversation routing-run1-3 missing")
+	}
+	if !home.HasRoot || !home.HasChat {
+		t.Fatalf("expected root and chat, got %+v", home)
+	}
+}
