@@ -1,13 +1,57 @@
-# Codex — raw → canonical attribute matrix
+# Codex — OpenTelemetry signal reference
 
-Codex emits structured OTLP **logs** (`codex.*` events with `conversation.id`)
-rather than spans. The connector is a logs-to-traces edge: it deduplicates
-redelivered records, correlates each turn's events into a deterministic trace,
-and emits one `invoke_agent codex` root with `chat <model>` and
-`execute_tool <tool>` children plus the remaining raw events attached to the
-root as span events (names only). See
+Codex's wire carries structured OTLP **logs** (`codex.*` events with
+`conversation.id`); there is no native trace signal. The connector is a
+logs-to-traces edge: it deduplicates redelivered records, correlates each
+turn's events into a deterministic trace, and emits one `invoke_agent codex`
+root with `chat <model>` and `execute_tool <tool>` children plus the
+remaining raw events attached to the root as span events (names only). See
 [canonical attributes](../canonical-attributes.md) for the shared vocabulary
 and the policy behind it.
+
+## Signal support
+
+| Signal | Native support | Connector support |
+| --- | --- | --- |
+| Traces | none native (wire is logs only) | n/a (traces synthesized from the Logs edge) |
+| Logs | native (`codex.*` structured events) | logs edge (this file's Connector mapping) |
+| Metrics | native (in-tree `codex-rs/otel` crate) | not applicable |
+
+Last verified: 2026-08-29 per signal (Logs attribute matrix audited 2026-08-25; see Sources).
+
+## Traces
+
+### Native support
+
+Not applicable — Codex has no native OTel traces signal. The wire carries
+only structured `codex.*` OTLP logs, never spans; every span in the
+canonical `invoke_agent codex` trace comes from the connector's synthesis
+over the logs signal (below), not from a trace Codex put on the wire itself.
+See [docs/otel-signals.md](../otel-signals.md#summary) (Codex row: "none
+native (wire is logs only)") and [docs/harnesses.md](../harnesses.md#summary)
+(Codex row: "structured logs").
+
+### Connector mapping
+
+Not applicable for the same reason: there is no native trace signal to
+normalize directly. See **Logs → Connector mapping** for the synthesis this
+connector performs instead.
+
+## Logs
+
+### Native support
+
+Native structured OTLP logs: `codex.*` events carrying `conversation.id`.
+Configure via the `[otel]` block in the user-level `~/.codex/config.toml`
+(Codex ignores project-local `[otel]` tables):
+
+```toml
+[otel]
+log_user_prompt = false
+exporter = { otlp-http = { endpoint = "http://collector:4318/v1/logs", protocol = "binary" } }
+```
+
+### Connector mapping
 
 Event-to-span mapping:
 
@@ -21,7 +65,7 @@ Event-to-span mapping:
 | `codex.tool_decision` | dropped entirely |
 | everything else | root span events (name + timestamp only) |
 
-## Attribute matrix
+#### Attribute matrix
 
 Status is one of **mapped** (remapped onto the canonical key; a parenthetical
 names any wire condition under which the key is absent), **dropped**
@@ -41,7 +85,7 @@ fields on `codex.tool_result` and `codex.tool_decision`; those detail fields
 appear as dropped rows in the matrix below. The builder copies only the keys
 in this matrix, so they stay out of canonical output.
 
-### codex.sse_event (response.completed) → chat
+##### codex.sse_event (response.completed) → chat
 
 | Raw key | Canonical key | Status |
 |---|---|---|
@@ -59,7 +103,7 @@ in this matrix, so they stay out of canonical output.
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
 | `slug`, `originator`, `terminal.type`, `attempt`, `endpoint`, auth/http detail | — | dropped |
 
-### codex.tool_result → execute_tool
+##### codex.tool_result → execute_tool
 
 | Raw key | Canonical key | Status |
 |---|---|---|
@@ -74,7 +118,7 @@ in this matrix, so they stay out of canonical output.
 | `output_truncated` | — | dropped (qualifies tool output content that the connector strips at parse time) |
 | `agent_name` | — | dropped (subagent identity; upstream uses the field for two different meanings and values include per-run UUIDs; per-subagent `invoke_agent` spans would be the semconv-shaped path if this is ever wanted) |
 
-### invoke_agent codex root
+##### invoke_agent codex root
 
 | Raw key | Canonical key | Status |
 |---|---|---|
@@ -90,7 +134,7 @@ in this matrix, so they stay out of canonical output.
 | root-event `error.message` copy | — | dropped (root events keep their names only) |
 | root-event `event.kind` copy | — | dropped |
 
-### codex.tool_decision
+##### codex.tool_decision
 
 Dropped entirely, including the decision→result pairing: its only canonical
 outputs were `coding_agent.tool.decision` / `coding_agent.tool.decision_source`
@@ -98,7 +142,7 @@ outputs were `coding_agent.tool.decision` / `coding_agent.tool.decision_source`
 remaining purpose. Codex 0.150.1 also sends `tool_namespace` on this event; it
 drops with the event.
 
-## Connector-written attributes
+#### Connector-written attributes
 
 The connector writes these itself rather than remapping them from raw keys;
 they appear on every emitted span except where noted:
@@ -110,7 +154,7 @@ they appear on every emitted span except where noted:
 - `gen_ai.provider.name` = `openai` (the wire protocol; invoke_agent root and chat spans only — execute_tool spans never carry it)
 - `gen_ai.agent.name` = `codex` (invoke_agent root only)
 
-## Canonical keys with no Codex source
+#### Canonical keys with no Codex source
 
 | Canonical key | Status |
 |---|---|
@@ -121,3 +165,51 @@ they appear on every emitted span except where noted:
 | `gen_ai.tool.call.id` / `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
 | `server.address` / `server.port` | not provided (proxied setups are indistinguishable) |
 | `exception.*` | not provided |
+
+## Metrics
+
+### Native support
+
+Native, in-tree `codex-rs/otel` crate — counters and histograms, verified
+from source (repo clone commit `4f39251`). Needs `analytics_enabled = true`
+plus an `[otel.metrics_exporter.otlp-http]` table in `~/.codex/config.toml`;
+the default exporter is `statsig`, not OTLP, so metrics stay off the wire
+until an operator sets both.
+
+Key instruments (full catalog, including every histogram and its complete
+attribute set, lives in [docs/metrics.md](../metrics.md#codex)):
+
+- Counters: `codex.thread.started`, `codex.conversation.turn.count`,
+  `codex.tool.call`, `codex.tool.unified_exec`, `codex.websocket.request`,
+  `codex.plugins.startup_sync`
+- Histograms: `codex.turn.e2e_duration_ms`, `codex.turn.ttft.duration_ms`,
+  `codex.turn.ttfm.duration_ms`, `codex.turn.token_usage` (by `token_type`),
+  `codex.turn.tool.call`, `codex.mcp.tools.*.duration_ms`
+
+Session tags (`auth_mode`, `session_source`, `originator`, `model`,
+`app.version`) append to most session metrics. Global-client metrics
+(`codex.mcp.tools.*`, `codex.remote_models.*`, `codex.plugins.startup_sync`)
+carry none of those tags.
+
+`docs/metrics.md` flags a doc-vs-source disagreement worth restating here:
+the Last9 Codex doc's attribute keys are stale against this source
+revision — it says `type` where source uses `token_type`, `mode` where
+source uses `active`/`tmp_mem_enabled`, and `tool.name` where source uses
+`tool`. Source keys are authoritative.
+
+### Connector mapping
+
+Not applicable — this connector only registers `logs-to-traces` and
+`traces-to-traces` connector pipelines (see
+`connector/codingagentconnector/factory.go`); it does not process, transform,
+or filter OTel metrics for any harness. Codex's native metrics, where
+exported, pass through a metrics pipeline unmodified.
+
+## Sources
+
+- Codex OTel crate: https://github.com/openai/codex (`codex-rs/otel/README.md`,
+  `codex-rs/otel/src/metrics/config.rs`, `codex-rs/core` call sites)
+- [docs/otel-signals.md](../otel-signals.md) — top-level per-signal matrix (refreshed 2026-08-29)
+- [docs/harnesses.md](../harnesses.md) — summary table corroborating no native Codex traces signal (refreshed 2026-08-20)
+- [docs/metrics.md](../metrics.md) — full Codex instrument catalog (refreshed 2026-08-21, verified against upstream clone commit `4f39251`)
+- Wire capture behind the Logs attribute matrix above: Codex 0.150.1, audited 2026-08-25 against upstream HEAD
