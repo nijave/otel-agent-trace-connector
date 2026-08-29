@@ -18,18 +18,19 @@ import (
 // with a consistent hash, all conversations legally landing on one backend is
 // improbable but valid.
 func TestRoutingAffinity(t *testing.T) {
-	// E2E_RUN_ID is the primary signal scripts/e2e-routing.sh sets; matching
-	// TestLiveE2ETraces's convention, its absence means "no run happened" and
-	// the test skips rather than fails, so the untargeted `go test -tags=e2e
-	// ./e2e/validator/` in check.sh stays green without a live stack.
+	// E2E_RUN_ID, CANONICAL_FILE_A, and CANONICAL_FILE_B are the signals only
+	// scripts/e2e-routing.sh sets; any one missing means no routing run
+	// happened, so the test skips rather than fails. This must not regress to
+	// t.Fatal on a partial signal: every other e2e script's shared harness
+	// (scripts/lib-e2e.sh) sets E2E_RUN_ID and runs the whole package
+	// untargeted (`go test -tags=e2e ./e2e/validator/`) without ever setting
+	// CANONICAL_FILE_A/B, so treating E2E_RUN_ID alone as "a routing run is
+	// underway" would fail this test during every other agent's paid e2e run.
 	runID := os.Getenv("E2E_RUN_ID")
-	if runID == "" {
-		t.Skip("E2E_RUN_ID not set; run scripts/e2e-routing.sh")
-	}
 	pathA := os.Getenv("CANONICAL_FILE_A")
 	pathB := os.Getenv("CANONICAL_FILE_B")
-	if pathA == "" || pathB == "" {
-		t.Fatal("CANONICAL_FILE_A and CANONICAL_FILE_B must be set")
+	if runID == "" || pathA == "" || pathB == "" {
+		t.Skip("CANONICAL_FILE_A, CANONICAL_FILE_B, and E2E_RUN_ID must be set; run scripts/e2e-routing.sh")
 	}
 	count, err := strconv.Atoi(os.Getenv("CONVERSATIONS"))
 	if err != nil || count < 1 {
