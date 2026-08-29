@@ -364,3 +364,25 @@ connector fixtures under
 `internal/openhands/testdata/`; after updating them, rerun
 `go test ./internal/openhands/` from `connector/codingagentconnector/` to
 confirm the fixtures still replay green.
+
+## Routing E2E (zero API cost)
+
+Unlike every stack above, this one calls no model and needs no credentials.
+It builds two tier-2 replicas of the custom Collector behind a stock
+`otelcol-contrib` gateway running the `load_balancing` exporter, then replays
+the pinned codex fixture as `CONVERSATIONS` synthetic conversations (default
+8) through the gateway. `TestRoutingAffinity` asserts each conversation lands
+whole — root plus chat spans — on exactly one tier-2 replica; spread across
+replicas prints to the log instead. This stack is the runnable twin of
+`examples/k8s-ha/`: the same two-tier topology, with Compose standing in for
+Kubernetes manifests.
+
+```bash
+GOTOOLCHAIN=auto ./scripts/e2e-routing.sh
+```
+
+Override the conversation count with `CONVERSATIONS`:
+
+```bash
+CONVERSATIONS=20 GOTOOLCHAIN=auto ./scripts/e2e-routing.sh
+```

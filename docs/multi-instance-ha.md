@@ -1,8 +1,14 @@
-# Multiple Collector instances (HA) analysis
+# Collector instances (HA) analysis
+
+Option B now has runnable artifacts: the routing e2e
+(`scripts/e2e-routing.sh`, `compose.e2e-routing.yaml`) proves the
+consistent-hash affinity with the pinned collector versions, and
+`examples/k8s-ha/` carries the Kubernetes shape with the k8s resolver and
+RBAC. The analysis below stays as the rationale record.
 
 This document records what it would take to run this Collector distribution as
-N instances for high availability, and which issues block that today. It is
-analysis, not an implementation plan; nothing here has been built.
+N instances for high availability, and which issues block that today, as
+analysis rather than an implementation plan: none of it exists as code yet.
 
 Facts about upstream components reflect `loadbalancingexporter` documentation
 and source at Collector v0.159.0, the version pinned in
@@ -28,8 +34,8 @@ The connector itself has three paths with different statefulness:
 
 Stateful-edge facts that matter for HA:
 
-- Turn and burst state never leaves the process. There is no storage-extension
-  hook in the connector. `file_storage` appears only in exporter sending
+- Turn and burst state never leaves the process. The connector defines no
+  storage-extension hook. `file_storage` appears only in exporter sending
   queues and is deliberately local to each replica.
 - Shutdown drains every active turn immediately with finish reason `shutdown`
   (`flushAll`). Any restart truncates all in-flight turns regardless of
@@ -50,8 +56,8 @@ Stateful-edge facts that matter for HA:
    prompt, both derive the same trace ID and downstream sees duplicated roots
    with doubled usage rollups. When only one saw the prompt, the other's
    fragment derives a different trace ID and downstream sees two unrelated
-   partial traces. Either way canonical data is corrupted without errors.
-3. **Cursor cannot be pinned at the network layer.** Cursor exports from its
+   partial traces. Either way, canonical data corrupts without errors.
+3. **The network layer cannot pin Cursor.** Cursor exports from its
    own cloud infrastructure over OTLP/HTTP with many source connections, so no
    ingress-side affinity trick keeps a conversation on one replica. Only
    content-aware routing fixes Cursor.
@@ -59,8 +65,8 @@ Stateful-edge facts that matter for HA:
    turns as `shutdown` immediately. This is existing single-instance behavior,
    but N replicas restart more often, so the frequency of truncated turns
    rises unless operators accept it or drain semantics change.
-5. **Crash loss is unchanged by HA.** Active state dies with the process. That
-   limitation is documented in design.md and HA does not remove it; failover
+5. **HA does not change crash loss.** Active state dies with the process.
+   design.md documents that limitation, and HA does not remove it; failover
    just relocates where the next events land.
 
 ## What does not block multi-instance
@@ -122,8 +128,8 @@ Remaining caveats, documented upstream:
 
 - Topology changes remap roughly R/N routes. An active turn whose events span
   the change splits across replicas and produces exactly the fragments
-  described above. There is no `groupbytrace` analog for logs, so this cannot
-  be made atomic; fixed replica counts minimize it.
+  described above. Logs have no `groupbytrace` analog, so nothing makes this
+  atomic; fixed replica counts reduce it instead.
 - The resolver does not health-check backends; dead-endpoint handling relies
   on retry plus EndpointSlice updates.
 
