@@ -255,7 +255,7 @@ func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
 		// chan int cannot round-trip into pdata; FromRaw rejects it.
 		resource: map[string]any{"service.name": "codex_cli_rs", "poison": make(chan int)},
 		events:   []agentEvent{testEvent("codex.api_request", base, nil)}}
-	traces, err := buildTrace(turn, "shutdown", DefaultScopeVersion)
+	traces, err := buildTrace(turn, "shutdown", DefaultScopeVersion, true)
 	require.Error(t, err)
 	require.NotNil(t, traces)
 	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
@@ -285,7 +285,7 @@ func TestBuildTraceHugeDurationKeepsSpanBoundsSane(t *testing.T) {
 
 func mustBuildTrace(t *testing.T, turn *turnState, reason string) ptrace.Traces {
 	t.Helper()
-	traces, err := buildTrace(turn, reason, DefaultScopeVersion)
+	traces, err := buildTrace(turn, reason, DefaultScopeVersion, true)
 	require.NoError(t, err)
 	return traces
 }

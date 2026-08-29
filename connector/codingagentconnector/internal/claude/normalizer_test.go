@@ -62,7 +62,7 @@ func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.
 	tool.Attributes().PutStr("tool_name", "Bash")
 
 	sink := &traceSink{}
-	normalizer := New(sink)
+	normalizer := New(sink, true)
 	require.NoError(t, normalizer.ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	output := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
@@ -92,7 +92,7 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.NoError(t, err)
 	unmarshaler := &ptrace.JSONUnmarshaler{}
 	sink := &traceSink{}
-	normalizer := New(sink)
+	normalizer := New(sink, true)
 	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
@@ -201,7 +201,7 @@ func TestClaudeTraceNormalizerKeepsSubToolOnlyBatch(t *testing.T) {
 	spans.AppendEmpty().SetName("claude_code.tool.blocked_on_user")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	require.Equal(t, 2, all.Len(), "sub-tool spans must survive a batch of their own")
 	// Sub-spans are not renamed but still carry the required canonical keys.
@@ -230,7 +230,7 @@ func TestClaudeTraceNormalizerDropsNonNativeSiblingsInClaimedGroups(t *testing.T
 	sibling.Events().AppendEmpty().SetName("gen_ai.choice")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	findSpan(t, all, "invoke_agent claude_code")
 	for i := 0; i < all.Len(); i++ {
@@ -248,7 +248,7 @@ func TestClaudeTraceNormalizerFiltersOtherProviders(t *testing.T) {
 	input := ptrace.NewTraces()
 	input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("codex.internal")
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all())
 }
 
@@ -307,7 +307,7 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	root.SetName("claude_code.interaction")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
 	for _, key := range []string{"service.name", "service.version"} {

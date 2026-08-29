@@ -67,10 +67,10 @@ func conformanceMerge(sink *conformanceSink) ptrace.Traces {
 	return all
 }
 
-func conformanceConsumeTraces(newEdge func(consumer.Traces) connector.Traces) func(canonical.RawInput) (ptrace.Traces, error) {
+func conformanceConsumeTraces(newEdge func(consumer.Traces, bool) connector.Traces) func(canonical.RawInput) (ptrace.Traces, error) {
 	return func(raw canonical.RawInput) (ptrace.Traces, error) {
 		sink := &conformanceSink{}
-		if err := newEdge(sink).ConsumeTraces(context.Background(), raw.Traces); err != nil {
+		if err := newEdge(sink, true).ConsumeTraces(context.Background(), raw.Traces); err != nil {
 			return ptrace.Traces{}, err
 		}
 		return conformanceMerge(sink), nil
@@ -387,7 +387,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 	// in construction order. The count assertion below keeps this list tied to
 	// the real routers; coverage is asserted by identity, not count.
 	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codex", "cursor"}
-	tracesWired := len(newTracesRouter(&conformanceSink{}).(*tracesRouter).edges)
+	tracesWired := len(newTracesRouter(createDefaultConfig(), &conformanceSink{}).(*tracesRouter).edges)
 	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
 	logsEdge, err := newLogsRouter(createDefaultConfig(), set, &conformanceSink{})
 	if err != nil {

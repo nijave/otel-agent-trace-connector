@@ -55,7 +55,7 @@ func testResourceRaw() map[string]any {
 
 func mustBuildTrace(t *testing.T, burst *burstState, reason string) ptrace.Traces {
 	t.Helper()
-	traces, err := buildTrace(burst, reason, "0.1.0")
+	traces, err := buildTrace(burst, reason, "0.1.0", true)
 	require.NoError(t, err)
 	return traces
 }
@@ -217,7 +217,7 @@ func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
 	burst := burstForTest()
 	// chan int cannot round-trip into pdata; FromRaw rejects it.
 	burst.resource = map[string]any{"service.name": "cursor", "poison": make(chan int)}
-	traces, err := buildTrace(burst, "quiet", "0.1.0")
+	traces, err := buildTrace(burst, "quiet", "0.1.0", true)
 	require.Error(t, err)
 	require.NotNil(t, traces)
 	require.Len(t, spansByName(traces)["invoke_agent cursor"], 1)

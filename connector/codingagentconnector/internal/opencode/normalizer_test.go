@@ -95,7 +95,7 @@ func TestNormalizerClaimsGroupDropsNoiseAndKeepsIdentity(t *testing.T) {
 	otherScope.Spans().AppendEmpty().SetName("http.client")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 
 	outRS := sink.all()[0].ResourceSpans().At(0)
@@ -156,7 +156,7 @@ func TestNormalizerFallsBackToResourceSessionID(t *testing.T) {
 	ss.Spans().AppendEmpty().SetName("ai.streamText")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	v, ok := out.Attributes().Get("gen_ai.conversation.id")
 	require.True(t, ok)
@@ -168,7 +168,7 @@ func TestNormalizerMissingUsageEmitsWithoutTokens(t *testing.T) {
 	newGroup(input, "opencode", "ai.streamText")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	_, hasInput := out.Attributes().Get("gen_ai.usage.input_tokens")
 	require.False(t, hasInput, "missing wire usage must stay absent, not zero-filled")
@@ -183,7 +183,7 @@ func TestNormalizerConvertsTTFTToSeconds(t *testing.T) {
 	span.Attributes().PutDouble("ai.response.msToFirstChunk", 250)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
 	require.True(t, ok)
@@ -197,7 +197,7 @@ func TestNormalizerEmitsNothingWithoutClaimedGroups(t *testing.T) {
 	newGroup(input, "my-app", "run")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all())
 }
 
@@ -227,7 +227,7 @@ func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
 	tool.Attributes().PutStr("ai.toolCall.result", "SECRET RESULT")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 
 	require.Equal(t, "chat ox-alpha-free", spans.At(0).Name())
@@ -260,14 +260,14 @@ func TestNormalizerBareNamesWhenSubjectMissing(t *testing.T) {
 	newGroup(input, "opencode", "ai.streamText.doStream")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "chat", out.Name())
 
 	input2 := ptrace.NewTraces()
 	newGroup(input2, "opencode", "ai.toolCall")
 	sink2 := &traceSink{}
-	require.NoError(t, New(sink2).ConsumeTraces(context.Background(), input2))
+	require.NoError(t, New(sink2, true).ConsumeTraces(context.Background(), input2))
 	out2 := sink2.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "execute_tool", out2.Name())
 }
@@ -310,7 +310,7 @@ func TestNormalizerFixtureReplay(t *testing.T) {
 	require.Positive(t, inputSpans)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	output := sink.all()[0]
 	require.Less(t, countSpans(output), inputSpans, "Effect noise must be dropped")
@@ -361,7 +361,7 @@ func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
 	require.NoError(t, err)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 
 	var chat *ptrace.Span
@@ -419,7 +419,7 @@ func TestNormalizerMapsRootReasoningTokens(t *testing.T) {
 	root.Attributes().PutInt("ai.usage.reasoningTokens", 17)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	got, ok := out.Attributes().Get("gen_ai.usage.reasoning.output_tokens")
 	require.True(t, ok, "root reasoning tokens must map")
@@ -441,7 +441,7 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
 	for _, key := range []string{"service.name", "service.version"} {
 		value, ok := attrs.Get(key)

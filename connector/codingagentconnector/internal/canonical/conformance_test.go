@@ -164,7 +164,7 @@ func TestFilterResource(t *testing.T) {
 	rs.Resource().Attributes().PutStr("telemetry.sdk.language", "go")
 	rs.Resource().Attributes().PutStr("cursor.surface", "cli")
 	rs.Resource().Attributes().PutStr("vendor.thing", "x")
-	FilterResource(rs)
+	FilterResource(rs, true)
 	attrs := rs.Resource().Attributes()
 	requireKeys := []string{"service.name", "service.version", "telemetry.sdk.language"}
 	for _, key := range requireKeys {

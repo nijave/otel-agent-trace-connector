@@ -17,19 +17,21 @@ const (
 
 // Config controls correlation state and turn finalization.
 type Config struct {
-	TurnTimeout    time.Duration `mapstructure:"turn_timeout"`
-	ReorderWindow  time.Duration `mapstructure:"reorder_window"`
-	MaxActiveTurns int           `mapstructure:"max_active_turns"`
-	MaxEvents      int           `mapstructure:"max_events_per_turn"`
+	TurnTimeout     time.Duration `mapstructure:"turn_timeout"`
+	ReorderWindow   time.Duration `mapstructure:"reorder_window"`
+	MaxActiveTurns  int           `mapstructure:"max_active_turns"`
+	MaxEvents       int           `mapstructure:"max_events_per_turn"`
+	CaptureIdentity bool          `mapstructure:"capture_identity"`
 }
 
 // NewDefaultConfig returns an independent default configuration.
 func NewDefaultConfig() *Config {
 	return &Config{
-		TurnTimeout:    defaultTurnTimeout,
-		ReorderWindow:  defaultReorderWindow,
-		MaxActiveTurns: defaultMaxActive,
-		MaxEvents:      defaultMaxEvents,
+		TurnTimeout:     defaultTurnTimeout,
+		ReorderWindow:   defaultReorderWindow,
+		MaxActiveTurns:  defaultMaxActive,
+		MaxEvents:       defaultMaxEvents,
+		CaptureIdentity: true,
 	}
 }
 

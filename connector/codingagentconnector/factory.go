@@ -37,8 +37,8 @@ func createLogsToTraces(
 func createTracesToTraces(
 	_ context.Context,
 	_ connector.Settings,
-	_ component.Config,
+	cfg component.Config,
 	next consumer.Traces,
 ) (connector.Traces, error) {
-	return newTracesRouter(next), nil
+	return newTracesRouter(cfg.(*Config), next), nil
 }

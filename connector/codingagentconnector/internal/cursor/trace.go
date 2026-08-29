@@ -26,7 +26,7 @@ var chatTokenAttrs = []struct{ source, dest string }{
 	{"cursor.api.request.cache_creation_tokens", "gen_ai.usage.cache_write.input_tokens"},
 }
 
-func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, error) {
+func buildTrace(burst *burstState, reason, scopeVersion string, captureIdentity bool) (ptrace.Traces, error) {
 	events := append([]Event(nil), burst.events...)
 	// Tie-break equal timestamps on the dedupe key so a reordered at-least-once
 	// batch still picks the same anchor event, and therefore the same trace id.
@@ -42,7 +42,7 @@ func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, 
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
 	resErr := rs.Resource().Attributes().FromRaw(burst.resource)
-	canonical.FilterResource(rs)
+	canonical.FilterResource(rs, captureIdentity)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
 	ss.Scope().SetVersion(scopeVersion)

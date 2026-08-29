@@ -35,7 +35,7 @@ var tokenUsageAttrs = []struct{ source, dest string }{
 	{"reasoning_token_count", "gen_ai.usage.reasoning.output_tokens"},
 }
 
-func buildTrace(turn *turnState, reason, scopeVersion string) (ptrace.Traces, error) {
+func buildTrace(turn *turnState, reason, scopeVersion string, captureIdentity bool) (ptrace.Traces, error) {
 	events := append([]agentEvent(nil), turn.events...)
 	sort.SliceStable(events, func(i, j int) bool { return events[i].timestamp.Before(events[j].timestamp) })
 	start, end := turnBounds(turn, events)
@@ -45,7 +45,7 @@ func buildTrace(turn *turnState, reason, scopeVersion string) (ptrace.Traces, er
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
 	resErr := rs.Resource().Attributes().FromRaw(turn.resource)
-	canonical.FilterResource(rs)
+	canonical.FilterResource(rs, captureIdentity)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
 	ss.Scope().SetVersion(scopeVersion)

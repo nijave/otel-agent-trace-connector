@@ -76,14 +76,15 @@ const (
 // long-lived conversation root, so each batch is rewritten as-is and
 // backends reassemble by the preserved IDs.
 type openhandsTraceNormalizer struct {
-	next consumer.Traces
+	next            consumer.Traces
+	captureIdentity bool
 	component.StartFunc
 	component.ShutdownFunc
 }
 
 // New creates the stateless OpenHands native traces-to-traces edge.
-func New(next consumer.Traces) connector.Traces {
-	return &openhandsTraceNormalizer{next: next}
+func New(next consumer.Traces, captureIdentity bool) connector.Traces {
+	return &openhandsTraceNormalizer{next: next, captureIdentity: captureIdentity}
 }
 
 func (*openhandsTraceNormalizer) Capabilities() consumer.Capabilities {
@@ -103,7 +104,7 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 		}
 		rs := output.ResourceSpans().AppendEmpty()
 		inputRS.Resource().CopyTo(rs.Resource())
-		canonical.FilterResource(rs)
+		canonical.FilterResource(rs, n.captureIdentity)
 		ss := rs.ScopeSpans().AppendEmpty()
 		ss.Scope().SetName(scopeName)
 		ss.Scope().SetVersion(scopeVersion(inputRS))

@@ -27,7 +27,7 @@ func loadFixtureTraces(t *testing.T) ptrace.Traces {
 func replayFixture(t *testing.T) ptrace.Traces {
 	t.Helper()
 	s := &sink{}
-	require.NoError(t, New(s).ConsumeTraces(context.Background(), loadFixtureTraces(t)))
+	require.NoError(t, New(s, true).ConsumeTraces(context.Background(), loadFixtureTraces(t)))
 	require.Len(t, s.batches, 1)
 	return s.batches[0]
 }

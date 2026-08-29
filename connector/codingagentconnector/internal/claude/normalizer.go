@@ -21,14 +21,15 @@ import (
 // claudeTraceNormalizer preserves Claude Code's native hierarchy and IDs while
 // adding the canonical names and GenAI attributes used across coding agents.
 type claudeTraceNormalizer struct {
-	next consumer.Traces
+	next            consumer.Traces
+	captureIdentity bool
 	component.StartFunc
 	component.ShutdownFunc
 }
 
 // New creates the stateless Claude Code traces-to-traces edge.
-func New(next consumer.Traces) connector.Traces {
-	return &claudeTraceNormalizer{next: next}
+func New(next consumer.Traces, captureIdentity bool) connector.Traces {
+	return &claudeTraceNormalizer{next: next, captureIdentity: captureIdentity}
 }
 
 func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
@@ -52,7 +53,7 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 		// Read raw keys before the filter: session.id feeds conversation ids
 		// but is not part of the canonical resource vocabulary.
 		resourceSessionID := resourceString(rs.Resource(), "session.id")
-		canonical.FilterResource(rs)
+		canonical.FilterResource(rs, n.captureIdentity)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			foreign := make(map[pcommon.SpanID]bool, spans.Len())

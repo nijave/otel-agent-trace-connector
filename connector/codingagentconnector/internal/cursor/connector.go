@@ -266,7 +266,7 @@ func (c *cursorConnector) emit(ctx context.Context, finalized []finalizedBurst) 
 		if fb.burst == nil {
 			continue
 		}
-		traces, err := buildTrace(fb.burst, fb.reason, c.scopeVersion)
+		traces, err := buildTrace(fb.burst, fb.reason, c.scopeVersion, c.config.CaptureIdentity)
 		if err != nil {
 			// Deliver anyway: the spans are intact even when resource
 			// attributes fail to copy, and returning the error would make the

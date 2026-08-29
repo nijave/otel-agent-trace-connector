@@ -30,14 +30,15 @@ const (
 // stateless: children can land in exports without their ancestors, so each
 // batch is rewritten as-is and backends reassemble by the preserved IDs.
 type opencodeTraceNormalizer struct {
-	next consumer.Traces
+	next            consumer.Traces
+	captureIdentity bool
 	component.StartFunc
 	component.ShutdownFunc
 }
 
 // New creates the stateless OpenCode native traces-to-traces edge.
-func New(next consumer.Traces) connector.Traces {
-	return &opencodeTraceNormalizer{next: next}
+func New(next consumer.Traces, captureIdentity bool) connector.Traces {
+	return &opencodeTraceNormalizer{next: next, captureIdentity: captureIdentity}
 }
 
 func (*opencodeTraceNormalizer) Capabilities() consumer.Capabilities {
@@ -57,7 +58,7 @@ func (n *opencodeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrac
 		// Read raw keys before the filter: session.id feeds conversation ids
 		// but is not part of the canonical resource vocabulary.
 		resourceSessionID := resourceString(rs.Resource(), "session.id")
-		canonical.FilterResource(rs)
+		canonical.FilterResource(rs, n.captureIdentity)
 		for j := 0; j < inputResourceSpans.ScopeSpans().Len(); j++ {
 			inputScopeSpans := inputResourceSpans.ScopeSpans().At(j)
 			ss := rs.ScopeSpans().AppendEmpty()

@@ -42,3 +42,10 @@ func TestFactoryDefaultsAreIndependent(t *testing.T) {
 	require.Equal(t, 1000, second.MaxEvents)
 	require.Equal(t, componentType, factory.Type())
 }
+
+func TestDefaultConfigCapturesIdentity(t *testing.T) {
+	cfg := createDefaultConfig()
+	if !cfg.CaptureIdentity {
+		t.Fatal("capture_identity must default to true")
+	}
+}
