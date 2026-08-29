@@ -340,3 +340,19 @@ func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "1.16.5", version.Str())
 }
+
+func TestBuildTraceCapturesIdentity(t *testing.T) {
+	traces, err := buildTrace(burstForTest(), "quiet", "0.1.0", true)
+	require.NoError(t, err)
+	root := spansByName(traces)["invoke_agent cursor"][0]
+	require.Equal(t, "99", stringAttrOn(t, root, "coding_agent.user.id"))
+	require.Equal(t, "4242", stringAttrOn(t, root, "coding_agent.team.id"))
+
+	off, err := buildTrace(burstForTest(), "quiet", "0.1.0", false)
+	require.NoError(t, err)
+	rootOff := spansByName(off)["invoke_agent cursor"][0]
+	_, hasUser := rootOff.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser)
+	_, hasTeam := rootOff.Attributes().Get("coding_agent.team.id")
+	require.False(t, hasTeam)
+}
