@@ -1,6 +1,6 @@
 # Cursor — OpenTelemetry signal reference
 
-Cursor (Anysphere) exports OpenTelemetry from an Enterprise-plan beta,
+Cursor (Anysphere) exports OpenTelemetry from the Enterprise plan,
 configured server-side by admins rather than by a client env var. The wire
 carries metrics and logs only — no native traces — and the connector claims
 the logs signal, synthesizing canonical traces from it. See
@@ -12,20 +12,48 @@ and the policy the connector's mapping follows.
 | Signal  | Native support | Connector support |
 | ------- | -------------- | ------------------ |
 | Traces  | none native (hook tooling only) | n/a (traces synthesized from Logs edge) |
-| Logs    | native (Enterprise beta) | logs edge (this file's Connector mapping) |
-| Metrics | native (Enterprise beta) | not applicable |
+| Logs    | native (Enterprise plan) | logs edge (this file's Connector mapping) |
+| Metrics | native (Enterprise plan) | not applicable |
 
-Last verified: Traces 2026-08-29, Logs 2026-08-27, Metrics 2026-08-21 (see
-Sources).
+Last verified: Traces 2026-08-29, Logs 2026-08-27, Metrics 2026-08-21;
+export architecture 2026-08-29 (see Sources).
+
+## Export architecture
+
+The export runs server-side: Cursor's cloud aggregates usage and
+client-reported events, then pushes OTLP to the team-managed collector through
+a server-side egress proxy from six static source addresses (`3.218.161.44`,
+`3.231.18.206`, `35.174.159.35`, `184.73.225.134`, `3.209.66.12`,
+`52.44.113.131`, all `/32`). The client never pushes OTLP directly. Every
+model request already transits Cursor's backend (`api2.cursor.sh`), so the
+backend generates the token, cost, and error data server-side; the client
+reports hook, plugin, and tool-call events back to Cursor, which folds them
+into the same export.
+
+Delivery is signal-dependent:
+
+- **Metrics** are at-most-once; failed metric requests are not retried or
+  replayed.
+- **Logs** are at-least-once; transient failures retry for about 7 days and
+  the wire dedupes on `cursor.event.id`. Cursor honors OTLP partial success
+  and does not re-send rejected items.
+- **No backfill** from before destination activation; source retention
+  upstream of the export is also about 7 days.
+
+Other caveats: `cursor.cost.usage` is a best-effort estimate, not an invoice
+(for BYOK it reflects the Cursor Token Rate only, not provider spend);
+subagents get their own `cursor.conversation.id` with no parent rollup
+exported yet; and the wire carries no model-request timing.
 
 ## Traces
 
 ### Native support
 
-Cursor has no native traces. The Enterprise-beta native OTel export
+Cursor has no native traces. The Enterprise-plan native OTel export
 (configured server-side under Team Settings → OpenTelemetry Export) covers
-metrics and logs only. Traces exist solely through third-party hook tooling
-the connector does not claim:
+metrics and logs only. Traces exist solely through third-party hook tooling;
+the connector claims none of it today, and tracks claiming the `o11y-dev`
+add-on as a future improvement item (see Connector mapping):
 
 - **`opentelemetry-hooks`** (`o11y-dev`): installs into `~/.cursor/hooks.json`
   and emits GenAI-semconv traces and logs carrying `gen_ai.client.workspace`,
@@ -42,15 +70,18 @@ this finding.
 
 ### Connector mapping
 
-Not applicable — no native trace signal exists to normalize. The connector
-instead builds canonical traces from the Logs edge below (see Logs); the
-hook-tooling traces above stay out of scope today.
+Not applicable today — no native trace signal exists to normalize; the
+connector builds canonical traces from the Logs edge below (see Logs).
+Future improvement: claim the `o11y-dev/opentelemetry-hooks` add-on through a
+hooks-collection pipeline and normalize its GenAI-semconv traces (which
+already carry repo identity attributes) onto the canonical vocabulary. The
+`last9/cursorscope` span shape stays out of scope.
 
 ## Logs
 
 ### Native support
 
-Cursor emits OTLP **logs** natively, from the same Enterprise-plan beta,
+Cursor emits OTLP **logs** natively, from the same Enterprise plan,
 configured server-side only under Team Settings → OpenTelemetry Export (not
 a client env-var toggle). The scope is `cursor.telemetry`, version `0.1.0`,
 with unprefixed record bodies (`api_request`, `api_error`,
@@ -199,6 +230,8 @@ it does not process OTel metrics for any harness.
 - Cursor OTel Wire Reference: https://cursor.com/docs/enterprise/opentelemetry-export/wire
 - Cursor hook tooling: https://github.com/o11y-dev/opentelemetry-hooks,
   https://github.com/last9/cursorscope
+- Cursor proxy architecture (client → `api2.cursor.sh`):
+  https://speedscale.com/blog/peeking-under-the-hood-of-cursor/
 - [docs/otel-signals.md](../otel-signals.md) — signal-support summary, refreshed 2026-08-29
 - [docs/metrics.md](../metrics.md) — Cursor metrics catalog, refreshed 2026-08-21
 - [docs/harnesses.md](../harnesses.md) — Cursor research record, refreshed 2026-08-20/21

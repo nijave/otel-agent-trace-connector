@@ -881,7 +881,10 @@ make stale-output detection ineffective.
   reference: the edge covers all ten log events, `cloud_agent.mcp_auth_error`
   maps its server attribute onto the root event, and correction records
   annotate the joined chat span with the correction kind instead of dropping
-  its token totals (deliberate; downstream decides billing semantics).
+  its token totals (deliberate; downstream decides billing semantics). A
+  future improvement item tracks claiming the `o11y-dev/opentelemetry-hooks`
+  add-on (GenAI-semconv traces via a hooks-collection pipeline) for
+  trace-level coverage.
 - The GenAI edge handles Copilot native traces. A live Copilot E2E
   stack runs the CLI against a BYOK provider (no GitHub auth or subscription
   needed): provider type/base URL/key/model arrive via `COPILOT_PROVIDER_*`
