@@ -80,7 +80,7 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 	input, phantomParent := piInput()
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 
@@ -150,13 +150,13 @@ func TestPiTraceNormalizerClaimsByScopeOrSDKResource(t *testing.T) {
 	rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("chat-turn")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), byResource))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), byResource))
 	require.Len(t, sink.all(), 1, "resource telemetry.sdk.name claims the group")
 
 	other := ptrace.NewTraces()
 	other.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("codex.internal")
 	sinkOther := &traceSink{}
-	require.NoError(t, New(sinkOther).ConsumeTraces(context.Background(), other))
+	require.NoError(t, New(sinkOther, true).ConsumeTraces(context.Background(), other))
 	require.Empty(t, sinkOther.all())
 }
 
@@ -175,7 +175,7 @@ func TestPiTraceNormalizerMatchesGenerationNamePrefixes(t *testing.T) {
 		gen.Attributes().PutStr("model", "glm-5.3")
 
 		sink := &traceSink{}
-		require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 		all := reassemble(sink)
 		require.Equal(t, "chat glm-5.3", findSpan(t, all, "chat glm-5.3").Name())
 	}
@@ -200,7 +200,7 @@ func TestPiTraceNormalizerMapsToolSpansByAttributeName(t *testing.T) {
 	tool.Attributes().PutStr("toolCallId", "call_9c4debe87115427c83aa8826")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	root := findSpan(t, all, "invoke_agent pi")
 	normalizedTool := findSpan(t, all, "execute_tool bash")
@@ -247,7 +247,7 @@ func TestPiTraceNormalizerReparentsOrphansToFirstAgentRoot(t *testing.T) {
 	secondTurn.SetSpanID(pcommon.SpanID{3})
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 
 	var roots []ptrace.Span
@@ -282,7 +282,7 @@ func TestPiTraceNormalizerReparentsModellessChatChildren(t *testing.T) {
 	// no model attribute, so the canonical name is bare "chat"
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	root := findSpan(t, all, "invoke_agent pi")
 	require.Equal(t, root.SpanID(), findSpan(t, all, "chat").ParentSpanID(),
@@ -305,7 +305,7 @@ func TestPiTraceNormalizerDropsNonNativeSiblingsInClaimedGroups(t *testing.T) {
 	sibling.Events().AppendEmpty().SetName("gen_ai.user.message")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	findSpan(t, all, "invoke_agent pi")
 	for i := 0; i < all.Len(); i++ {
@@ -341,7 +341,7 @@ func TestPiTraceNormalizerKeepsDanglingParentsInChildOnlyBatch(t *testing.T) {
 	tool.Attributes().PutStr("toolName", "bash")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
 	require.Equal(t, turnParent, findSpan(t, all, "chat deepseek-v4-flash").ParentSpanID(),
 		"a chat child in a batch without its chat-turn keeps its dangling parent")
@@ -371,7 +371,7 @@ func TestPiTraceNormalizerPreservesParentsAcrossBatches(t *testing.T) {
 	gen.Attributes().PutStr("model", "deepseek-v4-flash")
 
 	sink := &traceSink{}
-	normalizer := New(sink)
+	normalizer := New(sink, true)
 	require.NoError(t, normalizer.ConsumeTraces(context.Background(), turnBatch))
 	require.NoError(t, normalizer.ConsumeTraces(context.Background(), childrenBatch))
 
@@ -434,7 +434,7 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 	require.NoError(t, err)
 	unmarshaler := &ptrace.JSONUnmarshaler{}
 	sink := &traceSink{}
-	normalizer := New(sink)
+	normalizer := New(sink, true)
 	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
@@ -516,7 +516,7 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	root.SetName("chat-turn")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
 	for _, key := range []string{"service.name", "service.version", "telemetry.sdk.name"} {

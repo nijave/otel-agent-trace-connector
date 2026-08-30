@@ -151,7 +151,7 @@ Copilot CLI and VS Code Chat extensions.
 | `github.copilot.hook.decision` | execute_hook | — | dropped |
 | `github.copilot.initiator` | chat | — | dropped |
 | `copilot_chat.repo.remote_url` | invoke_agent | — | dropped (legacy namespace) |
-| `enduser.pseudo.id` | all | — | dropped |
+| `enduser.pseudo.id` | invoke_agent | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent on other span types) |
 | `github.copilot.user.message` / `session.usage_info` / `session.shutdown` | events | event names survive, attributes stripped | kept as bare events |
 
 #### Canonical usage keys with no GenAI-edge source

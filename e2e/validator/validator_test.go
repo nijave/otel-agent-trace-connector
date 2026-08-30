@@ -631,12 +631,75 @@ func TestCopilotCanonicalFixtureValidates(t *testing.T) {
 
 func TestCodexCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "codex", "testdata", "codex-canonical.otlp.json")
-	require.NoError(t, validateCanonicalFile(path, "codex-otel-1787881086-648014", "codex"))
+	runID := "codex-otel-1787881086-648014"
+	require.NoError(t, validateCanonicalFile(path, runID, "codex"))
+
+	// The codex canonical fixture carries capture_identity output: assert the
+	// invoke_agent root keeps the user and terminal identity keys, and the
+	// resource keeps host.name, rather than relying only on the absence of a
+	// canonical-vocabulary rejection to prove they're present.
+	traces := loadTraceFile(t, path)
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.user.id"))
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.user.email"))
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.terminal.type"))
+	require.True(t, resourceHasAttr(traces, runID, "host.name"))
+}
+
+// loadTraceFile reads and merges every OTLP batch line in path the same way
+// validateTraceFile does, so a caller can assert directly on the merged
+// traces instead of wrapping assertions in a validate callback that never
+// itself fails.
+func loadTraceFile(t *testing.T, path string) ptrace.Traces {
+	t.Helper()
+	var merged ptrace.Traces
+	require.NoError(t, validateTraceFile(path, "", func(traces ptrace.Traces, _ string) error {
+		merged = traces
+		return nil
+	}))
+	return merged
+}
+
+// rootHasAttr reports whether the invoke_agent root among runID's spans
+// carries key.
+func rootHasAttr(traces ptrace.Traces, runID, key string) bool {
+	for _, span := range collectRunSpans(traces, runID) {
+		if op, ok := span.Attributes().Get("gen_ai.operation.name"); !ok || op.Str() != "invoke_agent" {
+			continue
+		}
+		if _, ok := span.Attributes().Get(key); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// resourceHasAttr reports whether the resource for runID carries key.
+func resourceHasAttr(traces ptrace.Traces, runID, key string) bool {
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		rs := traces.ResourceSpans().At(i)
+		value, ok := rs.Resource().Attributes().Get("e2e.run.id")
+		if !ok || value.Str() != runID {
+			continue
+		}
+		if _, ok := rs.Resource().Attributes().Get(key); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func TestClaudeCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "claude", "testdata", "claude-canonical.otlp.json")
-	require.NoError(t, validateCanonicalFile(path, "claude-otel-1787956985-1645736", "claude_code"))
+	runID := "claude-otel-1787956985-1645736"
+	require.NoError(t, validateCanonicalFile(path, runID, "claude_code"))
+
+	// The claude canonical fixture carries capture_identity output: assert the
+	// invoke_agent root keeps the user and terminal identity keys. Claude has
+	// no email attribute and no host.name resource attribute, so unlike codex
+	// those are not asserted here.
+	traces := loadTraceFile(t, path)
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.user.id"))
+	require.True(t, rootHasAttr(traces, runID, "coding_agent.terminal.type"))
 }
 
 // firstFixtureBatch parses the first JSONL line of a committed canonical

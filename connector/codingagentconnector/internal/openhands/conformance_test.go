@@ -45,7 +45,7 @@ func loadNativeFixtureTraces() (canonical.RawInput, error) {
 // into an in-memory sink consumer.
 func normalizeViaNormalizer(raw canonical.RawInput) (ptrace.Traces, error) {
 	s := &sink{}
-	if err := New(s).ConsumeTraces(context.Background(), raw.Traces); err != nil {
+	if err := New(s, true).ConsumeTraces(context.Background(), raw.Traces); err != nil {
 		return ptrace.Traces{}, err
 	}
 	all := ptrace.NewTraces()

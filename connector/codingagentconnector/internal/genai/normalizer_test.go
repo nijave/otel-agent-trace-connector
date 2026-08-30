@@ -60,7 +60,7 @@ func TestGenAINormalizerClaimsKnownScopes(t *testing.T) {
 		input := ptrace.NewTraces()
 		newGroup(input, scope, "chat glm-4.7")
 		sink := &traceSink{}
-		require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 		require.Len(t, sink.all(), 1, "scope %q must be claimed", scope)
 	}
 }
@@ -97,7 +97,7 @@ func TestGenAINormalizerClaimsCopilotScope(t *testing.T) {
 	hook.Attributes().PutStr("gen_ai.operation.name", "execute_hook")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 
@@ -141,7 +141,7 @@ func TestGenAINormalizerSkipsUnknownScopesAndClaudeGroups(t *testing.T) {
 	claudeScope.Spans().AppendEmpty().SetName("claude_code.interaction")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all(), "no group may be claimed")
 }
 
@@ -159,7 +159,7 @@ func TestGenAINormalizerSkipsOpenCodeGroups(t *testing.T) {
 	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all(), "the OpenCode normalizer owns this group")
 }
 
@@ -176,7 +176,7 @@ func TestGenAINormalizerSkipsOpenHandsGroups(t *testing.T) {
 	genaiScope.Spans().AppendEmpty().SetName("chat gpt-5.2")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all(), "the OpenHands normalizer owns this group")
 }
 
@@ -192,7 +192,7 @@ func TestGenAINormalizerDropsUnmatchedScopesInClaimedGroups(t *testing.T) {
 	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.all(), 1)
 	output := sink.all()[0].ResourceSpans().At(0)
 	native := output.ScopeSpans().At(0).Spans()
@@ -225,7 +225,7 @@ func TestGenAINormalizerNormalizesOpenAIV2LegacyChat(t *testing.T) {
 	span.Attributes().PutInt("gen_ai.usage.output_tokens", 34)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "chat glm-4.7", out.Name())
 	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
@@ -249,7 +249,7 @@ func TestGenAINormalizerKeepsExperimentalProviderName(t *testing.T) {
 	span.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "openai", attrString(t, out, "gen_ai.provider.name"))
 }
@@ -289,7 +289,7 @@ func TestGenAINormalizerNormalizesStrandsTree(t *testing.T) {
 	tool.Attributes().PutStr("gen_ai.tool.name", "get_marker")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 
 	require.Equal(t, "invoke_agent strands-e2e", out.At(0).Name())
@@ -317,7 +317,7 @@ func TestGenAINormalizerMapsLegacyTokensWhenCurrentAbsent(t *testing.T) {
 	span.Attributes().PutInt("gen_ai.usage.completion_tokens", 9)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, int64(7), attrInt(t, out, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(9), attrInt(t, out, "gen_ai.usage.output_tokens"))
@@ -335,7 +335,7 @@ func TestGenAINormalizerMapsStrandsTTFTOntoCanonicalKey(t *testing.T) {
 	span.Attributes().PutInt("gen_ai.server.time_to_first_token", 250)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
 	require.True(t, ok, "the strands TTFT must land on the canonical key")
@@ -355,7 +355,7 @@ func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
 	span.Attributes().PutInt("gen_ai.usage.vendor_extras", 3)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Attributes()
 	require.Equal(t, int64(42), attrInt(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0),
 		"gen_ai.usage.cache_read.input_tokens"))
@@ -382,7 +382,7 @@ func TestGenAINormalizerCoercesNonIntCacheCounters(t *testing.T) {
 	span.Attributes().PutStr("gen_ai.usage.cache_write_input_tokens", "7")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, int64(42), attrInt(t, out, "gen_ai.usage.cache_read.input_tokens"))
 	require.Equal(t, int64(7), attrInt(t, out, "gen_ai.usage.cache_write.input_tokens"))
@@ -403,7 +403,7 @@ func TestGenAINormalizerKeepsDottedUsageOverUnderscoreVariant(t *testing.T) {
 	span.Attributes().PutInt("gen_ai.usage.cache_read_input_tokens", 42)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, int64(100), attrInt(t, out, "gen_ai.usage.cache_read.input_tokens"),
 		"the dotted semconv key wins over the underscore variant")
@@ -429,7 +429,7 @@ func TestGenAINormalizerMapsCacheWriteRawForms(t *testing.T) {
 	normalizeOneSpan := func(t *testing.T, input ptrace.Traces) ptrace.Span {
 		t.Helper()
 		sink := &traceSink{}
-		require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 		return sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	}
 
@@ -466,7 +466,7 @@ func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
 	span.Attributes().PutInt("gen_ai.usage.reasoning.output_tokens", 25)
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	for _, key := range []string{
 		"enduser.pseudo.id",
@@ -479,6 +479,44 @@ func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
 	}
 	require.Equal(t, int64(25), attrInt(t, out, "gen_ai.usage.reasoning.output_tokens"),
 		"the reasoning-token key survives normalization")
+	// enduser.pseudo.id is a vendor key on the wire, but its value is copied
+	// onto the canonical coding_agent.user.id before the raw key is stripped.
+	require.Equal(t, "user-42", attrString(t, out, "coding_agent.user.id"),
+		"the raw enduser.pseudo.id value must be copied onto the canonical key before it is dropped")
+}
+
+// TestGenAINormalizerCapturesIdentity pins coding_agent.user.id on the
+// invoke_agent root of the committed copilot-native fixture (it carries
+// enduser.pseudo.id="user-42"), gated behind captureIdentity.
+func TestGenAINormalizerCapturesIdentity(t *testing.T) {
+	findInvokeAgentRoot := func(t *testing.T, traces ptrace.Traces) ptrace.Span {
+		t.Helper()
+		var root ptrace.Span
+		var found bool
+		eachFixtureSpan(t, traces, func(span ptrace.Span) {
+			if span.Name() == "invoke_agent copilot-cli" {
+				root = span
+				found = true
+			}
+		})
+		require.True(t, found, "invoke_agent copilot-cli root must be present")
+		return root
+	}
+
+	input := loadFixtureLines(t, filepath.Join("testdata", "copilot-native.otlp.json"))
+
+	onSink := &traceSink{}
+	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), input))
+	require.Len(t, onSink.all(), 1)
+	onRoot := findInvokeAgentRoot(t, onSink.all()[0])
+	require.Equal(t, "user-42", attrString(t, onRoot, "coding_agent.user.id"))
+
+	offSink := &traceSink{}
+	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), input))
+	require.Len(t, offSink.all(), 1)
+	offRoot := findInvokeAgentRoot(t, offSink.all()[0])
+	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
 }
 
 func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
@@ -486,7 +524,7 @@ func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
 	newGroup(input, "opentelemetry.instrumentation.openai_v2", "run")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "run", out.Name())
 	_, tagged := out.Attributes().Get("coding_agent.source")
@@ -499,7 +537,7 @@ func TestGenAINormalizerPassesThroughInvokeWorkflow(t *testing.T) {
 	span.Attributes().PutStr("gen_ai.operation.name", "invoke_workflow")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	require.Equal(t, "invoke_workflow my-flow", out.Name(), "non-canonical operations keep their emitted names")
 	require.Equal(t, "native", attrString(t, out, "coding_agent.source"))
@@ -576,7 +614,7 @@ func TestGenAINormalizerStripsContentAttributesAndEvents(t *testing.T) {
 	exceptionEvent.Attributes().PutStr("exception.type", "TimeoutError")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	for _, key := range legacyContentAttributeKeys {
 		_, exists := out.Attributes().Get(key)
@@ -606,7 +644,7 @@ func TestGenAINormalizerDropsUnmatchedScopesWithContent(t *testing.T) {
 	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	output := sink.all()[0].ResourceSpans().At(0)
 	for i := 0; i < output.ScopeSpans().Len(); i++ {
 		spans := output.ScopeSpans().At(i).Spans()
@@ -701,7 +739,7 @@ func TestGenAINormalizerProcessesCapturedRawFixtures(t *testing.T) {
 				"raw capture content evidence must match the emitter's default behavior")
 
 			sink := &traceSink{}
-			require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 			outputs := sink.all()
 			require.NotEmpty(t, outputs, "the fixture's scopes must be claimed")
 
@@ -769,7 +807,7 @@ func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
 	require.NotZero(t, input.SpanCount())
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	outputs := sink.all()
 	require.Len(t, outputs, 1, "both fixture batches share the claimed scope")
 	require.Equal(t, 2, outputs[0].ResourceSpans().Len(), "both flavors stay distinct resource groups")
@@ -851,7 +889,7 @@ func TestGenAINormalizerSkipsPiGroups(t *testing.T) {
 	openaiScope.Spans().AppendEmpty().SetName("chat gpt-5.2")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.all(), "the Pi normalizer owns these groups")
 }
 
@@ -868,7 +906,7 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	span.Attributes().PutStr("gen_ai.operation.name", "chat")
 
 	sink := &traceSink{}
-	require.NoError(t, New(sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	attrs := sink.all()[0].ResourceSpans().At(0).Resource().Attributes()
 	for _, key := range []string{"service.name", "service.version"} {
 		value, ok := attrs.Get(key)

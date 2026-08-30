@@ -79,7 +79,7 @@ raw key that would map there).
 | Raw key | Canonical key | Status |
 |---|---|---|
 | `lmnr.association.properties.session_id` | `gen_ai.conversation.id` | mapped (a mid-conversation fragment's synthetic root inherits it from kept children, and lacks it when no kept child carries `session_id` — in the pinned wire only `conversation` spans do) |
-| `lmnr.association.properties.user_id` | (`enduser.pseudo.id`) | dropped (user identity outside the vocabulary) |
+| `lmnr.association.properties.user_id` | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
 | `lmnr.association.properties.tags` → `coding_agent.openhands.tags` | — | dropped |
 | `conversation.tags.<key>` → `coding_agent.openhands.tag.<key>` | — | dropped |
 | `…metadata.is_delegate` | (`coding_agent.openhands.delegate` flag) | dropped (but see claiming below) |

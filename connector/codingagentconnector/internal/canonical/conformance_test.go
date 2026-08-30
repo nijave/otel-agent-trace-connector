@@ -164,7 +164,7 @@ func TestFilterResource(t *testing.T) {
 	rs.Resource().Attributes().PutStr("telemetry.sdk.language", "go")
 	rs.Resource().Attributes().PutStr("cursor.surface", "cli")
 	rs.Resource().Attributes().PutStr("vendor.thing", "x")
-	FilterResource(rs)
+	FilterResource(rs, true)
 	attrs := rs.Resource().Attributes()
 	requireKeys := []string{"service.name", "service.version", "telemetry.sdk.language"}
 	for _, key := range requireKeys {
@@ -211,6 +211,30 @@ func TestIsCanonicalAttribute(t *testing.T) {
 	}
 	if IsCanonicalResourceKey("cursor.surface") || IsCanonicalResourceKey("session.id") {
 		t.Error("vendor or raw keys must not pass the canonical resource check")
+	}
+}
+
+func TestFilterResourceHostNameUnderIdentity(t *testing.T) {
+	build := func() ptrace.ResourceSpans {
+		traces := ptrace.NewTraces()
+		rs := traces.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "codex")
+		rs.Resource().Attributes().PutStr("host.name", "host-01")
+		rs.Resource().Attributes().PutStr("vendor.thing", "x")
+		return rs
+	}
+	on := build()
+	FilterResource(on, true)
+	if _, ok := on.Resource().Attributes().Get("host.name"); !ok {
+		t.Fatal("host.name must survive when captureIdentity is true")
+	}
+	if _, ok := on.Resource().Attributes().Get("vendor.thing"); ok {
+		t.Fatal("vendor.thing must be stripped")
+	}
+	off := build()
+	FilterResource(off, false)
+	if _, ok := off.Resource().Attributes().Get("host.name"); ok {
+		t.Fatal("host.name must be stripped when captureIdentity is false")
 	}
 }
 

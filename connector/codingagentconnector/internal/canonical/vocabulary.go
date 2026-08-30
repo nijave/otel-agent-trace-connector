@@ -53,6 +53,10 @@ var canonicalAttributeKeys = []string{
 	"coding_agent.source.event",
 	"coding_agent.client.name",
 	"coding_agent.client.version",
+	"coding_agent.user.id",
+	"coding_agent.user.email",
+	"coding_agent.team.id",
+	"coding_agent.terminal.type",
 }
 
 // canonicalAttributePrefixes are safe attribute families too large to

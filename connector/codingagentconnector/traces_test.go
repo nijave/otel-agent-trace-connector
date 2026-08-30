@@ -59,7 +59,7 @@ func TestTracesRouterSendsEachGroupToExactlyOneNormalizer(t *testing.T) {
 	step.Attributes().PutStr("session.id", "ses_router")
 
 	sink := &routerSink{}
-	router := newTracesRouter(sink)
+	router := newTracesRouter(createDefaultConfig(), sink)
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
 
 	names := map[string]int{}
@@ -99,7 +99,7 @@ func TestTracesRouterEmitsMixedPiGenAIGroupOnce(t *testing.T) {
 	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
 
 	sink := &routerSink{}
-	router := newTracesRouter(sink)
+	router := newTracesRouter(createDefaultConfig(), sink)
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
 
 	names := map[string]int{}
@@ -149,7 +149,7 @@ func TestTracesRouterEmitsMixedOpenHandsGenAIGroupOnce(t *testing.T) {
 	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
 
 	sink := &routerSink{}
-	router := newTracesRouter(sink)
+	router := newTracesRouter(createDefaultConfig(), sink)
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
 
 	names := map[string]int{}
@@ -185,7 +185,7 @@ func TestTracesRouterClaimsOpenHandsGroup(t *testing.T) {
 	root.SetEndTimestamp(pcommon.NewTimestampFromTime(time.Date(2026, 8, 23, 10, 0, 1, 0, time.UTC)))
 
 	next := &routerSink{}
-	router := newTracesRouter(next)
+	router := newTracesRouter(createDefaultConfig(), next)
 	require.NoError(t, router.ConsumeTraces(context.Background(), traces))
 
 	require.Len(t, next.traces, 1)

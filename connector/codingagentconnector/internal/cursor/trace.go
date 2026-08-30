@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -26,7 +27,7 @@ var chatTokenAttrs = []struct{ source, dest string }{
 	{"cursor.api.request.cache_creation_tokens", "gen_ai.usage.cache_write.input_tokens"},
 }
 
-func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, error) {
+func buildTrace(burst *burstState, reason, scopeVersion string, captureIdentity bool) (ptrace.Traces, error) {
 	events := append([]Event(nil), burst.events...)
 	// Tie-break equal timestamps on the dedupe key so a reordered at-least-once
 	// batch still picks the same anchor event, and therefore the same trace id.
@@ -42,7 +43,7 @@ func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, 
 	traces := ptrace.NewTraces()
 	rs := traces.ResourceSpans().AppendEmpty()
 	resErr := rs.Resource().Attributes().FromRaw(burst.resource)
-	canonical.FilterResource(rs)
+	canonical.FilterResource(rs, captureIdentity)
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName(instrumentationScope)
 	ss.Scope().SetVersion(scopeVersion)
@@ -54,7 +55,7 @@ func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, 
 	root.SetKind(ptrace.SpanKindInternal)
 	root.SetStartTimestamp(pcommon.NewTimestampFromTime(burst.first))
 	root.SetEndTimestamp(pcommon.NewTimestampFromTime(burst.last))
-	putRootAttributes(root.Attributes(), burst, events)
+	putRootAttributes(root.Attributes(), burst, events, captureIdentity)
 	if reason == "timeout" {
 		root.Status().SetCode(ptrace.StatusCodeError)
 		root.Status().SetMessage("burst closed after turn_timeout")
@@ -68,7 +69,7 @@ func buildTrace(burst *burstState, reason, scopeVersion string) (ptrace.Traces, 
 	return traces, nil
 }
 
-func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event) {
+func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event, captureIdentity bool) {
 	attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 	attrs.PutStr("gen_ai.agent.name", "cursor")
 	attrs.PutStr("gen_ai.conversation.id", burst.conversationID)
@@ -83,6 +84,26 @@ func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event) {
 	// model turn from an abandoned one. The close reason survives only as the
 	// timeout span status and the turns_emitted metric label.
 	copyStringAttr(attrs, burst.resource, "service.version", "coding_agent.client.version")
+	if captureIdentity {
+		if v := identityString(burst.resource, "cursor.user.id"); v != "" {
+			attrs.PutStr("coding_agent.user.id", v)
+		}
+		if v := identityString(burst.resource, "cursor.team.id"); v != "" {
+			attrs.PutStr("coding_agent.team.id", v)
+		}
+	}
+}
+
+// identityString reads a raw resource value as a string whether the wire sent
+// it as a string or an int (cursor sends user/team ids as int64).
+func identityString(src map[string]any, key string) string {
+	if s := StringValue(src[key]); s != "" {
+		return s
+	}
+	if n, ok := Int64Value(src[key]); ok {
+		return strconv.FormatInt(n, 10)
+	}
+	return ""
 }
 
 func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []Event) {

@@ -215,6 +215,7 @@ connectors:
     reorder_window: 30s
     max_active_turns: 10000
     max_events_per_turn: 1000
+    capture_identity: true
   coding_agent/claude:
 
 service:
@@ -244,6 +245,14 @@ shutdown, or through bounded-state eviction.
 
 The traces edge auto-detects Claude Code, OpenCode, OpenHands, and
 GenAI-semconv sources, so every source enters the same pipeline.
+
+`capture_identity` defaults to `true` and applies to every `coding_agent`
+instance in the pipeline. It controls the PII-bearing identity keys
+(`coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id`,
+and the resource `host.name`) — an upgrade to this connector version starts
+emitting them immediately. Set `capture_identity: false` to restore the
+previous no-identity output. `coding_agent.terminal.type` carries no
+identity, so it ships regardless of this setting.
 
 Strands captures prompt and completion content in span events by default and
 its redaction is opt-in, so the raw trace destination receives content under

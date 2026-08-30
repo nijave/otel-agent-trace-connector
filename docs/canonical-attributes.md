@@ -52,6 +52,8 @@ canonical resource vocabulary is the standard OTel identity keys:
 - `telemetry.sdk.name`
 - `telemetry.sdk.language`
 - `telemetry.sdk.version`
+- `host.name` (an identity key; `FilterResource` keeps it only when
+  `capture_identity` is on and strips it otherwise)
 
 Every other key — vendor resources such as `cursor.surface`, raw keys such as
 `session.id` — stays out of canonical output. Edges that consume raw
@@ -105,6 +107,10 @@ there, never here. Keys appear in declaration order:
 - `coding_agent.source.event`
 - `coding_agent.client.name`
 - `coding_agent.client.version`
+- `coding_agent.user.id`
+- `coding_agent.user.email`
+- `coding_agent.team.id`
+- `coding_agent.terminal.type`
 <!-- /vocabulary:generated -->
 
 `gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
@@ -148,14 +154,16 @@ from.
     native `gen_ai.usage.total_tokens` on the GenAI edge. A provider total is
     not always input+output, so dropping it would lose information.
   - `gen_ai.tool.status`: Strands emits it natively on execute_tool spans and
-    the GenAI edge keeps it verbatim. It is distinct from the registry's
+    the GenAI edge keeps it verbatim, distinct from the registry's
     `gen_ai.response.status`, which tracks response lifecycle.
   - `gen_ai.event.start_time`, `gen_ai.event.end_time`: Strands emits them
     natively on every span and the GenAI edge keeps them verbatim.
 - **Connector namespace**: `coding_agent.request.service_tier`,
   `coding_agent.source`, `coding_agent.source.scope`,
-  `coding_agent.source.event`, `coding_agent.client.name`, and
-  `coding_agent.client.version` are connector-defined.
+  `coding_agent.source.event`, `coding_agent.client.name`,
+  `coding_agent.client.version`, `coding_agent.user.id`,
+  `coding_agent.user.email`, `coding_agent.team.id`, and
+  `coding_agent.terminal.type` are connector-defined.
 
 ## Raw preservation
 

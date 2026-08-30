@@ -100,7 +100,7 @@ func loadRawFixture(name string) func() (canonical.RawInput, error) {
 // into an in-memory sink consumer.
 func normalizeViaNormalizer(raw canonical.RawInput) (ptrace.Traces, error) {
 	sink := &traceSink{}
-	if err := New(sink).ConsumeTraces(context.Background(), raw.Traces); err != nil {
+	if err := New(sink, true).ConsumeTraces(context.Background(), raw.Traces); err != nil {
 		return ptrace.Traces{}, err
 	}
 	all := ptrace.NewTraces()

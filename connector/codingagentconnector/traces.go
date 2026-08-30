@@ -31,8 +31,11 @@ type tracesRouter struct {
 	component.ShutdownFunc
 }
 
-func newTracesRouter(next consumer.Traces) connector.Traces {
-	return &tracesRouter{edges: []connector.Traces{claude.New(next), genai.New(next), opencode.New(next), pi.New(next), openhands.New(next)}}
+func newTracesRouter(cfg *Config, next consumer.Traces) connector.Traces {
+	id := cfg.CaptureIdentity
+	return &tracesRouter{edges: []connector.Traces{
+		claude.New(next, id), genai.New(next, id), opencode.New(next, id), pi.New(next, id), openhands.New(next, id),
+	}}
 }
 
 func (*tracesRouter) Capabilities() consumer.Capabilities {

@@ -17,6 +17,7 @@ var canonicalResourceKeys = []string{
 	"telemetry.sdk.name",
 	"telemetry.sdk.language",
 	"telemetry.sdk.version",
+	"host.name",
 }
 
 // requiredResourceKeys lists the resource attributes every emitted canonical
@@ -38,11 +39,18 @@ func IsCanonicalResourceKey(key string) bool {
 }
 
 // FilterResource strips every resource attribute outside the canonical
-// resource vocabulary from rs. Edges call it after copying a raw input
-// resource so vendor keys never reach canonical output; reads of raw
-// resource keys (such as session.id) must happen before the call.
-func FilterResource(rs ptrace.ResourceSpans) {
+// resource vocabulary from rs. When captureIdentity is false the identity
+// resource keys (host.name) are stripped even if present. Edges call it after
+// copying a raw input resource; reads of raw resource keys (such as
+// session.id) must happen before the call.
+func FilterResource(rs ptrace.ResourceSpans, captureIdentity bool) {
 	rs.Resource().Attributes().RemoveIf(func(key string, _ pcommon.Value) bool {
-		return !IsCanonicalResourceKey(key)
+		if !IsCanonicalResourceKey(key) {
+			return true
+		}
+		if key == "host.name" && !captureIdentity {
+			return true
+		}
+		return false
 	})
 }

@@ -293,7 +293,7 @@ func (c *codingAgentConnector) emit(ctx context.Context, finalized []finalizedTu
 		if ft.turn == nil {
 			continue
 		}
-		traces, err := buildTrace(ft.turn, ft.reason, c.scopeVersion)
+		traces, err := buildTrace(ft.turn, ft.reason, c.scopeVersion, c.config.CaptureIdentity)
 		if err != nil {
 			// Deliver anyway: the spans are intact even when resource
 			// attributes fail to copy, and returning the error would make the

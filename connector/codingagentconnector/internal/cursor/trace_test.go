@@ -55,7 +55,7 @@ func testResourceRaw() map[string]any {
 
 func mustBuildTrace(t *testing.T, burst *burstState, reason string) ptrace.Traces {
 	t.Helper()
-	traces, err := buildTrace(burst, reason, "0.1.0")
+	traces, err := buildTrace(burst, reason, "0.1.0", true)
 	require.NoError(t, err)
 	return traces
 }
@@ -217,7 +217,7 @@ func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
 	burst := burstForTest()
 	// chan int cannot round-trip into pdata; FromRaw rejects it.
 	burst.resource = map[string]any{"service.name": "cursor", "poison": make(chan int)}
-	traces, err := buildTrace(burst, "quiet", "0.1.0")
+	traces, err := buildTrace(burst, "quiet", "0.1.0", true)
 	require.Error(t, err)
 	require.NotNil(t, traces)
 	require.Len(t, spansByName(traces)["invoke_agent cursor"], 1)
@@ -339,4 +339,20 @@ func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
 	version, ok := root.Attributes().Get("coding_agent.client.version")
 	require.True(t, ok)
 	require.Equal(t, "1.16.5", version.Str())
+}
+
+func TestBuildTraceCapturesIdentity(t *testing.T) {
+	traces, err := buildTrace(burstForTest(), "quiet", "0.1.0", true)
+	require.NoError(t, err)
+	root := spansByName(traces)["invoke_agent cursor"][0]
+	require.Equal(t, "99", stringAttrOn(t, root, "coding_agent.user.id"))
+	require.Equal(t, "4242", stringAttrOn(t, root, "coding_agent.team.id"))
+
+	off, err := buildTrace(burstForTest(), "quiet", "0.1.0", false)
+	require.NoError(t, err)
+	rootOff := spansByName(off)["invoke_agent cursor"][0]
+	_, hasUser := rootOff.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser)
+	_, hasTeam := rootOff.Attributes().Get("coding_agent.team.id")
+	require.False(t, hasTeam)
 }

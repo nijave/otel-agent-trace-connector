@@ -69,7 +69,7 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.settings.maxRetries` | — | dropped |
 | `ai.telemetry.functionId` | — | dropped |
 | `ai.telemetry.metadata.sessionId` | — | dropped (the edge reads `session.id` instead) |
-| `ai.telemetry.metadata.userId` | — | dropped |
+| `ai.telemetry.metadata.userId` | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
 | `ai.request.headers.*` | — | dropped |
 | `ai.prompt`, `ai.prompt.messages`, `ai.prompt.tools`, `ai.prompt.toolChoice` | — | dropped (prompt content) |
 | `ai.response.text`, `ai.response.reasoning` | — | dropped (completion content) |

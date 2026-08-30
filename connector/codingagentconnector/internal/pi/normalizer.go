@@ -31,14 +31,15 @@ const (
 )
 
 type piTraceNormalizer struct {
-	next consumer.Traces
+	next            consumer.Traces
+	captureIdentity bool
 	component.StartFunc
 	component.ShutdownFunc
 }
 
 // New creates the stateless Pi traces-to-traces edge.
-func New(next consumer.Traces) connector.Traces {
-	return &piTraceNormalizer{next: next}
+func New(next consumer.Traces, captureIdentity bool) connector.Traces {
+	return &piTraceNormalizer{next: next, captureIdentity: captureIdentity}
 }
 
 func (*piTraceNormalizer) Capabilities() consumer.Capabilities {
@@ -59,7 +60,7 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 		rs := output.ResourceSpans().AppendEmpty()
 		inputResourceSpans.CopyTo(rs)
 		version := resourceString(rs.Resource(), "service.version")
-		canonical.FilterResource(rs)
+		canonical.FilterResource(rs, n.captureIdentity)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			children := make(map[pcommon.SpanID]bool, spans.Len())

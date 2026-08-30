@@ -21,14 +21,15 @@ import (
 // claudeTraceNormalizer preserves Claude Code's native hierarchy and IDs while
 // adding the canonical names and GenAI attributes used across coding agents.
 type claudeTraceNormalizer struct {
-	next consumer.Traces
+	next            consumer.Traces
+	captureIdentity bool
 	component.StartFunc
 	component.ShutdownFunc
 }
 
 // New creates the stateless Claude Code traces-to-traces edge.
-func New(next consumer.Traces) connector.Traces {
-	return &claudeTraceNormalizer{next: next}
+func New(next consumer.Traces, captureIdentity bool) connector.Traces {
+	return &claudeTraceNormalizer{next: next, captureIdentity: captureIdentity}
 }
 
 func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
@@ -52,7 +53,7 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 		// Read raw keys before the filter: session.id feeds conversation ids
 		// but is not part of the canonical resource vocabulary.
 		resourceSessionID := resourceString(rs.Resource(), "session.id")
-		canonical.FilterResource(rs)
+		canonical.FilterResource(rs, n.captureIdentity)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			foreign := make(map[pcommon.SpanID]bool, spans.Len())
@@ -62,7 +63,7 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 					foreign[span.SpanID()] = true
 					continue
 				}
-				normalizeClaudeSpan(span, version, resourceSessionID)
+				normalizeClaudeSpan(span, version, resourceSessionID, n.captureIdentity)
 				content.Strip(span)
 			}
 			spans.RemoveIf(func(s ptrace.Span) bool { return foreign[s.SpanID()] })
@@ -97,7 +98,7 @@ func ContainsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	return false
 }
 
-func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string) {
+func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, captureIdentity bool) {
 	switch span.Name() {
 	case "claude_code.interaction":
 		span.SetName("invoke_agent claude_code")
@@ -111,6 +112,14 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string) {
 		}
 		if sessionID != "" {
 			span.Attributes().PutStr("gen_ai.conversation.id", sessionID)
+		}
+		if terminal := firstSpanString(span, "terminal.type"); terminal != "" {
+			span.Attributes().PutStr("coding_agent.terminal.type", terminal)
+		}
+		if captureIdentity {
+			if uid := firstSpanString(span, "user.id"); uid != "" {
+				span.Attributes().PutStr("coding_agent.user.id", uid)
+			}
 		}
 	case "claude_code.llm_request":
 		model := firstSpanString(span, "gen_ai.request.model", "model")

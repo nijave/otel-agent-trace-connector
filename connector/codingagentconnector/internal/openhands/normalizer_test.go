@@ -138,7 +138,7 @@ func (s *sink) ConsumeTraces(_ context.Context, traces ptrace.Traces) error {
 func normalizeOne(t *testing.T, traces ptrace.Traces) ptrace.Traces {
 	t.Helper()
 	s := &sink{}
-	require.NoError(t, New(s).ConsumeTraces(context.Background(), traces))
+	require.NoError(t, New(s, true).ConsumeTraces(context.Background(), traces))
 	require.Len(t, s.batches, 1)
 	return s.batches[0]
 }
@@ -199,7 +199,7 @@ func conversationSpec() spanSpec {
 
 func TestClaimsMarkerGroupsOnly(t *testing.T) {
 	s := &sink{}
-	require.NoError(t, New(s).ConsumeTraces(context.Background(),
+	require.NoError(t, New(s, true).ConsumeTraces(context.Background(),
 		makeTraces(makeSpan(traceA, conversationSpec()))))
 	require.Len(t, s.batches, 1)
 
@@ -210,7 +210,7 @@ func TestClaimsMarkerGroupsOnly(t *testing.T) {
 		}),
 	)
 	s2 := &sink{}
-	require.NoError(t, New(s2).ConsumeTraces(context.Background(), unmarked))
+	require.NoError(t, New(s2, true).ConsumeTraces(context.Background(), unmarked))
 	require.Empty(t, s2.batches)
 
 	foreign := func() ptrace.Traces {
@@ -222,7 +222,7 @@ func TestClaimsMarkerGroupsOnly(t *testing.T) {
 		return traces
 	}()
 	s3 := &sink{}
-	require.NoError(t, New(s3).ConsumeTraces(context.Background(), foreign))
+	require.NoError(t, New(s3, true).ConsumeTraces(context.Background(), foreign))
 	require.Empty(t, s3.batches)
 }
 
@@ -231,7 +231,7 @@ func TestUnmarkedLLMTypeSpanDoesNotClaim(t *testing.T) {
 	// OpenHands marker (no marker name, no delegate flag); the edge must not
 	// claim generic Laminar-instrumented traffic.
 	s := &sink{}
-	require.NoError(t, New(s).ConsumeTraces(context.Background(),
+	require.NoError(t, New(s, true).ConsumeTraces(context.Background(),
 		makeTraces(makeSpan(traceA, spanSpec{
 			name: "litellm.completion", spanID: "c000000000000001", spanType: "LLM",
 		}))))
@@ -577,6 +577,27 @@ func TestNoLaminarBookkeepingInOutput(t *testing.T) {
 	}
 }
 
+// TestConversationCapturesIdentity pins coding_agent.user.id on the
+// invoke_agent root, sourced from the conversation span's Laminar user-id
+// association property and gated behind captureIdentity.
+func TestConversationCapturesIdentity(t *testing.T) {
+	attrs := baseAttrs()
+	attrs[attrUserID] = "42"
+	conv := conversationSpec()
+	conv.attrs = attrs
+
+	on := normalizeOne(t, makeTraces(makeSpan(traceA, conv)))
+	onRoot := findByName(t, on, "invoke_agent openhands")[0]
+	require.Equal(t, "42", attrString(onRoot, "coding_agent.user.id"))
+
+	s := &sink{}
+	require.NoError(t, New(s, false).ConsumeTraces(context.Background(), makeTraces(makeSpan(traceA, conv))))
+	require.Len(t, s.batches, 1)
+	offRoot := findByName(t, s.batches[0], "invoke_agent openhands")[0]
+	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
+}
+
 func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	input := ptrace.NewTraces()
 	rs := input.ResourceSpans().AppendEmpty()
@@ -588,7 +609,7 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	makeSpan(traceA, conversationSpec()).CopyTo(ss.Spans().AppendEmpty())
 
 	s := &sink{}
-	require.NoError(t, New(s).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(s, true).ConsumeTraces(context.Background(), input))
 	require.Len(t, s.batches, 1)
 	attrs := s.batches[0].ResourceSpans().At(0).Resource().Attributes()
 	for _, key := range []string{"service.name", "service.version"} {

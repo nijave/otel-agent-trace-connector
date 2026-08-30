@@ -255,7 +255,7 @@ func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
 		// chan int cannot round-trip into pdata; FromRaw rejects it.
 		resource: map[string]any{"service.name": "codex_cli_rs", "poison": make(chan int)},
 		events:   []agentEvent{testEvent("codex.api_request", base, nil)}}
-	traces, err := buildTrace(turn, "shutdown", DefaultScopeVersion)
+	traces, err := buildTrace(turn, "shutdown", DefaultScopeVersion, true)
 	require.Error(t, err)
 	require.NotNil(t, traces)
 	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
@@ -285,7 +285,7 @@ func TestBuildTraceHugeDurationKeepsSpanBoundsSane(t *testing.T) {
 
 func mustBuildTrace(t *testing.T, turn *turnState, reason string) ptrace.Traces {
 	t.Helper()
-	traces, err := buildTrace(turn, reason, DefaultScopeVersion)
+	traces, err := buildTrace(turn, reason, DefaultScopeVersion, true)
 	require.NoError(t, err)
 	return traces
 }
@@ -312,6 +312,47 @@ func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
 	value, ok := span.Attributes().Get(key)
 	require.True(t, ok)
 	return value.Int()
+}
+
+// TestBuildTraceCapturesIdentity pins the codex identity mapping: the root
+// gets coding_agent.user.id/email from the ChatGPT-auth account metadata and
+// the resource keeps host.name, but only when capture_identity is on.
+// terminal.type carries no identity, so it survives either way.
+func TestBuildTraceCapturesIdentity(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base, promptSeen: true,
+		resource: map[string]any{"service.name": "codex_cli_rs", "host.name": "host-01"},
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, map[string]any{
+				"user.account_id": "acct-123",
+				"user.email":      "user@example.com",
+				"terminal.type":   "ghostty",
+			}),
+		},
+	}
+
+	traces, err := buildTrace(turn, "completed", DefaultScopeVersion, true)
+	require.NoError(t, err)
+	root := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent codex")
+	require.Equal(t, "acct-123", attrString(t, root, "coding_agent.user.id"))
+	require.Equal(t, "user@example.com", attrString(t, root, "coding_agent.user.email"))
+	require.Equal(t, "ghostty", attrString(t, root, "coding_agent.terminal.type"))
+	hostName, hasHostName := traces.ResourceSpans().At(0).Resource().Attributes().Get("host.name")
+	require.True(t, hasHostName)
+	require.Equal(t, "host-01", hostName.Str())
+
+	off, err := buildTrace(turn, "completed", DefaultScopeVersion, false)
+	require.NoError(t, err)
+	rootOff := findSpan(t, off.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent codex")
+	_, hasUserID := rootOff.Attributes().Get("coding_agent.user.id")
+	require.False(t, hasUserID)
+	_, hasEmail := rootOff.Attributes().Get("coding_agent.user.email")
+	require.False(t, hasEmail)
+	// terminal.type is not identity, so it stays regardless of the flag.
+	require.Equal(t, "ghostty", attrString(t, rootOff, "coding_agent.terminal.type"))
+	_, hasHost := off.ResourceSpans().At(0).Resource().Attributes().Get("host.name")
+	require.False(t, hasHost)
 }
 
 func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
