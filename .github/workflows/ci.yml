@@ -159,7 +159,7 @@ jobs:
                      and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
                      and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)'
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build container images
         run: |
           # Each image gets its own GitHub Actions layer cache (scope=<tag>), so an
