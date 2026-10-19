@@ -2,10 +2,10 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 
-# The container receives one credential: the z.ai API key, passed to pi through
-# models.json interpolation against z.ai's Anthropic-compatible endpoint.
-if [[ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
-  echo "ANTHROPIC_AUTH_TOKEN (your z.ai API key) is required; this test runs a real paid model." >&2
+# The container receives one credential: the OpenCode Go key as OPENCODE_API_KEY,
+# read by pi's built-in opencode-go provider (which also sends Go's session header).
+if [[ -z "${OPENCODE_API_KEY:-}" ]]; then
+  echo "OPENCODE_API_KEY (your OpenCode Go API key) is required; this test runs a real paid model." >&2
   exit 2
 fi
 
@@ -19,7 +19,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck disable=SC2034
 compose_files=(-f compose.e2e-pi.yaml)
-# The Pi stack only needs the shared collector; pi talks to z.ai's
-# Anthropic-compatible endpoint directly, so no proxy is required.
+# The Pi stack only needs the shared collector; pi talks to OpenCode Go directly,
+# so no proxy is required.
 support_services=(collector)
 e2e_run pi

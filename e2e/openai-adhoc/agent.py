@@ -1,6 +1,6 @@
-"""Minimal ad-hoc agent: one chat completion against z.ai's OpenAI-compatible
-endpoint, instrumented by opentelemetry-instrumentation-openai-v2. run.sh
-executes this once per semconv mode; OTEL_SERVICE_NAME and
+"""Minimal ad-hoc agent: one chat completion against OpenRouter's
+OpenAI-compatible endpoint, instrumented by opentelemetry-instrumentation-openai-v2.
+run.sh executes this once per semconv mode; OTEL_SERVICE_NAME and
 OTEL_SEMCONV_STABILITY_OPT_IN select the mode per process."""
 
 import os
@@ -21,7 +21,7 @@ def main() -> None:
 
     client = OpenAI(base_url=os.environ["OPENAI_BASE_URL"])
     response = client.chat.completions.create(
-        model=os.environ.get("E2E_OPENAI_MODEL", "glm-4.7"),
+        model=os.environ.get("E2E_OPENAI_MODEL", "z-ai/glm-5.3-flash"),
         messages=[{"role": "user", "content": "Reply with only: openai-otel-e2e"}],
         max_tokens=16,
     )

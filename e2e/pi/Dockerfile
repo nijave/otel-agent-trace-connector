@@ -19,7 +19,6 @@ RUN mkdir -p /root/node_modules/@earendil-works \
 # under /root/.pi/agent/npm on first run inside the container.
 RUN mkdir -p /root/.pi/agent
 COPY settings.json /root/.pi/agent/settings.json
-COPY models.json /root/.pi/agent/models.json
 COPY run.sh /usr/local/bin/run-pi-e2e
 RUN chmod 0555 /usr/local/bin/run-pi-e2e
 

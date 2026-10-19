@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The container receives one credential: the provider key as COPILOT_PROVIDER_API_KEY.
-if [[ -z "${COPILOT_PROVIDER_API_KEY:-}" ]]; then
-  echo "COPILOT_PROVIDER_API_KEY is required; this test runs a real paid model." >&2
+# The container receives one credential: the OpenRouter key as COPILOT_PROVIDER_API_KEY.
+if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+  echo "OPENROUTER_API_KEY is required; this test runs a real paid model." >&2
   exit 2
 fi
 

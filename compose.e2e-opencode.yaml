@@ -15,9 +15,10 @@ services:
     environment:
       # scripts/e2e-opencode.sh checks this credential before Compose runs, so it is
       # optional here; a required (:?) guard would only fire later and less clearly.
+      # opencode's built-in opencode-go provider reads this variable directly.
       OPENCODE_API_KEY: "${OPENCODE_API_KEY:-}"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
-      E2E_OPENCODE_MODEL: "${E2E_OPENCODE_MODEL:-ox-alpha-free}"
+      E2E_OPENCODE_MODEL: "${E2E_OPENCODE_MODEL:-glm-5.3-flash}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-opencode.sh}"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf

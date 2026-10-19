@@ -22,7 +22,7 @@ def main() -> None:
             "api_key": os.environ["OPENAI_API_KEY"],
             "base_url": os.environ["OPENAI_BASE_URL"],
         },
-        model_id=os.environ.get("E2E_STRANDS_MODEL", "glm-4.7"),
+        model_id=os.environ.get("E2E_STRANDS_MODEL", "z-ai/glm-5.3-flash"),
         params={"max_tokens": 250},
     )
     agent = Agent(

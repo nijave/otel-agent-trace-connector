@@ -17,10 +17,10 @@ services:
     environment:
       # scripts/e2e-copilot.sh checks this credential before Compose runs, so it is
       # optional here; a required (:?) guard would only fire later and less clearly.
-      COPILOT_PROVIDER_API_KEY: "${COPILOT_PROVIDER_API_KEY:-}"
-      COPILOT_PROVIDER_TYPE: "${E2E_COPILOT_PROVIDER_TYPE:-anthropic}"
-      COPILOT_PROVIDER_BASE_URL: "${E2E_COPILOT_BASE_URL:-https://api.z.ai/api/anthropic}"
-      COPILOT_MODEL: "${E2E_COPILOT_MODEL:-glm-4.7}"
+      COPILOT_PROVIDER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      COPILOT_PROVIDER_TYPE: "${E2E_COPILOT_PROVIDER_TYPE:-openai}"
+      COPILOT_PROVIDER_BASE_URL: "${E2E_COPILOT_BASE_URL:-https://openrouter.ai/api/v1}"
+      COPILOT_MODEL: "${E2E_COPILOT_MODEL:-z-ai/glm-5.3-flash}"
       COPILOT_OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf

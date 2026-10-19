@@ -3,26 +3,22 @@ approval_policy = "never"
 # nest a user namespace here, so it is disabled (run.sh passes the matching flag).
 sandbox_mode = "danger-full-access"
 
-# Codex 0.144.1 requires wire_api="responses" (the Responses API); z.ai's coding
-# endpoint only speaks chat-completions. The responses-proxy service (see
-# e2e/responses-proxy/ and compose.e2e-codex.yaml) translates between the two, so
-# Codex talks to the proxy rather than to z.ai directly. env_key must name a
-# variable that is set, but the value only becomes a bearer token the proxy ignores
-# (its auth.keys is empty), so the container holds a placeholder rather than the real
-# z.ai key. The model comes from --model (E2E_CODEX_MODEL) and must be listed in the
-# proxy config.
-model_provider = "zai-proxy"
+# OpenCode Go serves the Responses API at https://opencode.ai/zen/go/v1, so Codex
+# talks to it directly with wire_api = "responses". Go requires every request to
+# carry a session id and recognizes the session header Codex sends natively.
+# env_key names the variable that holds the real OpenCode Go key, which the
+# container receives (see e2e/README.md). The model comes from --model
+# (E2E_CODEX_MODEL).
+model_provider = "opencode-go"
 
 # Stamp model_reasoning_effort on telemetry events so captures carry the field
-# the connector maps to gen_ai.request.reasoning.level. The proxy forwards or
-# drops the request-side reasoning parameter; the log attribute comes from this
-# config either way.
+# the connector maps to gen_ai.request.reasoning.level.
 model_reasoning_effort = "low"
 
-[model_providers.zai-proxy]
-name = "z.ai via responses-proxy"
-base_url = "http://responses-proxy:3000/v1"
-env_key = "OPENAI_API_KEY"
+[model_providers.opencode-go]
+name = "OpenCode Go (Responses API)"
+base_url = "https://opencode.ai/zen/go/v1"
+env_key = "OPENCODE_API_KEY"
 wire_api = "responses"
 
 [otel]

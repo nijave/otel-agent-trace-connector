@@ -2,10 +2,10 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 
-# The container receives one credential: the z.ai API key, used by Strands'
+# The container receives one credential: the OpenRouter key, used by Strands'
 # OpenAI-compatible model provider.
-if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  echo "OPENAI_API_KEY (your z.ai API key) is required; this test runs a real paid model." >&2
+if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+  echo "OPENROUTER_API_KEY is required; this test runs a real paid model." >&2
   exit 2
 fi
 
