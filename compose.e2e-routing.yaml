@@ -6,7 +6,7 @@
 # because the topology needs two collectors with distinct output paths.
 services:
   gateway:
-    image: otel/opentelemetry-collector-contrib:0.159.0
+    image: otel/opentelemetry-collector-contrib:0.163.1
     command: ["--config=/etc/otelcol/gateway.yaml"]
     volumes:
       - ./e2e/routing/gateway.yaml:/etc/otelcol/gateway.yaml:ro
@@ -21,7 +21,7 @@ services:
     build:
       context: .
       args:
-        OCB_VERSION: "0.159.0"
+        OCB_VERSION: "0.163.0"
     command: ["--config=/etc/otelcol/tier2.yaml"]
     volumes:
       - ./e2e/routing/tier2.yaml:/etc/otelcol/tier2.yaml:ro
@@ -39,7 +39,7 @@ services:
     build:
       context: .
       args:
-        OCB_VERSION: "0.159.0"
+        OCB_VERSION: "0.163.0"
     command: ["--config=/etc/otelcol/tier2.yaml"]
     volumes:
       - ./e2e/routing/tier2.yaml:/etc/otelcol/tier2.yaml:ro

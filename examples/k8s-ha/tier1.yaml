@@ -46,7 +46,7 @@ spec:
       serviceAccountName: coding-agent-gateway
       containers:
         - name: gateway
-          image: otel/opentelemetry-collector-contrib:0.159.0
+          image: otel/opentelemetry-collector-contrib:0.163.1
           args: ["--config=/etc/otelcol/gateway.yaml"]
           ports:
             - containerPort: 4317
