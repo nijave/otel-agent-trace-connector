@@ -213,7 +213,7 @@ func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
 	doStream.SetParentSpanID([8]byte{2})
 	doStream.Attributes().PutStr("gen_ai.request.model", "ox-alpha-free")
 	doStream.Attributes().PutStr("gen_ai.response.id", "resp_1")
-	doStream.Attributes().PutStr("gen_ai.response.finish_reasons", "stop")
+	doStream.Attributes().PutEmptySlice("gen_ai.response.finish_reasons").AppendEmpty().SetStr("stop")
 
 	tool := ss.Spans().AppendEmpty()
 	tool.SetName("ai.toolCall")
@@ -234,14 +234,14 @@ func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
 	v, ok := spans.At(0).Attributes().Get("gen_ai.operation.name")
 	require.True(t, ok)
 	require.Equal(t, "chat", v.Str())
-	_, leaked := spans.At(0).Attributes().Get("gen_ai.response.id")
-	require.False(t, leaked, "response metadata beyond model stays off canonical chat")
+	require.Equal(t, "resp_1", stringAttrOf(spans.At(0), "gen_ai.response.id"))
 
 	require.Equal(t, "execute_tool bash", spans.At(1).Name())
 	toolAttrs := spans.At(1).Attributes()
 	name, ok := toolAttrs.Get("gen_ai.tool.name")
 	require.True(t, ok)
 	require.Equal(t, "bash", name.Str())
+	require.Equal(t, "call_1", stringAttrOf(spans.At(1), "gen_ai.tool.call.id"))
 	_, hasProvider := toolAttrs.Get("gen_ai.provider.name")
 	require.False(t, hasProvider, "an empty wire provider must not be copied")
 	op, ok := toolAttrs.Get("gen_ai.operation.name")
@@ -253,6 +253,106 @@ func TestNormalizerRenamesDoStreamAndToolCall(t *testing.T) {
 	}
 	require.Equal(t, pcommon.SpanID{3}, spans.At(0).SpanID(), "IDs pass through for backend reassembly")
 	require.Equal(t, pcommon.SpanID{4}, spans.At(1).SpanID())
+}
+
+// TestNormalizerMapsChatResponseMetadata pins the response identity, finish
+// reasons, and requested output cap onto their canonical keys, verbatim and
+// with the wire's array shape for the finish reasons.
+func TestNormalizerMapsChatResponseMetadata(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "opencode", "ai.streamText.doStream")
+	span.Attributes().PutStr("gen_ai.response.id", "chatcmpl-1")
+	span.Attributes().PutStr("gen_ai.response.model", "glm-5.3-flash")
+	reasons := span.Attributes().PutEmptySlice("gen_ai.response.finish_reasons")
+	reasons.AppendEmpty().SetStr("tool-calls")
+	span.Attributes().PutInt("gen_ai.request.max_tokens", 32000)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "chatcmpl-1", stringAttrOf(out, "gen_ai.response.id"))
+	require.Equal(t, "glm-5.3-flash", stringAttrOf(out, "gen_ai.response.model"))
+	require.Equal(t, []any{"tool-calls"}, attrSliceRaw(t, out, "gen_ai.response.finish_reasons"))
+	maxTokens, ok := out.Attributes().Get("gen_ai.request.max_tokens")
+	require.True(t, ok)
+	require.Equal(t, pcommon.ValueTypeInt, maxTokens.Type())
+	require.Equal(t, int64(32000), maxTokens.Int())
+}
+
+// TestNormalizerDropsLegacyResponseTwins pins the decision not to read the AI
+// SDK's legacy ai.response.* / ai.settings.* spellings: the wire carries the
+// gen_ai.* keys in the same call, so the duplicates stay off canonical output.
+func TestNormalizerDropsLegacyResponseTwins(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "opencode", "ai.streamText.doStream")
+	span.Attributes().PutStr("ai.response.id", "chatcmpl-legacy")
+	span.Attributes().PutStr("ai.response.model", "glm-5.3-flash")
+	span.Attributes().PutStr("ai.response.finishReason", "stop")
+	span.Attributes().PutInt("ai.settings.maxOutputTokens", 32000)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	for _, key := range []string{
+		"gen_ai.response.id",
+		"gen_ai.response.model",
+		"gen_ai.response.finish_reasons",
+		"gen_ai.request.max_tokens",
+	} {
+		_, present := out.Attributes().Get(key)
+		require.False(t, present, "%s comes only from its own canonical wire key", key)
+	}
+}
+
+// TestNormalizerEmptyResponseMetadataStaysAbsent pins the non-empty guard: an
+// empty wire value must not become an empty canonical key.
+func TestNormalizerEmptyResponseMetadataStaysAbsent(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "opencode", "ai.streamText.doStream")
+	span.Attributes().PutStr("gen_ai.response.id", "")
+	span.Attributes().PutStr("gen_ai.response.model", "")
+	span.Attributes().PutEmptySlice("gen_ai.response.finish_reasons")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	for _, key := range []string{
+		"gen_ai.response.id",
+		"gen_ai.response.model",
+		"gen_ai.response.finish_reasons",
+		"gen_ai.request.max_tokens",
+	} {
+		_, present := out.Attributes().Get(key)
+		require.False(t, present, "%s must stay absent when the wire carries no value", key)
+	}
+}
+
+// TestNormalizerToolCallWithoutIDEmitsNoCallID pins the presence guard: a wire
+// tool call carrying no id, or an empty one, emits no gen_ai.tool.call.id.
+func TestNormalizerToolCallWithoutIDEmitsNoCallID(t *testing.T) {
+	input := ptrace.NewTraces()
+	absent := newGroup(input, "opencode", "ai.toolCall")
+	absent.Attributes().PutStr("ai.toolCall.name", "bash")
+	empty := newGroup(input, "opencode", "ai.toolCall")
+	empty.Attributes().PutStr("ai.toolCall.name", "bash")
+	empty.Attributes().PutStr("ai.toolCall.id", "")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	spans := allSpans(sink.all()[0])
+	require.Len(t, spans, 2)
+	for _, span := range spans {
+		_, present := span.Attributes().Get("gen_ai.tool.call.id")
+		require.False(t, present, "an absent or empty wire call id must stay absent")
+	}
+}
+
+func attrSliceRaw(t *testing.T, span ptrace.Span, key string) []any {
+	t.Helper()
+	value, ok := span.Attributes().Get(key)
+	require.True(t, ok, "%s must be present", key)
+	require.Equal(t, pcommon.ValueTypeSlice, value.Type(), "%s must keep its array shape", key)
+	return value.Slice().AsRaw()
 }
 
 func TestNormalizerBareNamesWhenSubjectMissing(t *testing.T) {
@@ -410,6 +510,43 @@ func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
 		_, leaked := chat.Attributes().Get(dropped)
 		require.False(t, leaked, "%s must not reach canonical output", dropped)
 	}
+}
+
+// TestNormalizerFixtureReplayResponseMetadata pins the response metadata and
+// tool-call id of the committed 1.19.3 capture onto canonical output: the main
+// turn's chat span carries the wire's response identity, finish reasons, and
+// requested output cap, and the tool span carries its call id.
+func TestNormalizerFixtureReplayResponseMetadata(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "opencode-native-traces.json"))
+	require.NoError(t, err)
+	input, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(data)
+	require.NoError(t, err)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+
+	chats := 0
+	var main ptrace.Span
+	var tool ptrace.Span
+	for _, span := range allSpans(sink.all()[0]) {
+		switch {
+		case strings.HasPrefix(span.Name(), "chat"):
+			chats++
+			main = span
+		case strings.HasPrefix(span.Name(), "execute_tool"):
+			tool = span
+		}
+	}
+	require.Equal(t, 2, chats, "fixture must contain the title-generator and main-turn chat spans")
+	// The main turn is the last chat span in wire order.
+	require.Equal(t, "glm-5.3-flash", stringAttrOf(main, "gen_ai.response.model"))
+	require.Equal(t, "chatcmpl-1714d35ece99f346a1a4353c3c72cff5", stringAttrOf(main, "gen_ai.response.id"))
+	require.Equal(t, []any{"tool-calls"}, attrSliceRaw(t, main, "gen_ai.response.finish_reasons"))
+	maxTokens, ok := main.Attributes().Get("gen_ai.request.max_tokens")
+	require.True(t, ok, "the wire caps output tokens on every model call")
+	require.Equal(t, int64(32000), maxTokens.Int())
+	require.Equal(t, "chatcmpl-tool-beb4c279fbf39dcd", stringAttrOf(tool, "gen_ai.tool.call.id"))
 }
 
 func TestNormalizerMapsRootReasoningTokens(t *testing.T) {

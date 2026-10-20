@@ -153,6 +153,7 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string, ca
 			// Wire units are fractional milliseconds; canonical stores seconds.
 			attrs.PutDouble("gen_ai.response.time_to_first_chunk", ttft/1000)
 		}
+		copyChatResponse(wire.Attributes(), attrs)
 		span.SetName(name)
 	case wireToolCall:
 		tool := firstString(wire.Attributes(), "ai.toolCall.name")
@@ -160,6 +161,9 @@ func normalizeSpan(wire, span ptrace.Span, version, resourceSessionID string, ca
 		if tool != "" {
 			attrs.PutStr("gen_ai.tool.name", tool)
 			name += " " + tool
+		}
+		if callID := firstString(wire.Attributes(), "ai.toolCall.id"); callID != "" {
+			attrs.PutStr("gen_ai.tool.call.id", callID)
 		}
 		attrs.PutStr("gen_ai.operation.name", "execute_tool")
 		span.SetName(name)
@@ -224,6 +228,25 @@ func passthroughCanonicalUsage(from, to pcommon.Map) {
 		if value, ok := intValue(from, key); ok {
 			to.PutInt(key, value)
 		}
+	}
+}
+
+// copyChatResponse maps the response identity, finish reasons, and requested
+// output cap onto their canonical keys. The wire already spells all four
+// canonically; the AI SDK's legacy ai.response.* / ai.settings.* twins
+// duplicate them and stay off canonical output.
+func copyChatResponse(from, to pcommon.Map) {
+	for _, key := range []string{"gen_ai.response.id", "gen_ai.response.model"} {
+		if value := firstString(from, key); value != "" {
+			to.PutStr(key, value)
+		}
+	}
+	// The canonical key is a string slice; copy the wire's array shape verbatim.
+	if value, ok := from.Get("gen_ai.response.finish_reasons"); ok && value.Type() == pcommon.ValueTypeSlice && value.Slice().Len() > 0 {
+		value.Slice().CopyTo(to.PutEmptySlice("gen_ai.response.finish_reasons"))
+	}
+	if maxTokens, ok := intValue(from, "gen_ai.request.max_tokens"); ok {
+		to.PutInt("gen_ai.request.max_tokens", maxTokens)
 	}
 }
 

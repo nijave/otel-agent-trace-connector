@@ -353,6 +353,11 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "ai.usage.reasoningTokens", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Presence},
 				{RawKey: "ai.response.msToFirstChunk", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
+				{RawKey: "gen_ai.response.id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
+				{RawKey: "gen_ai.response.model", CanonicalKey: "gen_ai.response.model", Kind: canonical.Presence},
+				{RawKey: "gen_ai.response.finish_reasons", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
+				{RawKey: "gen_ai.request.max_tokens", CanonicalKey: "gen_ai.request.max_tokens", Kind: canonical.Presence},
+				{RawKey: "ai.toolCall.id", CanonicalKey: "gen_ai.tool.call.id", Kind: canonical.Presence},
 			},
 		}},
 		{wired: "openhands", edge: canonical.Edge{

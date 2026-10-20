@@ -581,7 +581,13 @@ onto `gen_ai.usage.reasoning.output_tokens`; other token-detail counters
 stay out. Each
 `ai.streamText.doStream` child becomes `chat <model>` from its own
 `gen_ai.request.model` (bare `chat` when absent), and each `ai.toolCall` child
-becomes `execute_tool <tool>` from `ai.toolCall.name`. Renamed spans are
+becomes `execute_tool <tool>` from `ai.toolCall.name`. The chat child also
+keeps the response identity and requested output cap the wire already spells
+canonically — `gen_ai.response.id`, `gen_ai.response.model`, the
+`gen_ai.response.finish_reasons` array, and `gen_ai.request.max_tokens` — and
+the tool child keeps `gen_ai.tool.call.id` from `ai.toolCall.id`. The AI SDK's
+legacy `ai.response.*` / `ai.settings.maxOutputTokens` duplicates stay off
+canonical output. Renamed spans are
 rebuilt with only these attributes plus the common marker set used by the
 other edges (`coding_agent.source=native`, `coding_agent.client.name`,
 `coding_agent.client.version`, and `coding_agent.source.event` holding the
