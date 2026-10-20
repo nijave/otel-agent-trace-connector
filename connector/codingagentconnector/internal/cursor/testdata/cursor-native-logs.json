@@ -8,7 +8,8 @@
           { "key": "cursor.team.id", "value": { "intValue": "4242" } },
           { "key": "cursor.surface", "value": { "stringValue": "cli" } },
           { "key": "cursor.entrypoint", "value": { "stringValue": "cli" } },
-          { "key": "cursor.user.id", "value": { "intValue": "99" } }
+          { "key": "cursor.user.id", "value": { "intValue": "99" } },
+          { "key": "cursor.user.email", "value": { "stringValue": "user@example.com" } }
         ]
       },
       "scopeLogs": [
