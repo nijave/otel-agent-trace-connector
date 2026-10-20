@@ -106,12 +106,15 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, ca
 		span.Attributes().PutStr("gen_ai.agent.name", "claude_code")
 		span.Attributes().PutStr("coding_agent.source.event", "claude_code.interaction")
 		putClaudeCommon(span.Attributes(), version)
-		sessionID := firstSpanString(span, "session.id", "session_id")
-		if sessionID == "" {
-			sessionID = resourceSessionID
+		// Claude Code emits gen_ai.conversation.id natively from 2.1.x on. A
+		// wire-carried canonical value beats the session.id fallback, matching
+		// how model and tool name prefer their canonical key.
+		conversationID := firstSpanString(span, "gen_ai.conversation.id", "session.id", "session_id")
+		if conversationID == "" {
+			conversationID = resourceSessionID
 		}
-		if sessionID != "" {
-			span.Attributes().PutStr("gen_ai.conversation.id", sessionID)
+		if conversationID != "" {
+			span.Attributes().PutStr("gen_ai.conversation.id", conversationID)
 		}
 		if terminal := firstSpanString(span, "terminal.type"); terminal != "" {
 			span.Attributes().PutStr("coding_agent.terminal.type", terminal)
@@ -129,6 +132,12 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, ca
 		putClaudeCommon(span.Attributes(), version)
 		if model != "" {
 			span.Attributes().PutStr("gen_ai.request.model", model)
+		}
+		// Claude Code reports the selected reasoning effort as `effort`; the
+		// canonical vocabulary names it gen_ai.request.reasoning.level. The
+		// value is vendor-agnostic already, so it copies verbatim.
+		if effort := firstSpanString(span, "effort"); effort != "" {
+			span.Attributes().PutStr("gen_ai.request.reasoning.level", effort)
 		}
 		remapUsage(span.Attributes())
 	case "claude_code.tool":
