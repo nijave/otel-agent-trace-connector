@@ -28,9 +28,10 @@ import (
 )
 
 type testRecord struct {
-	body  string
-	ts    time.Time
-	attrs map[string]any
+	eventName string
+	body      string
+	ts        time.Time
+	attrs     map[string]any
 }
 
 const testConversation = "11111111-2222-3333-4444-555555555555"
@@ -57,6 +58,7 @@ func makeCursorLogs(records ...testRecord) plog.Logs {
 			attrs[k] = v
 		}
 		record := sl.LogRecords().AppendEmpty()
+		record.SetEventName(rec.eventName)
 		record.Body().SetStr(rec.body)
 		record.SetTimestamp(pcommon.NewTimestampFromTime(rec.ts))
 		requireNoError(record.Attributes().FromRaw(attrs))
@@ -75,7 +77,7 @@ func apiRequest(ts time.Time, eventID, model string, in, out int64) testRecord {
 	if model != "" {
 		attrs["cursor.model.name"] = model
 	}
-	return testRecord{body: BodyAPIRequest, ts: ts, attrs: attrs}
+	return testRecord{body: NameAPIRequest, ts: ts, attrs: attrs}
 }
 
 type traceSink struct {
@@ -167,7 +169,7 @@ func TestTimeoutClosesLongBurst(t *testing.T) {
 	now := time.Now()
 	instance.bursts[testConversation] = &burstState{
 		conversationID: testConversation,
-		events:         []Event{{Body: BodyAPIRequest, EventID: "ev-x", ConversationID: testConversation, Timestamp: now.Add(-2 * cfg.TurnTimeout)}},
+		events:         []Event{{Name: NameAPIRequest, EventID: "ev-x", ConversationID: testConversation, Timestamp: now.Add(-2 * cfg.TurnTimeout)}},
 		seen:           map[string]struct{}{"ev-x": {}},
 		first:          now.Add(-2 * cfg.TurnTimeout),
 		last:           now.Add(-2 * cfg.TurnTimeout),
@@ -189,7 +191,7 @@ func TestQuietBeatsNothingWhenBurstIdle(t *testing.T) {
 	now := time.Now()
 	instance.bursts[testConversation] = &burstState{
 		conversationID: testConversation,
-		events:         []Event{{Body: BodyAPIRequest, EventID: "ev-x", ConversationID: testConversation, Timestamp: now.Add(-time.Second)}},
+		events:         []Event{{Name: NameAPIRequest, EventID: "ev-x", ConversationID: testConversation, Timestamp: now.Add(-time.Second)}},
 		seen:           map[string]struct{}{"ev-x": {}},
 		first:          now.Add(-time.Second),
 		last:           now.Add(-time.Second),
@@ -306,11 +308,11 @@ func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
 	base := time.Now().Add(-time.Second)
 	now := time.Now()
 	burst := &burstState{conversationID: testConversation, first: base, last: base}
-	burst.add(Event{Body: BodyAPIRequest, EventID: "ev-a", ConversationID: testConversation, Timestamp: base}, now, 2)
-	burst.add(Event{Body: BodyAPIRequest, EventID: "ev-b", ConversationID: testConversation, Timestamp: base.Add(time.Millisecond)}, now, 2)
+	burst.add(Event{Name: NameAPIRequest, EventID: "ev-a", ConversationID: testConversation, Timestamp: base}, now, 2)
+	burst.add(Event{Name: NameAPIRequest, EventID: "ev-b", ConversationID: testConversation, Timestamp: base.Add(time.Millisecond)}, now, 2)
 	require.False(t, burst.truncated)
 
-	overflow := Event{Body: BodyAPIRequest, EventID: "ev-c", ConversationID: testConversation, Timestamp: base.Add(time.Hour)}
+	overflow := Event{Name: NameAPIRequest, EventID: "ev-c", ConversationID: testConversation, Timestamp: base.Add(time.Hour)}
 	burst.add(overflow, now.Add(time.Hour), 2)
 	require.True(t, burst.truncated)
 	require.Len(t, burst.events, 2)
@@ -342,7 +344,7 @@ func TestIgnoresForeignAndScopelessRecords(t *testing.T) {
 	foreign := rl.ScopeLogs().AppendEmpty()
 	foreign.Scope().SetName("some.other.scope")
 	record := foreign.LogRecords().AppendEmpty()
-	record.Body().SetStr(BodyAPIRequest)
+	record.Body().SetStr(NameAPIRequest)
 	record.Attributes().PutStr("cursor.conversation.id", testConversation)
 	require.NoError(t, instance.ConsumeLogs(context.Background(), logs))
 	require.Empty(t, instance.bursts)
@@ -417,4 +419,78 @@ func TestEmittedTurnMetricCountsSuccessfulDelivery(t *testing.T) {
 			Value:      1,
 		}},
 		metricdatatest.IgnoreTimestamp())
+}
+
+// TestConversationContentNeverReachesCanonicalOutput pins the audit fix: the
+// opt-in conversation_content family carries the scrubbed prompt, response, and
+// tool I/O text as the record body, so the edge declines those records whole
+// instead of naming root span events and coding_agent.source.event after them.
+func TestConversationContentNeverReachesCanonicalOutput(t *testing.T) {
+	sink := &traceSink{}
+	connectorLogs, err := New(codex.NewDefaultConfig(), testSettings(), sink)
+	require.NoError(t, err)
+
+	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	// The first payload deliberately opens with the flattened name of the event
+	// that carried it, so a body-driven name would reproduce it verbatim.
+	prompts := []string{
+		"conversation_user_message: rewrite the deploy script",
+		"here is the scrubbed answer text",
+		`{"path":"/tmp/secret.txt","body":"tool output"}`,
+	}
+	logs := makeCursorLogs(
+		apiRequest(base, "a", "claude-4.5-sonnet", 10, 20),
+		testRecord{eventName: "cursor.conversation.user_message", body: prompts[0], ts: base.Add(time.Second),
+			attrs: map[string]any{"cursor.conversation.content_truncated": true, "cursor.conversation.message.id": "msg-1"}},
+		testRecord{eventName: "cursor.conversation.assistant_message", body: prompts[1], ts: base.Add(2 * time.Second),
+			attrs: map[string]any{"cursor.conversation.content_truncated": false}},
+		// No event name: the family's always-present content_truncated
+		// attribute alone must decline it.
+		testRecord{body: prompts[2], ts: base.Add(3 * time.Second),
+			attrs: map[string]any{"cursor.conversation.content_truncated": true, "cursor.conversation.tool_io.direction": "arguments"}},
+	)
+	require.NoError(t, connectorLogs.ConsumeLogs(context.Background(), logs))
+	require.NoError(t, connectorLogs.Shutdown(context.Background()))
+	require.Equal(t, 1, sink.count())
+
+	traces := sink.traces[0]
+	root := rootOf(t, traces)
+	// The api_request names the span; the content family leaves no event behind.
+	require.Equal(t, NameAPIRequest, stringAttrOn(t, root, "coding_agent.source.event"))
+	require.Equal(t, 0, root.Events().Len())
+	for _, text := range canonicalText(traces) {
+		for _, prompt := range prompts {
+			require.NotContains(t, text, prompt)
+		}
+	}
+}
+
+// canonicalText collects every string canonical output can carry, so a test can
+// assert record bodies reach none of it.
+func canonicalText(traces ptrace.Traces) []string {
+	var out []string
+	collect := func(attrs pcommon.Map) {
+		attrs.Range(func(key string, value pcommon.Value) bool {
+			out = append(out, key, value.AsString())
+			return true
+		})
+	}
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		rs := traces.ResourceSpans().At(i)
+		collect(rs.Resource().Attributes())
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			spans := rs.ScopeSpans().At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				span := spans.At(k)
+				out = append(out, span.Name(), span.Status().Message())
+				collect(span.Attributes())
+				for e := 0; e < span.Events().Len(); e++ {
+					event := span.Events().At(e)
+					out = append(out, event.Name())
+					collect(event.Attributes())
+				}
+			}
+		}
+	}
+	return out
 }

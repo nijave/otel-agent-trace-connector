@@ -75,7 +75,7 @@ func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event, cap
 	attrs.PutStr("gen_ai.conversation.id", burst.conversationID)
 	attrs.PutStr("coding_agent.client.name", "cursor")
 	if len(events) > 0 {
-		attrs.PutStr("coding_agent.source.event", events[0].Body)
+		attrs.PutStr("coding_agent.source.event", events[0].Name)
 	}
 	attrs.PutStr("coding_agent.source", "normalized")
 	// Deliberately no gen_ai.provider.name: the wire never names the upstream
@@ -113,14 +113,14 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if event.UsageEventID == "" {
 			continue
 		}
-		if event.Body == BodyAPIError {
+		if event.Name == NameAPIError {
 			errored[event.UsageEventID] = true
-		} else if IsCorrectionBody(event.Body) {
+		} else if IsCorrectionEvent(event.Name) {
 			corrections[event.UsageEventID] = append(corrections[event.UsageEventID], event)
 		}
 	}
 	for _, event := range events {
-		if event.Body != BodyAPIRequest {
+		if event.Name != NameAPIRequest {
 			continue
 		}
 		span := spans.AppendEmpty()
@@ -139,7 +139,7 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
 		span.Attributes().PutStr("coding_agent.source", "normalized")
 		span.Attributes().PutStr("coding_agent.client.name", "cursor")
-		span.Attributes().PutStr("coding_agent.source.event", event.Body)
+		span.Attributes().PutStr("coding_agent.source.event", event.Name)
 		for _, m := range chatTokenAttrs {
 			copyIntAttr(span.Attributes(), event.Attrs, m.source, m.dest)
 		}
@@ -150,7 +150,7 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 			}
 			for _, correction := range corrections[event.UsageEventID] {
 				e := span.Events().AppendEmpty()
-				e.SetName(correction.Body)
+				e.SetName(correction.Name)
 				e.SetTimestamp(pcommon.NewTimestampFromTime(correction.Timestamp))
 			}
 		}
@@ -159,25 +159,25 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 
 // appendRootEvents lands every non-chat record the chat spans did not consume:
 // unjoined api errors and corrections (their request sat in an earlier,
-// already-finalized burst) and unknown bodies. Events carry their names and
-// timestamps only — correction and error kinds stay readable in the event
-// name itself ("api_correction_<kind>").
+// already-finalized burst) and events the connector does not model. Events
+// carry their names and timestamps only — correction and error kinds stay
+// readable in the event name itself ("api_correction_<kind>").
 func appendRootEvents(dst ptrace.SpanEventSlice, events []Event) {
 	joined := map[string]bool{}
 	for _, event := range events {
-		if event.Body == BodyAPIRequest && event.UsageEventID != "" {
+		if event.Name == NameAPIRequest && event.UsageEventID != "" {
 			joined[event.UsageEventID] = true
 		}
 	}
 	for _, event := range events {
-		if event.Body == BodyAPIRequest {
+		if event.Name == NameAPIRequest {
 			continue
 		}
-		if (event.Body == BodyAPIError || IsCorrectionBody(event.Body)) && event.UsageEventID != "" && joined[event.UsageEventID] {
+		if (event.Name == NameAPIError || IsCorrectionEvent(event.Name)) && event.UsageEventID != "" && joined[event.UsageEventID] {
 			continue
 		}
 		e := dst.AppendEmpty()
-		e.SetName(event.Body)
+		e.SetName(event.Name)
 		e.SetTimestamp(pcommon.NewTimestampFromTime(event.Timestamp))
 	}
 }

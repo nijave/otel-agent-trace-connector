@@ -14,7 +14,7 @@ import (
 func burstForTest() *burstState {
 	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	events := []Event{
-		{Body: BodyAPIRequest, EventID: "ev-1", ConversationID: testConversation, UsageEventID: "ue-1",
+		{Name: NameAPIRequest, EventID: "ev-1", ConversationID: testConversation, UsageEventID: "ue-1",
 			Timestamp: base, Resource: testResourceRaw(),
 			Attrs: map[string]any{
 				"cursor.model.name":               "claude-4.5-sonnet",
@@ -22,18 +22,18 @@ func burstForTest() *burstState {
 				"cursor.api.request.cache_read_tokens": int64(50), "cursor.api.request.cache_creation_tokens": int64(10),
 				"cursor.api.billable": true,
 			}},
-		{Body: BodyAPIRequest, EventID: "ev-2", ConversationID: testConversation, UsageEventID: "ue-2",
+		{Name: NameAPIRequest, EventID: "ev-2", ConversationID: testConversation, UsageEventID: "ue-2",
 			Timestamp: base.Add(2 * time.Second), Resource: testResourceRaw(),
 			Attrs: map[string]any{
 				"cursor.api.request.input_tokens": int64(7), "cursor.api.request.output_tokens": int64(9),
 				"cursor.api.request.cache_read_tokens": int64(0), "cursor.api.request.cache_creation_tokens": int64(0),
 			}},
-		{Body: BodyAPIError, EventID: "ev-3", ConversationID: testConversation, UsageEventID: "ue-2",
+		{Name: NameAPIError, EventID: "ev-3", ConversationID: testConversation, UsageEventID: "ue-2",
 			Timestamp: base.Add(3 * time.Second), Resource: testResourceRaw(), Attrs: map[string]any{}},
-		{Body: "api_correction_not_billed_errored", EventID: "ev-4", ConversationID: testConversation, UsageEventID: "ue-2",
+		{Name: "api_correction_not_billed_errored", EventID: "ev-4", ConversationID: testConversation, UsageEventID: "ue-2",
 			Timestamp: base.Add(4 * time.Second), Resource: testResourceRaw(),
 			Attrs: map[string]any{"cursor.api.correction.kind": "not_billed_errored"}},
-		{Body: "skill_activated", EventID: "ev-5", ConversationID: testConversation,
+		{Name: "skill_activated", EventID: "ev-5", ConversationID: testConversation,
 			Timestamp: base.Add(5 * time.Second), Resource: testResourceRaw(),
 			Attrs: map[string]any{"cursor.skill.name": "code-review", "cursor.skill.trigger": "agent_read", "cursor.skill.source": "user"}},
 	}
@@ -122,7 +122,7 @@ func TestBuildTraceChatSpans(t *testing.T) {
 	chat := chats[0]
 	require.Equal(t, "chat", stringAttrOn(t, chat, "gen_ai.operation.name"))
 	require.Equal(t, "claude-4.5-sonnet", stringAttrOn(t, chat, "gen_ai.request.model"))
-	require.Equal(t, BodyAPIRequest, stringAttrOn(t, chat, "coding_agent.source.event"))
+	require.Equal(t, NameAPIRequest, stringAttrOn(t, chat, "coding_agent.source.event"))
 	require.Equal(t, "normalized", stringAttrOn(t, chat, "coding_agent.source"))
 	require.Equal(t, "cursor", stringAttrOn(t, chat, "coding_agent.client.name"))
 	require.Equal(t, int64(100), intAttrOn(t, chat, "gen_ai.usage.input_tokens"))
@@ -156,8 +156,8 @@ func TestBuildTraceErrorJoinAndCorrectionJoin(t *testing.T) {
 	root := rootOf(t, traces)
 	for i := 0; i < root.Events().Len(); i++ {
 		name := root.Events().At(i).Name()
-		require.NotEqual(t, BodyAPIError, name)
-		require.False(t, IsCorrectionBody(name))
+		require.NotEqual(t, NameAPIError, name)
+		require.False(t, IsCorrectionEvent(name))
 	}
 }
 
@@ -175,7 +175,7 @@ func TestBuildTraceCloudAgentMCPAuthErrorLandsOnRoot(t *testing.T) {
 	burst := burstForTest()
 	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	burst.events = append(burst.events, Event{
-		Body: "cloud_agent_mcp_auth_error", EventID: "ev-6", ConversationID: testConversation,
+		Name: "cloud_agent_mcp_auth_error", EventID: "ev-6", ConversationID: testConversation,
 		Timestamp: base.Add(6 * time.Second), Resource: testResourceRaw(),
 		Attrs: map[string]any{"cursor.mcp.server.name": "github"},
 	})
@@ -204,7 +204,7 @@ func TestBuildTraceUnjoinedErrorAndCorrectionLandOnRoot(t *testing.T) {
 	for i := 0; i < root.Events().Len(); i++ {
 		names = append(names, root.Events().At(i).Name())
 	}
-	require.Contains(t, names, BodyAPIError)
+	require.Contains(t, names, NameAPIError)
 	require.Contains(t, names, "api_correction_not_billed_errored")
 }
 
@@ -267,7 +267,7 @@ func TestBuildTraceStableUnderTiedTimestampReordering(t *testing.T) {
 func TestBuildTraceCopiesNothingOutsideAllowlist(t *testing.T) {
 	burst := burstForTest()
 	burst.events = append(burst.events, Event{
-		Body: "future_event_kind", EventID: "ev-9", ConversationID: testConversation,
+		Name: "future_event_kind", EventID: "ev-9", ConversationID: testConversation,
 		Timestamp: burst.last.Add(time.Second), Resource: testResourceRaw(),
 		Attrs: map[string]any{
 			"cursor.event.id": "ev-9", "cursor.conversation.id": testConversation,

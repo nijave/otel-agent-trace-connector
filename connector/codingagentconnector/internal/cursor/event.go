@@ -23,21 +23,41 @@ const (
 	cursorScopePrefix = "cursor.telemetry"
 
 	attrEventID      = "cursor.event.id"
+	attrEventName    = "event.name"
 	attrConversation = "cursor.conversation.id"
 	attrUsageEventID = "cursor.usage_event.id"
+	// attrConversationContent marks the opt-in conversation_content family,
+	// whose body is scrubbed payload text instead of a constant event name.
+	// The wire sets it on every record of the family.
+	attrConversationContent = "cursor.conversation.content_truncated"
 
-	// BodyAPIRequest and friends name the OTLP log-record bodies from the
-	// wire reference. Bodies are unprefixed ("api_request", not
-	// "cursor.api.request"); the cursor.* namespace carries attributes only.
-	BodyAPIRequest = "api_request"
-	BodyAPIError   = "api_error"
+	// NameAPIRequest and friends are canonical event names: the wire event
+	// name flattened ("cursor.api.request" → "api_request"), which is also
+	// the constant the wire puts in the body of every record outside the
+	// conversation_content family.
+	NameAPIRequest = "api_request"
+	NameAPIError   = "api_error"
 )
+
+// kindAttrs restores the kind the wire puts in the body but not in the event
+// name, so canonical event names keep the form they carried when they came
+// from the body ("api_correction_<kind>", "cloud_agent_pull_request_<kind>",
+// "cloud_agent_setup_<kind>"). The wire documents each as an always-present
+// per-family attribute.
+var kindAttrs = map[string]string{
+	"cursor.api.correction":           "cursor.api.correction.kind",
+	"cursor.cloud_agent.pull_request": "cursor.cloud_agent.pull_request.kind",
+	"cursor.cloud_agent.setup":        "cursor.cloud_agent.setup.kind",
+}
 
 // Event is one claimed Cursor log record with the correlation keys the wire
 // guarantees or the connector requires. Attrs carries the raw record
-// attributes; span construction copies from it by allowlist only.
+// attributes; span construction copies from it by allowlist only. Name is the
+// canonical event name (see canonicalEventName), never the raw record body:
+// the conversation_content family carries prompt, response, and tool I/O text
+// in the body.
 type Event struct {
-	Body           string
+	Name           string
 	EventID        string
 	ConversationID string
 	UsageEventID   string
@@ -46,10 +66,57 @@ type Event struct {
 	Resource       map[string]any
 }
 
-// IsCorrectionBody reports whether a body names an api.correction record
-// ("api_correction_<kind>" per the wire reference).
-func IsCorrectionBody(body string) bool {
-	return strings.HasPrefix(body, "api_correction_")
+// IsCorrectionEvent reports whether a canonical event name names an
+// api.correction record ("api_correction" plus the kind, when the wire
+// carries it).
+func IsCorrectionEvent(name string) bool {
+	return strings.HasPrefix(name, "api_correction")
+}
+
+// wireEventName reads the record's OTLP event name, falling back to the
+// event.name attribute the OTel logs convention also uses.
+func wireEventName(record plog.LogRecord, attrs map[string]any) string {
+	if name := record.EventName(); name != "" {
+		return name
+	}
+	return StringValue(attrs[attrEventName])
+}
+
+// flattenEventName is the canonical form of a wire event name: the cursor.
+// namespace drops and dot segments join with underscores ("cursor.api.request"
+// → "api_request").
+func flattenEventName(eventName string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(eventName, "cursor."), ".", "_")
+}
+
+// isConversationContent reports whether a record belongs to the opt-in
+// conversation_content family, the only family whose body is a payload rather
+// than a constant event name. The wire says to route on the event name; the
+// content_truncated attribute it sets on every record of the family is the
+// backstop for a record that arrives without one.
+func isConversationContent(eventName string, attrs map[string]any) bool {
+	if _, ok := attrs[attrConversationContent]; ok {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimPrefix(eventName, "cursor."), "conversation.")
+}
+
+// canonicalEventName names a record for canonical output. The wire event name
+// is the source, so payload text can never become a span name, event name, or
+// attribute; only a record that carries no event name at all (the pinned
+// fixture, and any client predating event names) is named by its constant
+// body.
+func canonicalEventName(eventName, body string, attrs map[string]any) string {
+	name := flattenEventName(eventName)
+	if name == "" {
+		return body
+	}
+	if attr, ok := kindAttrs[eventName]; ok {
+		if kind := StringValue(attrs[attr]); kind != "" {
+			name += "_" + kind
+		}
+	}
+	return name
 }
 
 // ParseRecord claims a record for the Cursor edge when its instrumentation
@@ -60,7 +127,14 @@ func ParseRecord(record plog.LogRecord, scopeName string, resource pcommon.Resou
 		return Event{}, false
 	}
 	attrs := record.Attributes().AsRaw()
-	if strings.HasPrefix(StringValue(attrs["event.name"]), "codex.") {
+	eventName := wireEventName(record, attrs)
+	if strings.HasPrefix(eventName, "codex.") {
+		return Event{}, false
+	}
+	// conversation_content records carry prompt, response, or tool I/O text as
+	// their body, so the edge declines them whole: they contribute no span,
+	// event name, or attribute to canonical output.
+	if isConversationContent(eventName, attrs) {
 		return Event{}, false
 	}
 	conversationID := StringValue(attrs[attrConversation])
@@ -84,7 +158,7 @@ func ParseRecord(record plog.LogRecord, scopeName string, resource pcommon.Resou
 	}
 
 	return Event{
-		Body:           body,
+		Name:           canonicalEventName(eventName, body, attrs),
 		EventID:        eventID(body, ts, attrs),
 		ConversationID: conversationID,
 		UsageEventID:   StringValue(attrs[attrUsageEventID]),

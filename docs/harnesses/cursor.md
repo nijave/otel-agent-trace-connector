@@ -90,10 +90,14 @@ a client env-var toggle). The scope is `cursor.telemetry`, version `0.1.0`.
 Event names take the form `cursor.api.request`, `cursor.api.error`, … and most
 record bodies are an unprefixed constant (`api_request`, `api_error`,
 `api_correction_<kind>`, `grok_bot_<action>`, …); the `cursor.*` namespace
-carries attributes. The exception is the opt-in `conversation_content`
-family (`cursor.conversation.user_message`, `assistant_message`,
-`tool_io`; off by default, Cloud Agents and Grok Bot only), whose body is
-the scrubbed message text or one side of an MCP tool call. Admins toggle
+carries attributes. The wire reference does not pin which OTLP field carries
+the event name, so the edge reads both the record's top-level event name and
+the `event.name` attribute. The exception is the opt-in
+`conversation_content` family (`cursor.conversation.user_message`,
+`assistant_message`, `tool_io`; off by default, Cloud Agents and Grok Bot
+only), whose body is the scrubbed message text or one side of an MCP tool
+call; every record of that family carries the always-present
+`cursor.conversation.content_truncated` attribute. Admins toggle
 each family (`model_usage`, `tool_calls`, `skills_hooks_plugins`,
 `cloud_agents`, `grok_bot_agent_actions`, `conversation_content`)
 per destination. Transport is OTLP/HTTP binary protobuf to `/v1/logs` only;
@@ -112,9 +116,28 @@ burst and trace), correlates each burst of records for a conversation into a
 deterministic trace, and emits one `invoke_agent cursor` root with a
 `chat <model>` child per `api_request`. Records the chat spans do not
 consume (unjoined errors and corrections, skill/hook/cloud-agent/Grok Bot
-records, conversation content) land on the root as span events carrying
-**name and timestamp only**. The event name is the record body, not the
-OTLP event name.
+records) land on the root as span events carrying **name and timestamp
+only**.
+
+Span events, `coding_agent.source.event`, and the record-kind checks all name
+a record from its **OTLP event name**, never its body: the connector drops
+the `cursor.` namespace and joins the dotted segments with underscores
+(`cursor.api.request` → `api_request`, `cursor.skill.activated` →
+`skill_activated`). The three families whose event name omits a kind the
+body carries (`cursor.api.correction`, `cursor.cloud_agent.pull_request`,
+`cursor.cloud_agent.setup`) append it from the documented always-present
+kind attribute, so `api_correction_not_billed_errored`,
+`cloud_agent_pull_request_opened`, and `cloud_agent_setup_completed` keep the
+names the bodies gave them. A record that carries no event name at all — the
+pinned fixture, and any client predating event names — is named by its
+constant body; no other record reads its body for a name.
+
+The opt-in `conversation_content` family is declined whole at parse: its
+body is prompt, response, or tool I/O text, and the event name
+(`cursor.conversation.*`) or the family's always-present
+`cursor.conversation.content_truncated` attribute identifies it. Those
+records contribute no span, span event, or attribute to canonical output;
+they still reach the raw pipeline branch.
 
 Event-to-span mapping:
 
@@ -126,12 +149,13 @@ Event-to-span mapping:
 | `api_correction_<kind>` joined to an in-burst request | chat span event named `api_correction_<kind>` (name only) |
 | `api_correction_<kind>`, unjoined | root span event (name only) |
 | `skill_activated`, `hook_execution_complete`, `cloud_agent_*`, `grok_bot_*` | root span events (name only) |
-| `cursor.conversation.*` (opt-in; body is the scrubbed message or tool I/O text) | root span event named with that body text (the edge reads the body, not the OTLP event name) |
+| `cursor.conversation.*` (opt-in; body is the scrubbed message or tool I/O text) | never emitted (declined at parse: no span event, no `coding_agent.source.event`, no attributes) |
 | `plugin_installed` | never emitted (the record carries no conversation id, so the standing no-conversation-id policy declines it at parse) |
 
-**Event names survive.** Correction bodies embed their kind, so
+**Event names survive.** The wire puts a correction's kind in its body and in
+the always-present `cursor.api.correction.kind`, so
 `api_correction_not_billed_errored` stays fully readable as a span-event name
-even after its detail attributes drop.
+even after that attribute drops.
 
 #### Attribute matrix
 
@@ -166,7 +190,7 @@ raw key that would map there).
 | `service.name` (resource) | `service.name` (resource) | mapped (kept as a canonical resource key; constant `cursor`) |
 | `service.version` (resource) | `coding_agent.client.version` | mapped (absent when the resource carries no `service.version`, which is usual on cloud-agent and bugbot resources; desktop/CLI clients send it) |
 | `cursor.conversation.id` | `gen_ai.conversation.id` | mapped |
-| first event body | `coding_agent.source.event` | mapped (on an opt-in `cursor.conversation.*` record the body is message or tool I/O text) |
+| first record's event name | `coding_agent.source.event` | mapped (the flattened event name, `api_request`; a `cursor.conversation.*` record is declined at parse, so it can never set this) |
 | `cursor.surface`, `cursor.entrypoint` (resource) | — | dropped |
 | `cursor.user.id` (resource) | `coding_agent.user.id` | mapped (absent when `capture_identity` is off or the resource has no user, e.g. a cloud-agent run started with a team API key or service account) |
 | `cursor.team.id` (resource) | `coding_agent.team.id` | mapped (absent when `capture_identity` is off) |
@@ -201,8 +225,9 @@ leaving only the event name: `cursor.api.billable` on `api_error`,
 `cursor.plugin.name` on `hook_execution_complete`, the `cloud_agent_commit`
 and `cloud_agent_review_followup` attributes (`vcs.*`, `cursor.commit.*`,
 `cursor.review.*`, `cursor.parent.conversation.id`,
-`cursor.bugbot.finding.id`), every `cursor.grok_bot.*` attribute, and the
-`cursor.conversation.*` content attributes.
+`cursor.bugbot.finding.id`), and every `cursor.grok_bot.*` attribute. The
+`cursor.conversation.*` attributes reach no canonical output at all, because
+the record carrying them is declined whole at parse.
 
 #### Connector-written attributes
 
@@ -211,7 +236,7 @@ they appear on every emitted span except where noted:
 
 - `coding_agent.source` = `normalized`
 - `coding_agent.client.name` = `cursor`
-- `coding_agent.source.event` = originating record body (`api_request`, …)
+- `coding_agent.source.event` = originating record's event name (`api_request`, …)
 - `gen_ai.operation.name` = `invoke_agent` / `chat`
 - `gen_ai.agent.name` = `cursor` (invoke_agent root only)
 
