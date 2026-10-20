@@ -11,7 +11,10 @@ evidence.
 
 Research refreshed 2026-08-21 against primary sources (official docs and the
 harnesses' own source trees). Provider schemas are not stable APIs; treat the
-attribute names below as snapshots, not contracts.
+attribute names below as snapshots, not contracts. On 2026-10-19 each
+supported harness was re-audited with pinned citations in
+[docs/harnesses/](harnesses/); where this file's findings predate those
+audits, the matrix files are authoritative.
 
 Each entry carries a sourcing marker:
 
@@ -26,7 +29,7 @@ Each entry carries a sourcing marker:
 | Harness | Metric catalog | Attribute source | Notes |
 | --- | --- | --- | --- |
 | **Codex** | counters + histograms | Source | session tags on most instruments |
-| **Claude Code** | 4 instruments | Not enumerated here | monitoring docs only |
+| **Claude Code** | 8 counters | Docs | monitoring docs (checked 2026-10-19) |
 | **openai-v2 / util-genai** | histograms | Source + Docs | GenAI semconv spec |
 | **Strands** | counters + histograms | Source | TS SDK diverges from Python |
 | **Cline** | 30+ instruments | Source (legacy branch) | `main` emits logs instead |
@@ -41,7 +44,18 @@ Each entry carries a sourcing marker:
 
 Verified from source (repo clone commit `4f39251`): `codex-rs/otel` crate plus
 core call sites. Session metrics carry a fixed tag set appended to every
-datapoint; global-client metrics carry none.
+datapoint; global-client metrics carry none. Re-verified against the
+`rust-v0.163.0` tag (commit `83086188`, checked 2026-10-19; see
+[docs/harnesses/codex.md](harnesses/codex.md)).
+
+The default `otel.metrics_exporter` is `statsig`, which sends to OpenAI and
+follows `[analytics] enabled`. Since Codex 0.163.0
+([openai/codex#52278](https://github.com/openai/codex/issues/52278)) a custom
+OTLP metrics exporter works even with analytics turned off: set
+`otel.metrics_exporter` to an `otlp-http` or `otlp-grpc` exporter in
+`~/.codex/config.toml`, or to `"none"` to turn it off. The published
+advanced-config docs still say disabling analytics also disables custom OTLP
+metrics exporters; the source is authoritative (checked 2026-10-19).
 
 **Session tags** (appended to every session metric): `auth_mode` (optional),
 `session_source`, `originator`, `service_name` (optional), `model`,
@@ -81,27 +95,40 @@ where source uses `tool`. Source keys above are authoritative.
 
 ## Claude Code
 
-Claude Code emits four instruments under meter scope
-`com.anthropic.claude_code`. This pass did not capture their full attribute
-sets from source; the monitoring docs define the catalog and the `type`
-dimension for token usage.
+Claude Code emits eight counters under meter scope
+`com.anthropic.claude_code`, enabled with `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
+`OTEL_METRICS_EXPORTER=otlp`. Temporality defaults to delta
+(`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative` switches it).
+Every metric also carries the standard attributes (`session.id`, `user.id`,
+`organization.id`, `terminal.type`, and others, some behind
+`OTEL_METRICS_INCLUDE_*` cardinality switches). Attribute table from the
+monitoring docs (checked 2026-10-19):
 
-| Metric | Type | Attributes |
+| Metric | Unit | Extra attributes |
 | --- | --- | --- |
-| `claude_code.session.count` | Sum (delta) | not enumerated in this pass |
-| `claude_code.token.usage` | not enumerated | carries a `type` dimension |
-| `claude_code.cost.usage` | not enumerated | not enumerated in this pass |
-| `claude_code.lines_of_code.count` | not enumerated | not enumerated in this pass |
+| `claude_code.session.count` | none | `start_type` |
+| `claude_code.lines_of_code.count` | none | `type` (`added`/`removed`), `model` |
+| `claude_code.pull_request.count` | none | none |
+| `claude_code.commit.count` | none | none |
+| `claude_code.cost.usage` | USD | `model`, `query_source`, `speed`, `effort`, `agent.name`, `skill.name`, `plugin.name`, `marketplace.name`, `mcp_server.name`, `mcp_tool.name` |
+| `claude_code.token.usage` | tokens | `type` (`input`/`output`/`cacheRead`/`cacheCreation`) plus the cost counter's attributes |
+| `claude_code.code_edit_tool.decision` | none | `tool_name`, `decision`, `source`, `language` |
+| `claude_code.active_time.total` | s | `type` (`user`/`cli`) |
 
-Enable with `CLAUDE_CODE_ENABLE_TELEMETRY=1` and
-`OTEL_METRICS_EXPORTER=otlp`.
+Full catalog with the monitoring-docs citation:
+[docs/harnesses/claude-code.md](harnesses/claude-code.md#metrics).
 
 ## openai-v2 / util-genai
 
 Two emission modes. Default mode (pinned to semconv v1.30.0) records metrics
 from `opentelemetry-instrumentation-openai-v2`; the experimental mode
 (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`) records them from
-`opentelemetry-util-genai`.
+`opentelemetry-util-genai`. Since util-genai 1.0b0 the opt-in gate is gone:
+`OTEL_SEMCONV_STABILITY_OPT_IN` is ignored, `is_experimental_mode()` always
+returns true, and openai-v2 2.4b0 always records chat completions through the
+util-genai handler (checked 2026-10-19; see
+[docs/harnesses/genai-scopes.md](harnesses/genai-scopes.md)). The default
+mode below now requires util-genai older than 1.0b0 without the opt-in.
 
 ### Default mode (Source)
 
@@ -229,10 +256,14 @@ metrics are monotonic delta Sums.
 | `cursor.cost.usage` | Monotonic delta Sum, USD | `cursor.model.name` (Optional, same collapse rules) |
 
 Resource attributes (not datapoint attrs): `service.name`="cursor",
-`service.version`, `cursor.team.id` (Always, int), `cursor.surface`,
-`cursor.entrypoint`, `cursor.user.id`. No `cursor.session.id` attribute exists
-on metrics — metric datapoints carry no correlation IDs; those appear on logs
-only.
+`service.version`, `cursor.team.id` (Always, int), `cursor.surface`
+(desktop/cli/cloud_agent/bugbot/grok_bot), `cursor.entrypoint`,
+`cursor.user.id`, `cursor.user.email`, `cursor.user.account_id`. No
+`cursor.session.id` attribute exists on metrics — metric datapoints carry no
+correlation IDs (no conversation, request, or usage event id); those appear
+on logs only. Per-conversation analysis uses the `cursor.api.request` logs,
+grouped on `cursor.conversation.id` (wire reference checked 2026-10-19;
+see [docs/harnesses/cursor.md](harnesses/cursor.md)).
 
 ## Hermes
 
@@ -283,7 +314,12 @@ attrs).
 
 **Common attrs on every metric** (`commonMetricAttrs`): `user.name` (always),
 `host.name` (always), `environment` (only if `OTEL_RESOURCE_ATTRIBUTES`
-contains `environment=...`).
+contains `environment=...`). Caveat (checked 2026-10-19, per
+[docs/harnesses/pi.md](harnesses/pi.md)): the common attrs exist only on the
+repository's `main`
+([0beaa10](https://github.com/mprokopov/pi-otel-telemetry/blob/0beaa10e5bf82865260fccd3b4bc95c117d8238f/index.ts));
+the only npm release, `pi-otel-telemetry` 1.0.0 (2026-03-09), records the
+same 8 instruments with only `tool.name` on the tool metrics.
 
 | Metric | Type | Labels |
 | --- | --- | --- |
@@ -302,8 +338,10 @@ contains `environment=...`).
 ## OpenCode plugin
 
 Verified from source (`@devtheops/opencode-plugin-otel`, `src/otel.ts` +
-handler files). This is the extension path; native OpenCode OTel is
-traces-focused and the docs cover it in `docs/harnesses.md`.
+handler files; v2.0.1, checked 2026-10-19). This is the extension path;
+native OpenCode OTel registers only OTLP trace and log exporters — no native
+metrics (see [docs/harnesses/opencode.md](harnesses/opencode.md)). v2 no
+longer emits `opencode.lines_of_code.count`/`.total`.
 
 **Common attributes on every metric point** (`ctx.commonAttrs`): `project.id`
 (always) + every user-configured `OPENCODE_SPAN_ATTRIBUTES` `key=value` pair.
@@ -315,8 +353,6 @@ configurable via `OPENCODE_METRIC_PREFIX`.
 | `opencode.session.count` | Counter | `session.id`, `is_subagent` (bool) |
 | `opencode.token.usage` | Counter | `session.id`, `model`, `agent`, `type` ∈ {input, output, reasoning, cacheRead, cacheCreation} |
 | `opencode.cost.usage` | Counter | `session.id`, `model`, `agent` |
-| `opencode.lines_of_code.count` | Counter | `session.id`, `type` ∈ {added, removed} |
-| `opencode.lines_of_code.total` | Gauge | `session.id`, `type` ∈ {added, removed} |
 | `opencode.commit.count` | Counter | `session.id` |
 | `opencode.tool.duration` | Histogram | `session.id`, `tool_name`, `success` (bool) |
 | `opencode.cache.count` | Counter | `session.id`, `model`, `agent`, `type` ∈ {cacheRead, cacheCreation} |
@@ -346,11 +382,18 @@ layer).
 ## Doc-vs-source disagreements
 
 - **Pi**: the npm README lists `llm.model` labels on metrics; the source
-  omits the label entirely (trace-span-only attribute).
+  omits the label entirely (trace-span-only attribute). The common
+  `user.name`/`host.name`/`environment` attrs exist only on repo `main` —
+  npm 1.0.0 records `tool.name` only (checked 2026-10-19).
 - **Codex**: the Last9 doc's keys are stale — `type` vs source `token_type`,
   `mode` vs `active`/`tmp_mem_enabled`, `tool.name` vs `tool`.
 - **Cursor**: `cursor.team.id` is a resource attribute, not a datapoint
-  attribute, and no `cursor.session.id` exists on metrics.
+  attribute, and no `cursor.session.id` exists on metrics. The resource list
+  also carries `cursor.user.email` and `cursor.user.account_id`, and
+  `cursor.surface` includes the `grok_bot` surface (checked 2026-10-19).
+- **OpenCode plugin**: the `@devtheops` plugin's older catalog lists
+  `opencode.lines_of_code.*`; v2.0.1 no longer emits them (checked
+  2026-10-19).
 - **Cline**: the npm/GitHub README catalog implies the turns/tokens/cost/
   cache/tools/api/workspace metrics record on `main`; the source deletes
   those call sites and emits the data as log events instead.
@@ -358,8 +401,13 @@ layer).
 ## Sources
 
 - Codex OTel: https://github.com/openai/codex (codex-rs/otel/README.md,
-  codex-rs/otel/src/metrics/config.rs, codex-rs/core call sites)
+  codex-rs/otel/src/metrics/config.rs, codex-rs/core call sites); exporter
+  behavior re-verified at `rust-v0.163.0` (commit `83086188`) with
+  openai/codex#52278 and the
+  [0.163.0 release notes](https://github.com/openai/codex/releases/tag/rust-v0.163.0)
+  — checked 2026-10-19
 - Claude Code monitoring: https://code.claude.com/docs/en/monitoring-usage
+  (eight-counter catalog — checked 2026-10-19)
 - openai-v2 instrumentation:
   https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2
 - util-genai:
@@ -369,8 +417,10 @@ layer).
   and https://github.com/strands-agents/sdk-python (strands-py/src/strands/telemetry/)
 - Cline telemetry source: https://github.com/cline/cline/blob/main/src/services/telemetry
 - Cursor OTel Wire Reference: https://cursor.com/docs/enterprise/opentelemetry-export/wire
+  (resource attributes — checked 2026-10-19)
 - Hermes Agent: https://github.com/NousResearch/hermes-agent (agent/monitoring/)
 - Pi extension: https://github.com/mprokopov/pi-otel-telemetry
-- OpenCode plugin: https://github.com/DEVtheOPS/opencode-plugin-otel
+- OpenCode plugin: https://github.com/DEVtheOPS/opencode-plugin-otel/blob/v2.0.1/README.md
+  (v2.0.1 — checked 2026-10-19)
 - Kilo CLI: https://kilo.ai/docs/code-with-ai/platforms/cli
 - OpenHands metrics: https://docs.openhands.dev/sdk/guides/metrics

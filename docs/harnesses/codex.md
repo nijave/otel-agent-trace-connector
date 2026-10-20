@@ -39,9 +39,7 @@ checked 2026-10-19): [`config/src/types.rs`](https://github.com/openai/codex/blo
 [`otel/README.md`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/otel/README.md).
 
 The e2e config sets only the log `exporter`, so the pinned capture has no
-native spans. [docs/otel-signals.md](../otel-signals.md#summary) and
-[docs/harnesses.md](../harnesses.md#summary) still describe Codex as
-logs-only.
+native spans.
 
 ### Connector mapping
 
