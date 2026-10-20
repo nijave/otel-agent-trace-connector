@@ -179,11 +179,9 @@ func TestBuildTraceSkipsTimingOnlyCompletion(t *testing.T) {
 	require.Equal(t, 0.03, attrDouble(t, chat, "gen_ai.response.time_to_first_chunk"))
 }
 
-// TestBuildTraceKeepsCompletionWithoutUsage covers a provider that omits token usage
-// from the stream (a chat-completions endpoint without stream_options.include_usage,
-// for example). Codex still logs both response.completed records, so the duplicate
-// must still be skipped -- but the surviving call has to keep its chat span rather
-// than disappearing from the trace just because no token counts arrived.
+// TestBuildTraceKeepsCompletionWithoutUsage pins the presence guard: a
+// turn-completion record that reports the call (ttft_ms) without any token count
+// still gets its chat span, and the frame record before it stays the duplicate.
 func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{
@@ -199,6 +197,113 @@ func TestBuildTraceKeepsCompletionWithoutUsage(t *testing.T) {
 	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat glm-test")
 	_, ok := chat.Attributes().Get("gen_ai.usage.input_tokens")
 	require.False(t, ok, "no usage was reported, so none should be invented")
+}
+
+// TestUsageLessCallYieldsChatSpan covers a provider that reports no usage at all.
+// Codex 0.163.0 then logs only the SSE frame record (duration_ms, no token
+// counts, no ttft_ms), so that record is the model call's sole record and must
+// produce the chat span -- without inventing usage keys.
+func TestUsageLessCallYieldsChatSpan(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": 100}),
+			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 38,
+			}),
+		},
+	}
+	traces := mustBuildTrace(t, turn, "completed")
+	require.Equal(t, 2, traces.SpanCount()) // root + one chat span
+	chat := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat gpt-test")
+	require.Equal(t, "chat", attrString(t, chat, "gen_ai.operation.name"))
+	require.Equal(t, "gpt-test", attrString(t, chat, "gen_ai.request.model"))
+	require.Equal(t, "codex.sse_event", attrString(t, chat, "coding_agent.source.event"))
+	for _, m := range tokenUsageAttrs {
+		_, ok := chat.Attributes().Get(m.dest)
+		require.False(t, ok, "%s must stay absent when the provider reported no usage", m.dest)
+	}
+	_, hasTTFT := chat.Attributes().Get("gen_ai.response.time_to_first_chunk")
+	require.False(t, hasTTFT, "the frame record carries no ttft_ms")
+	// The span still gets bounds: the preceding api_request supplies the start.
+	require.True(t, base.Add(900*time.Millisecond).Equal(chat.StartTimestamp().AsTime()))
+	require.True(t, base.Add(2*time.Second).Equal(chat.EndTimestamp().AsTime()))
+}
+
+// TestMixedUsageSequenceEmitsOneChatSpanPerCall covers a turn whose first model
+// call reported no usage and whose second did. Each call gets exactly one chat
+// span: the usage-less one from its frame record, the other from its
+// usage-bearing record, with the frame record shadowed.
+func TestMixedUsageSequenceEmitsOneChatSpanPerCall(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(3 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": 100}),
+			testEvent("codex.sse_event", base.Add(1500*time.Millisecond), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 38,
+			}),
+			testEvent("codex.api_request", base.Add(2*time.Second), map[string]any{"duration_ms": 100}),
+			testEvent("codex.sse_event", base.Add(2500*time.Millisecond), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 41,
+			}),
+			testEvent("codex.sse_event", base.Add(2500*time.Millisecond), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "ttft_ms": 30, "input_token_count": 10, "output_token_count": 4,
+			}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 3, spans.Len()) // root + one chat span per call
+	usageLess, usageBearing := spans.At(1), spans.At(2)
+	require.Equal(t, "chat gpt-test", usageLess.Name())
+	require.Equal(t, "chat gpt-test", usageBearing.Name())
+	require.NotEqual(t, usageLess.SpanID(), usageBearing.SpanID())
+	_, hasUsage := usageLess.Attributes().Get("gen_ai.usage.input_tokens")
+	require.False(t, hasUsage)
+	require.Equal(t, int64(10), attrInt(t, usageBearing, "gen_ai.usage.input_tokens"))
+	require.True(t, base.Add(900*time.Millisecond).Equal(usageLess.StartTimestamp().AsTime()))
+	require.True(t, base.Add(1900*time.Millisecond).Equal(usageBearing.StartTimestamp().AsTime()))
+}
+
+// TestConsecutiveUsageLessCallsEachGetChatSpan pins that the duplicate rule is
+// adjacency, not "any later usage-bearing record": two usage-less calls in a row
+// are two model calls with two chat spans.
+func TestConsecutiveUsageLessCallsEachGetChatSpan(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 38,
+			}),
+			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 41,
+			}),
+		},
+	}
+	traces := mustBuildTrace(t, turn, "completed")
+	require.Equal(t, 3, traces.SpanCount()) // root + two chat spans
+}
+
+// TestFailedCompletionYieldsNoChatSpan pins that the failed-completion record
+// Codex logs when the response stream errors (only error.message, no duration)
+// still produces no chat span.
+func TestFailedCompletionYieldsNoChatSpan(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind": "response.completed", "error.message": "stream closed before response.completed",
+			}),
+		},
+	}
+	require.Equal(t, 1, mustBuildTrace(t, turn, "completed").SpanCount()) // root only
 }
 
 // TestChatSpanCopiesReasoningEffortAndServiceTier pins the two optional

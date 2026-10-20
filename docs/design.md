@@ -286,8 +286,10 @@ batch; source timestamps still drive span timing.
 
 - Root start/end cover all observed event timestamps and duration-derived starts.
 - Each model call becomes one `chat` span, built from the turn-completion
-  `response.completed` record; the timing-only duplicate skips. A call whose
-  provider reported no usage still gets its span, just without `gen_ai.usage.*`.
+  `response.completed` record; the `duration_ms`-only frame record Codex logs
+  before it is that record's duplicate and skips. When the provider reported no
+  usage Codex logs no turn-completion record at all, so the frame record is the
+  call's only record and supplies the span, just without `gen_ai.usage.*`.
 - The most recent preceding API request supplies the model-call start when present.
 - Each `codex.tool_result` becomes an `execute_tool` span; a failed result
   (`success=false`) sets the span's OTel error status without carrying a

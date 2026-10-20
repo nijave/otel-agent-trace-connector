@@ -311,8 +311,8 @@ func TestEmittedScopeVersionUsesBuildInfo(t *testing.T) {
 // TestConnectorAgainstRealCodexCapture pins the connector to real Codex 0.163.0
 // telemetry captured by the e2e harness (gpt-5.6-luna via OpenCode Go's
 // Responses API, API-key auth). It guards against Codex log-schema drift and,
-// specifically, the timing-only duplicate response.completed that must not
-// become a usage-less chat span. The same shape is emitted by real OpenAI Codex,
+// specifically, the frame-record duplicates of each usage-bearing
+// response.completed that must not double the chat spans. The same shape is emitted by real OpenAI Codex,
 // so this also covers that path. API-key runs carry no user identity, so the
 // fixture synthesizes user.account_id/user.email (and a host.name) to keep the
 // capture_identity mappings covered.
@@ -361,8 +361,9 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	require.False(t, hasModelProvider)
 	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))
 
-	// Every chat span must carry usage: the timing-only duplicate completions
-	// (no token counts) must not produce usage-less chat spans.
+	// Every chat span must carry usage: the capture's completions all report it,
+	// and each call's frame record must stay its duplicate rather than become a
+	// second, usage-less chat span.
 	chatSpans := 0
 	for i := 0; i < spans.Len(); i++ {
 		span := spans.At(i)

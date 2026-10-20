@@ -71,7 +71,8 @@ Event-to-span mapping:
 | Raw log event | Canonical output |
 |---|---|
 | `codex.sse_event` (`event.kind=response.completed`, usage/ttft-bearing) | `chat <model>` span |
-| duplicate timing-only `response.completed` (no `ttft_ms`, no token counts), including a failed completion that carries only `error.message` | dropped |
+| `codex.sse_event` (`event.kind=response.completed`, carrying only `duration_ms`) | duplicate of the same call's usage-bearing record → dropped; the call's only record when the provider reported no usage → `chat <model>` span without usage keys |
+| failed `response.completed` carrying only `error.message` | dropped |
 | `codex.user_prompt` | turn boundary / root source event (content stripped) |
 | `codex.tool_result` | `execute_tool <tool>` span |
 | `codex.api_request`, `codex.startup_phase`, … | root span events (name + timestamp only) |
@@ -90,11 +91,20 @@ Usage depends on the provider. Codex 0.163.0 logs the usage-bearing
 `response.completed` record only when the provider's `response.completed`
 carries a `usage` object. That record always has all six token counts, with 0
 for a detail field (cached, cache-write, reasoning) that the provider omits.
-When the provider sends no `usage`, Codex logs only the timing-only record,
-which the connector drops, so that model call gets no chat span. Codex 0.163.0
+When the provider sends no `usage`, Codex logs only the SSE frame record for
+that call — the record the frame poll writes with Codex-measured `duration_ms`
+— so the connector keeps it as the call's `chat <model>` span, without the keys
+the usage-bearing record alone carries: all six token counts, `ttft_ms`,
+`model_reasoning_effort`, and `service_tier`. Codex emits the frame record
+before the usage-bearing one for the same call, and the connector sees the
+whole turn before building spans, so a frame record is the duplicate of exactly
+the next `response.completed` record in the turn when that record reports the
+call, and a model call in its own right otherwise. Codex 0.163.0
 speaks only the Responses wire API. Sources (rust-v0.163.0, checked
-2026-10-19): [`core/src/client.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/core/src/client.rs#L2572-L2580),
-[`codex-api/src/sse/responses.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/codex-api/src/sse/responses.rs#L119-L145),
+2026-10-19): [`core/src/client.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/core/src/client.rs#L2579-L2580),
+[`otel/src/events/session_telemetry.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/otel/src/events/session_telemetry.rs#L1057-L1146),
+[`codex-api/src/sse/responses.rs` poll site](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/codex-api/src/sse/responses.rs#L553-L561),
+[`codex-api/src/sse/responses.rs` wire types](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/codex-api/src/sse/responses.rs#L119-L145),
 [`model-provider-info/src/lib.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/model-provider-info/src/lib.rs#L107-L111).
 
 Wire drift (audited 2026-10-19 against the `rust-v0.163.0` tag): the pinned
@@ -109,17 +119,17 @@ out of canonical output.
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `input_token_count` | `gen_ai.usage.input_tokens` | mapped |
-| `output_token_count` | `gen_ai.usage.output_tokens` | mapped |
-| `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (0, not absent, when the provider's usage has no `input_tokens_details`) |
-| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (0, not absent, when the provider's usage has no cache-write field; the pinned 0.163.0 capture reports it non-zero — 7924 then 105 across the two completions) |
-| `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (Codex logs the provider's `usage.total_tokens` under this name; the connector never computes a total) |
-| `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (0, not absent, when the provider's usage has no `output_tokens_details`; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
-| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when Codex saw no `response.output_item.added` before the completion — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
-| `model` | `gen_ai.request.model` | mapped (also names the span) |
-| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (the request's effort, not a provider value; absent when neither config nor the model's default sets one — Codex sends an effort of `none` as the string `none`; the pinned 0.163.0 capture carries `low`) |
-| `service_tier` | `coding_agent.request.service_tier` | mapped (the request's tier, not a provider value; absent when the request sets no service tier, as in the pinned 0.163.0 capture) |
-| `duration_ms` | — | dropped (used for span bounds only) |
+| `input_token_count` | `gen_ai.usage.input_tokens` | mapped (absent when the provider reported no usage: then only the frame record exists) |
+| `output_token_count` | `gen_ai.usage.output_tokens` | mapped (absent when the provider reported no usage: then only the frame record exists) |
+| `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (0, not absent, when the provider's usage has no `input_tokens_details`; absent when the provider reported no usage, which leaves only the frame record) |
+| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (0, not absent, when the provider's usage has no cache-write field; the pinned 0.163.0 capture reports it non-zero — 7924 then 105 across the two completions; absent when the provider reported no usage) |
+| `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (Codex logs the provider's `usage.total_tokens` under this name; the connector never computes a total; absent when the provider reported no usage) |
+| `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (0, not absent, when the provider's usage has no `output_tokens_details`; replaces the former vendor `coding_agent.usage.reasoning_tokens`; absent when the provider reported no usage) |
+| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when Codex saw no `response.output_item.added` before the completion, and absent when the provider reported no usage, because the frame record that then stands in for the call carries no `ttft_ms`; either `ttft_ms` or a token count identifies a record as the call's usage-bearing one) |
+| `model` | `gen_ai.request.model` | mapped (also names the span; the frame record carries it too) |
+| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (the request's effort, not a provider value; absent when neither config nor the model's default sets one — Codex sends an effort of `none` as the string `none`; the pinned 0.163.0 capture carries `low`; absent when the provider reported no usage, because the frame record carries no effort field) |
+| `service_tier` | `coding_agent.request.service_tier` | mapped (the request's tier, not a provider value; absent when the request sets no service tier, as in the pinned 0.163.0 capture; absent when the provider reported no usage, because the frame record carries no tier field) |
+| `duration_ms` | — | dropped (used for span bounds only; the only key that identifies the frame record) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
 | `slug`, `originator`, `terminal.type`, `auth_mode`, `error.message` | — | dropped |
 
@@ -252,7 +262,7 @@ exported, pass through a metrics pipeline unmodified.
 - Codex source at tag `rust-v0.163.0` (commit `83086188`), checked 2026-10-19:
   https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs (`otel/README.md`, `otel/src/provider.rs`,
   `otel/src/events/session_telemetry.rs`, `otel/src/tool_result.rs`,
-  `config/src/types.rs`, `config/src/loader/mod.rs`, `core/src/otel_init.rs`,
+  `codex-api/src/sse/responses.rs`, `config/src/types.rs`, `config/src/loader/mod.rs`, `core/src/otel_init.rs`,
   `core/src/client.rs`)
 - Codex 0.163.0 release notes: https://github.com/openai/codex/releases/tag/rust-v0.163.0 (checked 2026-10-19)
 - Codex advanced configuration docs: https://developers.openai.com/codex/config-advanced (project-local `otel` ignored; checked 2026-10-19)
