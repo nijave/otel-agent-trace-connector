@@ -7,9 +7,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -43,14 +45,21 @@ func TestFixtureReplayMatchesCanonicalFixture(t *testing.T) {
 func TestFixtureReplayShuffleStable(t *testing.T) {
 	plain := replayFixture(t)
 
-	// Reverse span order within the scope and re-run through the edge.
+	// Reverse span order within the scope and re-run through the edge. The
+	// shuffled input keeps the fixture's own resource and scope, so only the
+	// span order differs from the replay above.
 	source := loadFixtureTraces(t)
-	spans := source.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	var reversed []ptrace.Span
-	for i := spans.Len() - 1; i >= 0; i-- {
-		reversed = append(reversed, spans.At(i))
+	srcRS := source.ResourceSpans().At(0)
+	shuffledInput := ptrace.NewTraces()
+	rs := shuffledInput.ResourceSpans().AppendEmpty()
+	srcRS.Resource().CopyTo(rs.Resource())
+	ss := rs.ScopeSpans().AppendEmpty()
+	srcRS.ScopeSpans().At(0).Scope().CopyTo(ss.Scope())
+	srcSpans := srcRS.ScopeSpans().At(0).Spans()
+	for i := srcSpans.Len() - 1; i >= 0; i-- {
+		srcSpans.At(i).CopyTo(ss.Spans().AppendEmpty())
 	}
-	shuffled := normalizeOne(t, makeTraces(reversed...))
+	shuffled := normalizeOne(t, shuffledInput)
 
 	a, err := (&ptrace.JSONMarshaler{}).MarshalTraces(plain)
 	require.NoError(t, err)
@@ -59,15 +68,35 @@ func TestFixtureReplayShuffleStable(t *testing.T) {
 	require.JSONEq(t, string(a), string(b))
 }
 
-// Guard the fixture's own hygiene: the raw fixture really carries content
-// keys, so the canonical comparison proves stripping rather than absence.
+// Guard the fixture's own hygiene: the raw fixture really carries the wire's
+// content keys, so the canonical replay proves stripping rather than absence.
 func TestRawFixtureCarriesContentThatOutputMustNot(t *testing.T) {
-	spans := loadFixtureTraces(t).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
-	var sawContent bool
-	for i := 0; i < spans.Len(); i++ {
-		if _, ok := spans.At(i).Attributes().Get("gen_ai.input.messages"); ok {
-			sawContent = true
+	contentKeys := []string{"gen_ai.input.messages", "gen_ai.output.messages", "gen_ai.tool.definitions"}
+	rawSpans := loadFixtureTraces(t).ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	for _, key := range contentKeys {
+		var found bool
+		for i := 0; i < rawSpans.Len() && !found; i++ {
+			_, found = rawSpans.At(i).Attributes().Get(key)
 		}
+		require.Truef(t, found, "raw fixture must carry %s so its stripping is proven", key)
 	}
-	require.True(t, sawContent)
+
+	// Canonical output is allowlist-only: neither the content keys nor any
+	// vendor (lmnr., gen_ai.span.) key may survive the replay.
+	var leaked []string
+	for _, span := range allSpansOf(replayFixture(t)) {
+		span.Attributes().Range(func(key string, _ pcommon.Value) bool {
+			if strings.HasPrefix(key, "lmnr.") || strings.HasPrefix(key, "gen_ai.span.") {
+				leaked = append(leaked, key)
+				return true
+			}
+			for _, banned := range contentKeys {
+				if key == banned {
+					leaked = append(leaked, key)
+				}
+			}
+			return true
+		})
+	}
+	require.Empty(t, leaked, "vendor and content keys must not survive normalization")
 }
