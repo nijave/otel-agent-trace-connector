@@ -95,7 +95,7 @@ Scope `opentelemetry.util.genai.handler` (and sub-scopes below
 `opentelemetry.util.genai`). Spans emitted through `TelemetryHandler` follow
 semconv v1.37.0. openai-v2 2.4b0 chat spans arrive here with the chat keys
 listed above. The pinned capture carries none of `server.address` or
-`server.port`, against openai 3.3.1. Direct util-genai users can also set
+`server.port`, against openai 3.35.1. Direct util-genai users can also set
 the keys below:
 
 | Raw key | Span type | Canonical key | Status |
@@ -357,6 +357,8 @@ metrics for any emitter.
   (verified 2026-10-19)
 - Traces attribute matrices: the pinned 2026-10-19 e2e captures (Copilot CLI
   1.0.100, strands-agents 1.61.1, openai-v2 2.4b0 with util-genai 1.1b0 and
-  openai 3.3.1), committed as `internal/genai/testdata/*-raw.otlp.json`
+  openai 3.35.1), committed as `internal/genai/testdata/*-raw.otlp.json`;
+  the openai pin is in `e2e/openai-adhoc/requirements.txt` on main
+  (https://github.com/nijave/otel-agent-trace-connector/blob/deac347387e1d290f3bfc7b74be2927c6122d066/e2e/openai-adhoc/requirements.txt)
 - `docs/otel-signals.md` (refreshed 2026-08-29)
 - `docs/metrics.md` (refreshed 2026-08-21)
