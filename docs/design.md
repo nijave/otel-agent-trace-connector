@@ -703,7 +703,8 @@ Spans classify by the Laminar span type: `LLM` becomes `chat <model>`,
 span becomes the `invoke_agent openhands` root. Every other span in the
 group drops from canonical output, but still widens the root's time
 envelope for its trace ID. Kept children reparent under the root; a tool
-call and its result share a `tool_call_id` and dedupe to one span. The
+call and its result share a `tool_call_id`, which both dedupes them to one
+span and maps onto `gen_ai.tool.call.id`. The
 SDK's `llm.<model>` wrapper span around each call also drops, because lmnr
 nests the actual `litellm.completion` span inside it and the wire would
 otherwise carry one call twice; a wrapper with no single inner LLM span in
@@ -717,9 +718,9 @@ exports can arrive before their `conversation` root ends, so such fragments
 get a synthetic root whose span ID derives from SHA-256 of the trace ID.
 Delegates run their own sessions, so they arrive as sibling traces sharing
 the conversation id rather than as descendants. The delegate metadata flag
-serves claiming only, and the linkage detail (task id, subagent type,
-parent session id, tool call id) stays in the raw pipeline; downstream
-consumers reconstruct delegation through the shared conversation id.
+serves claiming only, and the remaining linkage detail (task id, subagent
+type, parent session id) stays in the raw pipeline; downstream consumers
+reconstruct delegation through the shared conversation id.
 
 ### Usage and content
 
@@ -727,7 +728,11 @@ Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*` —
 input, output, total, and cache read/creation input tokens — each key only
 when the wire carries it; the cache counters the SDK writes on the folded
 wrapper fill in only when the inner span lacks them, so no call's cache
-tokens land twice. Streamed completions carry no token usage
+tokens land twice. The request's output limit
+(`gen_ai.request.max_tokens`, whichever of `max_tokens`,
+`max_completion_tokens`, or `max_output_tokens` the SDK sent) and its
+reasoning effort copy onto their canonical keys, and are absent when the
+wire omits them. Streamed completions carry no token usage
 upstream, so a chat span may carry no usage at all. The wire reports no
 cost and no reasoning-token counts on spans.
 

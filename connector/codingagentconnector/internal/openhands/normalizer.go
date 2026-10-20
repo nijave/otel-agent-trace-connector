@@ -452,6 +452,12 @@ func normalizeChat(wire, span ptrace.Span) {
 	if effort := firstString(wireAttrs, "gen_ai.request.reasoning_effort"); effort != "" {
 		attrs.PutStr("gen_ai.request.reasoning.level", effort)
 	}
+	// max_tokens is the same key on both sides: lmnr copies it from whichever
+	// output-limit kwarg the SDK sent (max_tokens, max_completion_tokens, or
+	// max_output_tokens), so the wired count copies verbatim.
+	if maxTokens, ok := wireAttrs.Get("gen_ai.request.max_tokens"); ok && maxTokens.Type() == pcommon.ValueTypeInt {
+		attrs.PutInt("gen_ai.request.max_tokens", maxTokens.Int())
+	}
 	if id := firstString(wireAttrs, "gen_ai.response.id"); id != "" {
 		attrs.PutStr("gen_ai.response.id", id)
 	}
@@ -473,6 +479,12 @@ func normalizeTool(wire, span ptrace.Span) {
 	tool := wire.Name()
 	attrs.PutStr("gen_ai.tool.name", tool)
 	span.SetName("execute_tool " + tool)
+	// The SDK's tool call id rides Laminar association metadata; the same key
+	// drives the edge's call/result dedupe, so a record that reaches output
+	// always carries it when the wire wrote one.
+	if id := firstString(wire.Attributes(), attrToolCallID); id != "" {
+		attrs.PutStr("gen_ai.tool.call.id", id)
+	}
 }
 
 func copySpanMetadata(wire, span ptrace.Span) {
