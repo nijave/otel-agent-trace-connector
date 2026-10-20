@@ -616,17 +616,17 @@ func TestOpenHandsCanonicalFixtureRejectsContent(t *testing.T) {
 
 func TestStrandsCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "genai", "testdata", "strands-canonical.otlp.json")
-	require.NoError(t, validateCanonicalFile(path, "strands-otel-1787880919-619255", "strands"))
+	require.NoError(t, validateCanonicalFile(path, "strands-otel-1792453625-3788981", "strands"))
 }
 
 func TestOpenAIAdhocCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "genai", "testdata", "openai-adhoc-canonical.otlp.json")
-	require.NoError(t, validateCanonicalFile(path, "openai-otel-1787880965-636343", "openai_adhoc"))
+	require.NoError(t, validateCanonicalFile(path, "openai-otel-1792453727-3818240", "openai_adhoc"))
 }
 
 func TestCopilotCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "genai", "testdata", "copilot-cli-canonical.otlp.json")
-	require.NoError(t, validateCanonicalFile(path, "copilot-byok-1787498490", "copilot"))
+	require.NoError(t, validateCanonicalFile(path, "copilot-otel-1792453596-3784119", "copilot"))
 }
 
 func TestCodexCanonicalFixtureValidates(t *testing.T) {
