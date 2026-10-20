@@ -345,6 +345,136 @@ func TestGenAINormalizerMapsStrandsTTFTOntoCanonicalKey(t *testing.T) {
 	require.False(t, exists, "the legacy server key must not survive normalization")
 }
 
+// TestGenAINormalizerMapsCopilotChatTTFTOntoCanonicalKey pins the VS Code
+// Copilot Chat spelling onto the same canonical key as Strands' legacy server
+// key: the wire carries milliseconds, canonical stores fractional seconds.
+func TestGenAINormalizerMapsCopilotChatTTFTOntoCanonicalKey(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "github.copilot", "chat gpt-5.2")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutInt("copilot_chat.time_to_first_token", 420)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
+	require.True(t, ok, "the VS Code Copilot Chat TTFT must land on the canonical key")
+	require.Equal(t, pcommon.ValueTypeDouble, value.Type())
+	require.InDelta(t, 0.42, value.Double(), 1e-9)
+	_, exists := out.Attributes().Get("copilot_chat.time_to_first_token")
+	require.False(t, exists, "the legacy chat-namespace key must not survive normalization")
+}
+
+// TestGenAINormalizerCoercesLegacyTTFTValues pins the connector-wide coercion
+// semantics on both legacy TTFT spellings: doubles truncate to milliseconds
+// and numeric strings parse, so a producer that widens or stringifies the
+// duration still maps instead of losing the measurement. The canonical key
+// wins when present; a genuinely malformed value maps nothing.
+func TestGenAINormalizerCoercesLegacyTTFTValues(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		scope     string
+		legacyKey string
+		put       func(attrs pcommon.Map)
+		want      float64
+		wantOK    bool
+	}{
+		{
+			name:      "double milliseconds",
+			scope:     "strands.telemetry.tracer",
+			legacyKey: "gen_ai.server.time_to_first_token",
+			put:       func(attrs pcommon.Map) { attrs.PutDouble("gen_ai.server.time_to_first_token", 250.7) },
+			want:      0.25,
+			wantOK:    true,
+		},
+		{
+			name:      "numeric string milliseconds",
+			scope:     "github.copilot",
+			legacyKey: "copilot_chat.time_to_first_token",
+			put:       func(attrs pcommon.Map) { attrs.PutStr("copilot_chat.time_to_first_token", "420") },
+			want:      0.42,
+			wantOK:    true,
+		},
+		{
+			name:      "malformed string",
+			scope:     "github.copilot",
+			legacyKey: "copilot_chat.time_to_first_token",
+			put:       func(attrs pcommon.Map) { attrs.PutStr("copilot_chat.time_to_first_token", "250ms") },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			span := newGroup(input, tc.scope, "chat gpt-5.2")
+			span.Attributes().PutStr("gen_ai.operation.name", "chat")
+			tc.put(span.Attributes())
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+			_, exists := out.Attributes().Get(tc.legacyKey)
+			require.False(t, exists, "the legacy key must not survive normalization")
+			value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
+			if !tc.wantOK {
+				require.False(t, ok, "a malformed duration maps nothing")
+				return
+			}
+			require.True(t, ok)
+			require.InDelta(t, tc.want, value.Double(), 1e-9)
+		})
+	}
+}
+
+// TestGenAINormalizerKeepsCanonicalTTFTOverLegacySpelling pins the dedupe: an
+// emitter that already stamped the canonical key keeps its value, and the
+// legacy spelling still drops.
+func TestGenAINormalizerKeepsCanonicalTTFTOverLegacySpelling(t *testing.T) {
+	input := ptrace.NewTraces()
+	span := newGroup(input, "github.copilot", "chat gpt-5.2")
+	span.Attributes().PutStr("gen_ai.operation.name", "chat")
+	span.Attributes().PutDouble("gen_ai.response.time_to_first_chunk", 1.5)
+	span.Attributes().PutInt("copilot_chat.time_to_first_token", 420)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	value, ok := out.Attributes().Get("gen_ai.response.time_to_first_chunk")
+	require.True(t, ok)
+	require.InDelta(t, 1.5, value.Double(), 1e-9, "the canonical key wins over the legacy spelling")
+	_, exists := out.Attributes().Get("copilot_chat.time_to_first_token")
+	require.False(t, exists)
+}
+
+// TestGenAINormalizerMapsLegacyReasoningTokens pins VS Code Copilot Chat's
+// legacy reasoning counter onto the current registry key when only the legacy
+// spelling arrives, and the dedupe when both arrive.
+func TestGenAINormalizerMapsLegacyReasoningTokens(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		withDotted    bool
+		wantCanonical int64
+	}{
+		{name: "legacy only", wantCanonical: 25},
+		{name: "dotted wins", withDotted: true, wantCanonical: 40},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			span := newGroup(input, "github.copilot", "chat gpt-5.2")
+			span.Attributes().PutStr("gen_ai.operation.name", "chat")
+			span.Attributes().PutInt("gen_ai.usage.reasoning_tokens", 25)
+			if tc.withDotted {
+				span.Attributes().PutInt("gen_ai.usage.reasoning.output_tokens", 40)
+			}
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+			require.Equal(t, tc.wantCanonical, attrInt(t, out, "gen_ai.usage.reasoning.output_tokens"))
+			_, exists := out.Attributes().Get("gen_ai.usage.reasoning_tokens")
+			require.False(t, exists, "the legacy reasoning counter must not survive normalization")
+		})
+	}
+}
+
 func TestGenAINormalizerRemapsStrandsUnderscoreUsageKeys(t *testing.T) {
 	input := ptrace.NewTraces()
 	span := newGroup(input, "strands.telemetry.tracer", "chat glm-4.7")
