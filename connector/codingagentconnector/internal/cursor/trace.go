@@ -88,6 +88,11 @@ func putRootAttributes(attrs pcommon.Map, burst *burstState, events []Event, cap
 		if v := identityString(burst.resource, "cursor.user.id"); v != "" {
 			attrs.PutStr("coding_agent.user.id", v)
 		}
+		// The wire sends the email as a string, present only alongside
+		// cursor.user.id and withheld for Privacy Mode (Legacy) teams.
+		if v := StringValue(burst.resource["cursor.user.email"]); v != "" {
+			attrs.PutStr("coding_agent.user.email", v)
+		}
 		if v := identityString(burst.resource, "cursor.team.id"); v != "" {
 			attrs.PutStr("coding_agent.team.id", v)
 		}

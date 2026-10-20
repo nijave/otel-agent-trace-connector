@@ -50,6 +50,7 @@ func testResourceRaw() map[string]any {
 	return map[string]any{
 		"service.name": "cursor", "service.version": "1.16.5",
 		"cursor.team.id": int64(4242), "cursor.surface": "cli", "cursor.entrypoint": "cli", "cursor.user.id": int64(99),
+		"cursor.user.email": "user@example.com",
 	}
 }
 
@@ -346,6 +347,7 @@ func TestBuildTraceCapturesIdentity(t *testing.T) {
 	require.NoError(t, err)
 	root := spansByName(traces)["invoke_agent cursor"][0]
 	require.Equal(t, "99", stringAttrOn(t, root, "coding_agent.user.id"))
+	require.Equal(t, "user@example.com", stringAttrOn(t, root, "coding_agent.user.email"))
 	require.Equal(t, "4242", stringAttrOn(t, root, "coding_agent.team.id"))
 
 	off, err := buildTrace(burstForTest(), "quiet", "0.1.0", false)
@@ -353,6 +355,8 @@ func TestBuildTraceCapturesIdentity(t *testing.T) {
 	rootOff := spansByName(off)["invoke_agent cursor"][0]
 	_, hasUser := rootOff.Attributes().Get("coding_agent.user.id")
 	require.False(t, hasUser)
+	_, hasEmail := rootOff.Attributes().Get("coding_agent.user.email")
+	require.False(t, hasEmail)
 	_, hasTeam := rootOff.Attributes().Get("coding_agent.team.id")
 	require.False(t, hasTeam)
 }

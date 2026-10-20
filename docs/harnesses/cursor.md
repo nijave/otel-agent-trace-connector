@@ -194,7 +194,7 @@ raw key that would map there).
 | `cursor.surface`, `cursor.entrypoint` (resource) | — | dropped |
 | `cursor.user.id` (resource) | `coding_agent.user.id` | mapped (absent when `capture_identity` is off or the resource has no user, e.g. a cloud-agent run started with a team API key or service account) |
 | `cursor.team.id` (resource) | `coding_agent.team.id` | mapped (absent when `capture_identity` is off) |
-| `cursor.user.email` (resource) | — | dropped (the edge does not map it onto the canonical `coding_agent.user.email`) |
+| `cursor.user.email` (resource) | `coding_agent.user.email` | mapped (absent when `capture_identity` is off, when the resource carries no user — a team API-key or service-account run sends no user attributes at all — or when the member has no email: the wire withholds it for teams on Privacy Mode (Legacy)) |
 | `cursor.user.account_id` (resource) | — | dropped |
 | turn-total usage rollup (summed token counts on the root) | — | dropped (usage lives on chat spans only; sum them for turn totals) |
 | connector close reason (`quiet`/`timeout`/`evicted`/`shutdown`) | — | dropped (was **connector-derived**, never a model stop reason; timeouts surface as root span Status Error and every close shows up in the `otelcol_coding_agent_turns_emitted` metric's `finish_reason` label) |
