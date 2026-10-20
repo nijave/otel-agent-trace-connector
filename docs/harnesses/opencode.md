@@ -104,15 +104,16 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.response.msToFirstChunk` | `gen_ai.response.time_to_first_chunk` | mapped (fractional ms → seconds, double; absent when the request errors before the first chunk) |
 | `session.id` | — | dropped on this span (the parent `invoke_agent` maps it to `gen_ai.conversation.id`) |
 | `gen_ai.system` | — | dropped (`gen_ai.provider.name` comes from `ai.model.provider` instead) |
-| `gen_ai.request.max_tokens` | — | dropped today; candidate future mapping (`ai.settings.maxOutputTokens` duplicates it) |
+| `gen_ai.request.max_tokens` | `gen_ai.request.max_tokens` | mapped (already canonical; absent when the caller pins no output-token cap) |
 | `gen_ai.request.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
-| `gen_ai.response.finish_reasons` | — | dropped (deliberate: wire value reflects the SDK's finish event, not a normalized stop-reason set) |
-| `gen_ai.response.id` | — | dropped (deliberate) |
-| `gen_ai.response.model` | — | dropped |
-| `ai.response.finishReason` | — | dropped |
+| `gen_ai.response.finish_reasons` | `gen_ai.response.finish_reasons` | mapped (verbatim wire array, one element per step; values are the SDK's finish events — `stop`, `tool-calls`, `error`, … — not a normalized stop-reason set; absent when the request fails or the stream is cancelled before the SDK records its finish event) |
+| `gen_ai.response.id` | `gen_ai.response.id` | mapped (verbatim; absent when the provider's stream reports no response id) |
+| `gen_ai.response.model` | `gen_ai.response.model` | mapped (verbatim; absent when the provider's stream reports no response model) |
+| `ai.response.finishReason` | — | dropped (duplicates `gen_ai.response.finish_reasons`) |
 | `ai.response.msToFinish` | — | dropped |
 | `ai.response.avgOutputTokensPerSecond` | — | dropped |
-| `ai.response.id`, `ai.response.model`, `ai.response.timestamp` | — | dropped |
+| `ai.response.id`, `ai.response.model` | — | dropped (duplicate the `gen_ai.response.*` keys) |
+| `ai.response.timestamp` | — | dropped |
 | `ai.response.toolCalls`, `ai.response.providerMetadata` | — | dropped |
 | `ai.response.text`, `ai.response.reasoning` | — | dropped (completion content) |
 | `ai.request.headers.*` — including `x-opencode-session`, `x-opencode-session-id`, `x-opencode-client`, `x-opencode-project`, `x-opencode-request`, `User-Agent` | — | dropped (per-request routing/transport headers) |
@@ -121,7 +122,8 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.telemetry.metadata.userId` | — | dropped |
 | `ai.telemetry.metadata.sessionId` | — | dropped |
 | `ai.model.id` | — | dropped |
-| `ai.settings.maxOutputTokens`, `ai.settings.maxRetries` | — | dropped |
+| `ai.settings.maxOutputTokens` | — | dropped (duplicates `gen_ai.request.max_tokens`) |
+| `ai.settings.maxRetries` | — | dropped |
 | `ai.settings.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
 | `ai.usage.inputTokenDetails.noCacheTokens` | — | dropped |
 | `ai.usage.inputTokenDetails.cacheReadTokens` | — | dropped (redundant duplicate of `ai.usage.cachedInputTokens`) |
@@ -129,6 +131,11 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 
 The edge drops the span events (`ai.stream.firstChunk`, `ai.stream.finish`);
 first-chunk latency survives via the `msToFirstChunk` mapping above.
+
+The response identity, finish reasons, and requested output cap above are
+copied from the wire's own canonical keys; the AI SDK's legacy `ai.response.*`
+/ `ai.settings.maxOutputTokens` spellings carry the same values in the same
+`setAttributes` call ([Sources](#sources)) and stay off canonical output.
 
 Capture shape: OpenCode also makes an unrequested model call to generate the
 session title, so a pinned capture holds two model conversations — the title
@@ -141,7 +148,7 @@ roots (the 1.19.3 fixture has two chat spans and one `execute_tool bash`).
 |---|---|---|
 | `ai.toolCall.name` | `gen_ai.tool.name` | mapped (a call without it emits as bare `execute_tool` with no key) |
 | `ai.model.provider` | `gen_ai.provider.name` | mapped (only when non-empty; the pinned capture's tool spans carry no provider) |
-| `ai.toolCall.id` | — | dropped (not mapped today, though `gen_ai.tool.call.id` is in the canonical vocabulary) |
+| `ai.toolCall.id` | `gen_ai.tool.call.id` | mapped (when non-empty; AI SDK 6.0.168 sets it on every tool-call span) |
 | `ai.toolCall.args` | — | dropped (tool input content) |
 | `ai.toolCall.result` | — | dropped (tool output content) |
 | `ai.operationId`, `ai.telemetry.functionId` | — | dropped |
@@ -230,6 +237,22 @@ is native to OpenCode itself.
     — `experimental.openTelemetry` config key
   - [`packages/opencode/src/session/llm/AGENTS.md`](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/opencode/src/session/llm/AGENTS.md#L86-L89)
     — providers the native LLM runtime supports
+- Vercel AI SDK `ai` v6.0.168 (the version OpenCode 1.19.3 pins,
+  [`package.json`](https://github.com/anomalyco/opencode/blob/v1.19.3/package.json#L67)),
+  checked 2026-10-19:
+  - [`packages/ai/src/generate-text/stream-text.ts`](https://github.com/vercel/ai/blob/ai@6.0.168/packages/ai/src/generate-text/stream-text.ts#L1642-L1652)
+    — the `ai.streamText.doStream` request attributes, including
+    `gen_ai.request.max_tokens` from `callSettings.maxOutputTokens`
+  - [same file, response attributes](https://github.com/vercel/ai/blob/ai@6.0.168/packages/ai/src/generate-text/stream-text.ts#L1943-L1980)
+    — `gen_ai.response.finish_reasons` as a one-element array,
+    `gen_ai.response.id` / `gen_ai.response.model` from the provider's stream
+    response, alongside the legacy `ai.response.finishReason` / `.id` /
+    `.model` twins
+  - [`packages/ai/src/generate-text/execute-tool-call.ts`](https://github.com/vercel/ai/blob/ai@6.0.168/packages/ai/src/generate-text/execute-tool-call.ts#L88-L89)
+    — `ai.toolCall.id` on every tool-call span
+  - [`packages/ai/src/telemetry/select-telemetry-attributes.ts`](https://github.com/vercel/ai/blob/ai@6.0.168/packages/ai/src/telemetry/select-telemetry-attributes.ts#L30)
+    — undefined attribute values never reach the span, so an unset
+    `maxOutputTokens` leaves `gen_ai.request.max_tokens` absent
 - OpenCode v1.4.5 release notes (2026-04-15):
   https://github.com/anomalyco/opencode/releases/tag/v1.4.5 and
   https://github.com/anomalyco/opencode/pull/22526 — first release exporting
