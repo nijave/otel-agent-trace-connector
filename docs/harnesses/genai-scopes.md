@@ -146,7 +146,7 @@ pre-rename variants remap onto them, and no duplicate survives.
 | `gen_ai.usage.cache_read_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_read.input_tokens` | mapped (underscore variant, default mode only; dedupe maps it only when the canonical spelling is absent, which never happens in 1.61.1) |
 | `gen_ai.usage.cache_write_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (underscore variant, default mode only; Strands never sends the canonical spelling, so in default mode this variant populates the key) |
 | `gen_ai.usage.cache_creation.input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (pre-rename dotted spelling; remaps only when the canonical key is absent, then drops — the underscore write variant fills it first in default mode; under `gen_ai_latest_experimental` this is the only source; on `chat` only when the model reports cache-write usage) |
-| `gen_ai.server.time_to_first_token` | chat | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; the legacy key drops after the copy; absent when the chat ends in an exception or the model reports no time-to-first-byte) |
+| `gen_ai.server.time_to_first_token` | chat | `gen_ai.response.time_to_first_chunk` | mapped (milliseconds → seconds, double; double or numeric-string values coerce, truncating fractional milliseconds; the legacy key drops after the copy; absent when the chat ends in an exception or the model reports no time-to-first-byte) |
 | `gen_ai.server.request.duration` | chat | — | dropped (only when the model reports latency; absent in the pinned capture) |
 | `gen_ai.event.start_time` / `end_time` | all | same | kept |
 | `gen_ai.request.model` | chat, invoke_agent | `gen_ai.request.model` | kept |
@@ -193,12 +193,13 @@ vocabulary, so they drop.
 | `gen_ai.request.reasoning.level` | chat | same | kept (Copilot CLI since 1.0.64, only when the user sets a reasoning effort; absent in the pinned capture) |
 | `gen_ai.response.finish_reasons` | chat, invoke_agent | same | kept |
 | `gen_ai.response.id` / `model` | chat | same | kept (VS Code Copilot Chat also stamps `gen_ai.response.model` on `invoke_agent`) |
-| `gen_ai.response.time_to_first_chunk` | chat | `gen_ai.response.time_to_first_chunk` | kept (seconds, double; Copilot CLI streaming requests only; VS Code Copilot Chat sends `copilot_chat.time_to_first_token` instead, which drops) |
+| `gen_ai.response.time_to_first_chunk` | chat | `gen_ai.response.time_to_first_chunk` | kept (seconds, double; Copilot CLI streaming requests only; VS Code Copilot Chat sends `copilot_chat.time_to_first_token` instead, which maps onto this key) |
+| `copilot_chat.time_to_first_token` | chat | `gen_ai.response.time_to_first_chunk` | mapped (VS Code Copilot Chat only; milliseconds → seconds, double, coerced the same way as the Strands legacy key; the legacy key drops after the copy and the canonical key wins when present; absent when the call is not streamed or no SSE token arrives before the response completes) |
 | `gen_ai.usage.input_tokens` / `output_tokens` | chat, invoke_agent | same | kept |
 | `gen_ai.usage.cache_read.input_tokens` | chat, invoke_agent | same | kept (only on requests that hit prompt cache; absent on `invoke_agent` in the pinned 1.0.100 capture, whose root carries none) |
 | `gen_ai.usage.cache_creation.input_tokens` / `cache_write.input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (the pre-rename `cache_creation` spelling both surfaces document remaps onto the current registry key; a raw `cache_write` spelling already matches canonical and passes through; absent when the wire reports no cache writes, as in the pinned capture) |
 | `gen_ai.usage.reasoning.output_tokens` | chat, invoke_agent | same | kept (only when the model reports reasoning tokens for that turn, and absent on `invoke_agent` when the producer does not sum them — the pinned 1.0.100 capture carries it on chat only) |
-| `gen_ai.usage.reasoning_tokens` | chat | — | dropped (VS Code Copilot Chat legacy spelling, dual-emitted beside `gen_ai.usage.reasoning.output_tokens`; not a canonical usage key) |
+| `gen_ai.usage.reasoning_tokens` | chat | `gen_ai.usage.reasoning.output_tokens` | mapped (VS Code Copilot Chat legacy spelling, usually dual-emitted beside the dotted key, which then wins; the legacy key drops after the copy, so it populates the canonical key only when the dotted one is absent) |
 | `gen_ai.agent.id` / `agent.version` | invoke_agent | same | kept (absent when the producer does not stamp them: the pinned 1.0.100 CLI capture omits both, 1.0.80 stamped `github.copilot.default`) |
 | `gen_ai.agent.description` | invoke_agent | — | dropped |
 | `gen_ai.tool.call.id` / `gen_ai.tool.name` / `gen_ai.tool.type` | execute_tool | same | kept |
@@ -216,7 +217,7 @@ vocabulary, so they drop.
 | `github.copilot.hook.decision` / `duration` / `tool_names` | execute_hook | — | dropped |
 | `github.copilot.initiator` | chat | — | dropped (names the turn's initiator — `user` or `agent`) |
 | `process.executable.name` / `process.exit.code` | execute_tool | — | dropped (process bookkeeping for the tool call, not tool identity) |
-| `copilot_chat.*` | invoke_agent, chat, execute_hook | — | dropped (VS Code Copilot Chat legacy namespace, e.g. `repo.remote_url`, `turn_count`, `time_to_first_token`, `hook_input`) |
+| `copilot_chat.*` | invoke_agent, chat, execute_hook | — | dropped (VS Code Copilot Chat legacy namespace, e.g. `repo.remote_url`, `turn_count`, `hook_input`; `time_to_first_token` is the one member that maps, onto `gen_ai.response.time_to_first_chunk`) |
 | `user.name` | invoke_agent | — | dropped (VS Code Copilot Chat identity capture) |
 | `enduser.pseudo.id` | invoke_agent | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent on other span types) |
 | span events (e.g. `github.copilot.user.message`, `session.usage_info`, `session.shutdown`, `hook.start`, `sandbox.enforcement_state`, `exception`) | invoke_agent, chat, execute_tool | event names survive, attributes stripped to the vocabulary | kept as bare events (`session.usage_info` carries `github.copilot.current_tokens` / `token_limit` / `messages_length`, which drop) |
@@ -229,8 +230,8 @@ Across all four emitters there is no raw source for:
 |---|---|---|
 | `gen_ai.usage.total_tokens` | openai_v2, util-genai, copilot | not provided (Strands provides it) |
 | `gen_ai.usage.cache_write.input_tokens` | openai_v2 | not provided (util-genai and Copilot can emit the pre-rename `cache_creation` spelling, which maps; Strands provides the underscore variant; the pinned Copilot capture carries none) |
-| `gen_ai.usage.reasoning.output_tokens` | openai_v2, strands | not provided (Copilot provides it; util-genai can when the instrumentation sets it) |
-| `gen_ai.response.time_to_first_chunk` | openai_v2 | not provided (openai-v2 2.4b0 records no TTFT); util-genai provides it through its shared stream wrappers; Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) |
+| `gen_ai.usage.reasoning.output_tokens` | openai_v2, strands | not provided (Copilot provides it — directly, or via the legacy `reasoning_tokens` spelling this edge maps; util-genai can when the instrumentation sets it) |
+| `gen_ai.response.time_to_first_chunk` | openai_v2 | not provided (openai-v2 2.4b0 records no TTFT); util-genai provides it through its shared stream wrappers; Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) and VS Code Copilot Chat via the mapped `copilot_chat.time_to_first_token` key |
 
 #### Connector-written attributes
 
@@ -355,7 +356,9 @@ metrics for any emitter.
   1.0.12, `gen_ai.request.reasoning.level` and dotted usage keys in 1.0.64):
   https://github.com/github/copilot-cli/blob/84a2bd392a397e3dafaa9a1212b2964c3bd694bc/changelog.md
   (verified 2026-10-19)
-- VS Code Copilot Chat monitoring: https://code.visualstudio.com/docs/agents/guides/monitoring-agents
+- VS Code Copilot Chat monitoring (chat-span `copilot_chat.time_to_first_token`
+  in milliseconds, and the legacy `gen_ai.usage.reasoning_tokens` alias of
+  `gen_ai.usage.reasoning.output_tokens`): https://code.visualstudio.com/docs/agents/guides/monitoring-agents
   (verified 2026-10-19)
 - Traces attribute matrices: the pinned 2026-10-19 e2e captures (Copilot CLI
   1.0.100, strands-agents 1.61.1, openai-v2 2.4b0 with util-genai 1.1b0 and

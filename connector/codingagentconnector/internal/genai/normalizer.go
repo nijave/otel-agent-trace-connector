@@ -194,13 +194,15 @@ func mapLegacyTokens(attrs pcommon.Map, legacyKey, currentKey string) {
 
 // usageRemaps maps emitter-specific usage spellings onto their canonical
 // dotted keys. Strands Agents SDK emits cache counters with underscores where
-// the semconv uses a nested segment, and instrumentation built on the
-// pre-rename semconv emits the old cache_creation spelling; both land on the
-// current registry key.
+// the semconv uses a nested segment, instrumentation built on the pre-rename
+// semconv emits the old cache_creation spelling, and VS Code Copilot Chat
+// still dual-emits the legacy reasoning counter; all land on the current
+// registry key.
 var usageRemaps = []struct{ raw, canonical string }{
 	{"gen_ai.usage.cache_read_input_tokens", "gen_ai.usage.cache_read.input_tokens"},
 	{"gen_ai.usage.cache_write_input_tokens", "gen_ai.usage.cache_write.input_tokens"},
 	{"gen_ai.usage.cache_creation.input_tokens", "gen_ai.usage.cache_write.input_tokens"},
+	{"gen_ai.usage.reasoning_tokens", "gen_ai.usage.reasoning.output_tokens"},
 }
 
 // allowedUsageKeys enumerates the entire canonical usage vocabulary. There is
@@ -234,20 +236,32 @@ func remapUsageKeys(attrs pcommon.Map) {
 	}
 }
 
-// mapTTFT remaps Strands' legacy server-side TTFT key onto the canonical
-// client key. The wire carries whole milliseconds; canonical stores fractional
-// seconds. The canonical key wins when an emitter already provided it.
+// legacyTTFTKeys lists the non-canonical millisecond TTFT spellings this edge
+// remaps: Strands' legacy server-side key and VS Code Copilot Chat's
+// chat-span key. Both land on the canonical client key.
+var legacyTTFTKeys = []string{
+	"gen_ai.server.time_to_first_token",
+	"copilot_chat.time_to_first_token",
+}
+
+// mapTTFT remaps a legacy millisecond TTFT attribute onto the canonical client
+// key. The wire carries milliseconds; canonical stores fractional seconds. The
+// canonical key wins when an emitter already provided it; the legacy keys are
+// dropped either way. Values coerce through intAttr, so a double- or
+// string-typed duration still maps instead of being deleted unmapped.
 func mapTTFT(attrs pcommon.Map) {
-	const legacyKey = "gen_ai.server.time_to_first_token"
-	value, ok := attrs.Get(legacyKey)
-	if !ok {
-		return
+	const canonicalKey = "gen_ai.response.time_to_first_chunk"
+	for _, legacyKey := range legacyTTFTKeys {
+		milliseconds, ok := intAttr(attrs, legacyKey)
+		attrs.Remove(legacyKey)
+		if !ok {
+			continue
+		}
+		if _, exists := attrs.Get(canonicalKey); exists {
+			continue
+		}
+		attrs.PutDouble(canonicalKey, float64(milliseconds)/1000)
 	}
-	if _, exists := attrs.Get("gen_ai.response.time_to_first_chunk"); !exists && value.Type() == pcommon.ValueTypeInt {
-		attrs.PutDouble("gen_ai.response.time_to_first_chunk", float64(value.Int())/1000)
-	}
-	attrs.Remove(legacyKey)
-	attrs.Remove(legacyKey)
 }
 
 // intAttr coerces an attribute to int64 following the connector-wide
