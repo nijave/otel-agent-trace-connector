@@ -10,7 +10,7 @@ services:
     build:
       context: e2e/openhands
       args:
-        OPENHANDS_SDK_VERSION: "${OPENHANDS_SDK_VERSION:-1.43.1}"
+        - OPENHANDS_SDK_VERSION
     environment:
       # OpenHands reaches its LLM provider directly through litellm; the key
       # is the only credential this stack needs, and scripts/e2e-openhands.sh

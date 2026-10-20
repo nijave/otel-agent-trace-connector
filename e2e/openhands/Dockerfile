@@ -2,9 +2,10 @@ FROM python:3.12-slim
 
 # openhands-sdk and openhands-tools release in lockstep (verified on PyPI:
 # both at the same version), and openhands-sdk does not depend on
-# openhands-tools, so both get pinned to one version argument. The pin is
-# the default; OPENHANDS_SDK_VERSION overrides it. Leaving both unpinned
-# sends pip into a resolver backtrack across every historical release pair.
+# openhands-tools, so both get pinned to one version argument. The ARG default
+# is the pin; OPENHANDS_SDK_VERSION overrides it at compose build time.
+# Leaving both unpinned sends pip into a resolver backtrack across every
+# historical release pair.
 ARG OPENHANDS_SDK_VERSION=1.43.1
 # The terminal tool drives commands through a tmux session, so the tmux
 # binary must exist in the image; libtmux needs a UTF-8 locale.
