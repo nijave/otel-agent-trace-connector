@@ -65,8 +65,10 @@ opentelemetry-util-genai 1.0b0 removed the `OTEL_SEMCONV_STABILITY_OPT_IN`
 gate, so `is_experimental_mode()` always returns true and openai-v2 2.4b0
 always takes its latest-conventions path, routing chat completions through
 `TelemetryHandler` (scope `opentelemetry.util.genai.handler`). The pinned
-capture shows this: both runs, one without the opt-in, arrive on that scope
-with `gen_ai.provider.name` and no `gen_ai.system`. With util-genai
+capture shows this: both of its runs arrive on that scope with
+`gen_ai.provider.name` and no `gen_ai.system` — the second run set the opt-in
+and still landed identically, which is why the e2e stack now runs the agent
+once, as `openai-adhoc`. With util-genai
 ≥1.0b0 this scope carries only embeddings spans. Chat spans on
 this scope, stamped with the semconv v1.30.0 legacy `gen_ai.system`, need
 util-genai older than 1.0b0 without the opt-in.
@@ -357,8 +359,11 @@ metrics for any emitter.
   (verified 2026-10-19)
 - Traces attribute matrices: the pinned 2026-10-19 e2e captures (Copilot CLI
   1.0.100, strands-agents 1.61.1, openai-v2 2.4b0 with util-genai 1.1b0 and
-  openai 3.35.1), committed as `internal/genai/testdata/*-raw.otlp.json`;
-  the openai pin is in `e2e/openai-adhoc/requirements.txt` on main
+  openai 3.35.1), committed as `internal/genai/testdata/*-raw.otlp.json`. The
+  openai-adhoc capture holds both runs of the stack as it stood that day
+  (`openai-adhoc-legacy` and `openai-adhoc-latest`); the stack now runs once as
+  `openai-adhoc`, so those two service names live on only in the capture. The
+  openai pin is in `e2e/openai-adhoc/requirements.txt` on main
   (https://github.com/nijave/otel-agent-trace-connector/blob/deac347387e1d290f3bfc7b74be2927c6122d066/e2e/openai-adhoc/requirements.txt)
 - `docs/otel-signals.md` (refreshed 2026-08-29)
 - `docs/metrics.md` (refreshed 2026-08-21)

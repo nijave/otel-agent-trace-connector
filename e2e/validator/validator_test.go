@@ -159,8 +159,8 @@ func TestValidateClaudeRawFileParsesActualOTLPJSON(t *testing.T) {
 }
 
 func TestValidateOpenAIAdhocCanonical(t *testing.T) {
-	traces := ptrace.NewTraces()
-	for _, service := range []string{"openai-adhoc-legacy", "openai-adhoc-latest"} {
+	newTraces := func() ptrace.Traces {
+		traces := ptrace.NewTraces()
 		rs := traces.ResourceSpans().AppendEmpty()
 		rs.Resource().Attributes().PutStr("e2e.run.id", "run-1")
 		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
@@ -168,16 +168,25 @@ func TestValidateOpenAIAdhocCanonical(t *testing.T) {
 		span.Attributes().PutStr("gen_ai.operation.name", "chat")
 		span.Attributes().PutStr("gen_ai.provider.name", "openai")
 		span.Attributes().PutStr("coding_agent.source", "native")
-		span.Attributes().PutStr("coding_agent.client.name", service)
+		span.Attributes().PutStr("coding_agent.client.name", "openai-adhoc")
 		span.Attributes().PutInt("gen_ai.usage.input_tokens", 5)
 		span.Attributes().PutInt("gen_ai.usage.output_tokens", 6)
+		return traces
 	}
-	require.NoError(t, validateCanonicalTraces(traces, "run-1", "openai_adhoc"))
+
+	require.NoError(t, validateCanonicalTraces(newTraces(), "run-1", "openai_adhoc"))
 
 	// A surviving legacy gen_ai.system must fail validation.
+	traces := newTraces()
 	traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).
 		Attributes().PutStr("gen_ai.system", "openai")
 	require.Error(t, validateCanonicalTraces(traces, "run-1", "openai_adhoc"))
+
+	// The agent's resource service.name must reach the canonical client name.
+	traces = newTraces()
+	traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).
+		Attributes().Remove("coding_agent.client.name")
+	require.ErrorContains(t, validateCanonicalTraces(traces, "run-1", "openai_adhoc"), "client name")
 }
 
 // TestValidatePiCanonicalRequiresTreeWithoutContent pins the canonical shape

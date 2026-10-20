@@ -855,10 +855,11 @@ The openai-adhoc E2E uses a pinned Python image with pinned `openai`,
 `opentelemetry-instrumentation-openai-v2`, SDK, and OTLP exporter packages. A
 small ad-hoc agent script makes one chat-completions call to z.ai's
 OpenAI-compatible endpoint (no responses-proxy needed, unlike Codex) and
-force-flushes. The script runs twice in one container run, once per convention
-mode via `OTEL_SEMCONV_STABILITY_OPT_IN`, under distinct service names, so
-one paid run validates both modes. Validation: normalized rootless `chat`
-spans for both modes, provider `openai`, usage tokens, no content keys.
+force-flushes. It runs once, under service name `openai-adhoc`: the pinned
+util-genai (1.1b0) ignores `OTEL_SEMCONV_STABILITY_OPT_IN`, so the optional
+second run of an earlier revision emitted byte-identical spans and proved
+nothing. Validation: one normalized rootless `chat` span, provider `openai`,
+usage tokens, no content keys.
 
 The Strands E2E uses a pinned `strands-agents` image with its
 OpenAI-compatible model provider pointed at z.ai and one harmless tool the
