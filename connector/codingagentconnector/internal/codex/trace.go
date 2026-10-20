@@ -129,8 +129,9 @@ func putRootAttributes(attrs pcommon.Map, turn *turnState, events []agentEvent, 
 
 func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []agentEvent, turnStart time.Time) {
 	apiRequests := make([]agentEvent, 0)
+	duplicates := duplicateFrameCompletions(events)
 	completionIndex := 0
-	for _, event := range events {
+	for i, event := range events {
 		if event.name == "codex.api_request" {
 			apiRequests = append(apiRequests, event)
 			continue
@@ -138,7 +139,10 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
 			continue
 		}
-		if isTimingOnlyCompletion(event.attrs) {
+		if _, duplicate := duplicates[i]; duplicate {
+			continue
+		}
+		if !describesModelCall(event.attrs) {
 			continue
 		}
 		start := turnStart
@@ -293,21 +297,61 @@ func lastStringAttr(events []agentEvent, key string) string {
 	return ""
 }
 
-// isTimingOnlyCompletion reports whether a response.completed record is Codex's
-// duplicate rather than the one describing the model call.
+// duplicateFrameCompletions returns the indexes in events of SSE frame records
+// that duplicate another record of the same model call.
 //
-// Codex logs response.completed twice per call from two different emission sites:
-// the SSE frame handler reports only how long the frame took (duration_ms), while
-// turn completion reports time-to-first-token plus whatever token counts the
-// provider returned. Both timing fields are measured by Codex itself, so ttft_ms
-// identifies the turn-completion record even when the provider reported no usage
-// at all -- keying on token counts alone would drop every chat span for providers
-// that omit usage from the stream.
-func isTimingOnlyCompletion(attrs map[string]any) bool {
-	if _, ok := int64Value(attrs["ttft_ms"]); ok {
+// Codex logs response.completed from two sites. The SSE frame poll reports the
+// frame it just read, carrying only the Codex-measured duration_ms, before the
+// frame is parsed (codex-api/src/sse/responses.rs). The stream consumer then
+// reports turn completion, carrying time-to-first-token and token counts, and it
+// does so only when the provider's response.completed carried a usage object
+// (core/src/client.rs). Both records come from the same task in that order, so a
+// frame record is a duplicate exactly when the next response.completed record in
+// the turn reports the call. When the provider reports no usage, Codex logs the
+// frame record alone: it is then the model call's only record, so it must keep
+// the call's chat span instead of being dropped as a duplicate.
+func duplicateFrameCompletions(events []agentEvent) map[int]struct{} {
+	duplicates := make(map[int]struct{})
+	previous := -1
+	for i, event := range events {
+		if event.name != "codex.sse_event" || stringValue(event.attrs["event.kind"]) != "response.completed" {
+			continue
+		}
+		if previous >= 0 && isFrameCompletion(events[previous].attrs) && completionReportsCall(event.attrs) {
+			duplicates[previous] = struct{}{}
+		}
+		previous = i
+	}
+	return duplicates
+}
+
+// describesModelCall reports whether a response.completed record describes a
+// model call. A failed completion reports only error.message, names no call, and
+// stays dropped.
+func describesModelCall(attrs map[string]any) bool {
+	return completionReportsCall(attrs) || isFrameCompletion(attrs)
+}
+
+// isFrameCompletion reports whether a response.completed record is the SSE frame
+// poll record: it carries the frame's Codex-measured duration and nothing the
+// provider reported.
+func isFrameCompletion(attrs map[string]any) bool {
+	if completionReportsCall(attrs) {
 		return false
 	}
-	return !hasTokenUsage(attrs)
+	_, ok := int64Value(attrs["duration_ms"])
+	return ok
+}
+
+// completionReportsCall reports whether a response.completed record came from
+// Codex's turn-completion site rather than the SSE frame poll. That site logs
+// time-to-first-token plus whatever token counts the provider returned; the
+// frame poll logs only how long the frame took.
+func completionReportsCall(attrs map[string]any) bool {
+	if _, ok := int64Value(attrs["ttft_ms"]); ok {
+		return true
+	}
+	return hasTokenUsage(attrs)
 }
 
 // hasTokenUsage reports whether an event carries any completion token count.
