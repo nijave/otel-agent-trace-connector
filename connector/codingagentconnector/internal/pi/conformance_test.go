@@ -43,6 +43,7 @@ func TestPiConformance(t *testing.T) {
 				{RawKey: "usage", RawField: "cacheWrite", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 				{RawKey: "usage", RawField: "reasoning", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
 				{RawKey: "stopReason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
+				{RawKey: "langfuse.observation.completion_start_time", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 			},
 		},
 	} {

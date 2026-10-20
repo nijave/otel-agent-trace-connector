@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
@@ -173,6 +174,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 		if responseID := firstSpanString(span, "responseId"); responseID != "" {
 			attrs.PutStr("gen_ai.response.id", responseID)
 		}
+		mapTimeToFirstChunk(attrs, wire, span.StartTimestamp())
 		mapUsage(attrs, wire)
 	default:
 		return false, false
@@ -232,6 +234,27 @@ func modelProviderPrefix(model, requestedModel string) string {
 		return ""
 	}
 	return prefix
+}
+
+// mapTimeToFirstChunk derives the client-observed time to first chunk as
+// seconds between the span start and the ISO-8601 timestamp of the first
+// streamed token. The extension writes that timestamp only when it saw a first
+// token; a missing, unparsable, or pre-start timestamp maps nothing, since a
+// negative duration is not a measurement.
+func mapTimeToFirstChunk(attrs, wire pcommon.Map, start pcommon.Timestamp) {
+	value, ok := wire.Get("langfuse.observation.completion_start_time")
+	if !ok {
+		return
+	}
+	completionStart, err := time.Parse(time.RFC3339, value.Str())
+	if err != nil {
+		return
+	}
+	elapsed := completionStart.Sub(start.AsTime())
+	if elapsed < 0 {
+		return
+	}
+	attrs.PutDouble("gen_ai.response.time_to_first_chunk", elapsed.Seconds())
 }
 
 // usageCounters pairs each token counter with its canonical key. The wire
