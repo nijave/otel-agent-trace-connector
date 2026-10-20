@@ -14,22 +14,27 @@ and the policy behind it.
 
 | Signal | Native support | Connector support |
 | --- | --- | --- |
-| Traces | native since releases ≥1.18.21 (2026-08-21); Vercel AI SDK spans in the native `opencode` scope, enabled via `experimental.openTelemetry: true` | traces edge (below) |
+| Traces | native since v1.4.5 (2026-04-15, "Export AI SDK telemetry spans to OTLP trace backends"); Vercel AI SDK spans in the native `opencode` scope, exported when `OTEL_EXPORTER_OTLP_ENDPOINT` is set and `experimental.openTelemetry: true` (the key is still under `experimental` in 1.19.3); absent when `OPENCODE_EXPERIMENTAL_NATIVE_LLM=true` routes a supported provider around the AI SDK | traces edge (below) |
 | Logs | native — Effect spans/logs, exported whenever `OTEL_EXPORTER_OTLP_ENDPOINT` points at a collector, independent of the trace path | not consumed |
-| Metrics | none native (`experimental.openTelemetry` is traces-focused and reported broken for `opencode run`); available only via plugins | not applicable |
+| Metrics | none native (OpenCode registers only OTLP trace and log exporters); available only via plugins | not applicable |
 
-Last verified: Traces 2026-10-19 (OpenCode 1.19.3), Logs 2026-08-29, Metrics
-2026-08-21 (see Sources).
+Last verified: Traces, Logs, and Metrics 2026-10-19 (OpenCode 1.19.3; see
+Sources).
 
 ## Traces
 
 ### Native support
 
-Two independent native paths, both under `experimental.openTelemetry: true`:
-Vercel AI SDK spans (`ai.streamText`, `ai.toolCall`), with every span getting
-`session.id` (`ses_…`) via a tracer proxy, and Effect spans
-(`Tool.execute`). This section covers the Vercel AI SDK path only, the one
-the connector's OpenCode edge claims.
+Two native span paths share the `opencode` scope. Effect spans
+(`Tool.execute` and other internals) export whenever
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set. Vercel AI SDK spans (`ai.streamText`,
+`ai.streamText.doStream`, `ai.toolCall`) also need
+`experimental.openTelemetry: true`; every session LLM span gets `session.id`
+(`ses_…`) via a tracer proxy. With `OPENCODE_EXPERIMENTAL_NATIVE_LLM=true`, a
+supported provider (OpenAI, OpenCode-managed OpenAI-compatible, Anthropic API
+key) takes OpenCode's native LLM runtime instead of the AI SDK and emits no
+`ai.*` spans, so the connector sees nothing for that turn. This section covers
+the Vercel AI SDK path only, the one the connector's OpenCode edge claims.
 
 Span-name renames:
 
@@ -68,11 +73,11 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.settings.maxOutputTokens` | — | dropped |
 | `ai.settings.maxRetries` | — | dropped |
 | `ai.settings.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
-| `ai.telemetry.functionId` | — | dropped |
+| `ai.operationId`, `ai.telemetry.functionId` | — | dropped |
 | `ai.telemetry.metadata.sessionId` | — | dropped (the edge reads `session.id` instead) |
-| `ai.telemetry.metadata.userId` | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
+| `ai.telemetry.metadata.userId` | `coding_agent.user.id` | mapped (only when `capture_identity` is on; the wire value is the literal `unknown` unless the config sets `username`) |
 | `ai.request.headers.*` — including `x-opencode-session`, `x-opencode-session-id`, `x-opencode-client`, `x-opencode-project`, `x-opencode-request`, `User-Agent` | — | dropped (per-request routing/transport headers; the ids they repeat already map from `session.id` and `ai.telemetry.metadata.userId`) |
-| `ai.prompt`, `ai.prompt.messages`, `ai.prompt.tools`, `ai.prompt.toolChoice` | — | dropped (prompt content) |
+| `ai.prompt` | — | dropped (prompt content) |
 | `ai.response.text`, `ai.response.reasoning` | — | dropped (completion content) |
 | `ai.response.toolCalls`, `ai.response.providerMetadata` | — | dropped |
 | `ai.response.finishReason` | — | dropped |
@@ -87,7 +92,7 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `gen_ai.request.model` | `gen_ai.request.model` | kept (already canonical; a doStream without it emits as bare `chat` with no key) |
+| `gen_ai.request.model` | `gen_ai.request.model` | mapped (already canonical; absent when the wire omits it, and the span then emits as bare `chat`) |
 | `ai.model.provider` | `gen_ai.provider.name` | mapped (only when non-empty; an empty wire provider stays absent) |
 | `ai.usage.inputTokens` | `gen_ai.usage.input_tokens` | mapped (absent for in-flight or failed steps) |
 | `ai.usage.outputTokens` | `gen_ai.usage.output_tokens` | mapped (same condition) |
@@ -95,9 +100,9 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.usage.totalTokens` | `gen_ai.usage.total_tokens` | mapped (same condition) |
 | `ai.usage.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (falls back to `ai.usage.outputTokenDetails.reasoningTokens`; absent for non-reasoning steps) |
 | `ai.usage.outputTokenDetails.reasoningTokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (fallback source only) |
-| `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | same key | kept (already canonical passthrough) |
+| `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` | same key | mapped (already canonical passthrough; absent for in-flight or failed steps) |
 | `ai.response.msToFirstChunk` | `gen_ai.response.time_to_first_chunk` | mapped (fractional ms → seconds, double; absent when the request errors before the first chunk) |
-| `session.id` | `gen_ai.conversation.id` | not mapped on this span (the parent `invoke_agent` carries it) |
+| `session.id` | — | dropped on this span (the parent `invoke_agent` maps it to `gen_ai.conversation.id`) |
 | `gen_ai.system` | — | dropped (`gen_ai.provider.name` comes from `ai.model.provider` instead) |
 | `gen_ai.request.max_tokens` | — | dropped today; candidate future mapping (`ai.settings.maxOutputTokens` duplicates it) |
 | `gen_ai.request.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
@@ -112,7 +117,7 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.response.text`, `ai.response.reasoning` | — | dropped (completion content) |
 | `ai.request.headers.*` — including `x-opencode-session`, `x-opencode-session-id`, `x-opencode-client`, `x-opencode-project`, `x-opencode-request`, `User-Agent` | — | dropped (per-request routing/transport headers) |
 | `ai.prompt.*` | — | dropped (prompt content) |
-| `ai.telemetry.functionId` | — | dropped |
+| `ai.operationId`, `ai.telemetry.functionId` | — | dropped |
 | `ai.telemetry.metadata.userId` | — | dropped |
 | `ai.telemetry.metadata.sessionId` | — | dropped |
 | `ai.model.id` | — | dropped |
@@ -136,7 +141,7 @@ roots (the 1.19.3 fixture has two chat spans and one `execute_tool bash`).
 |---|---|---|
 | `ai.toolCall.name` | `gen_ai.tool.name` | mapped (a call without it emits as bare `execute_tool` with no key) |
 | `ai.model.provider` | `gen_ai.provider.name` | mapped (only when non-empty; the pinned capture's tool spans carry no provider) |
-| `ai.toolCall.id` | `gen_ai.tool.call.id` | not mapped today (dropped) |
+| `ai.toolCall.id` | — | dropped (not mapped today, though `gen_ai.tool.call.id` is in the canonical vocabulary) |
 | `ai.toolCall.args` | — | dropped (tool input content) |
 | `ai.toolCall.result` | — | dropped (tool output content) |
 | `ai.operationId`, `ai.telemetry.functionId` | — | dropped |
@@ -185,17 +190,17 @@ no canonical output derives from this signal today.
 
 ### Native support
 
-No native OTel metrics — `experimental.openTelemetry` is traces-focused and
-reported broken for `opencode run`. Two independent plugins fill the gap
-(full attribute tables in [docs/metrics.md](../metrics.md)):
+No native OTel metrics: OpenCode's OTLP setup builds only a trace exporter
+and a log exporter. Two independent plugins fill the gap (full attribute
+tables in [docs/metrics.md](../metrics.md)):
 
 - **`@devtheops/opencode-plugin-otel`** mirrors Claude Code's metric
   catalog: `opencode.session.count`, `opencode.token.usage`,
-  `opencode.cost.usage`, `opencode.lines_of_code.count`/`.total`,
-  `opencode.commit.count`, `opencode.tool.duration`, `opencode.cache.count`,
+  `opencode.cost.usage`, `opencode.commit.count`, `opencode.tool.duration`, `opencode.cache.count`,
   `opencode.session.duration`, `opencode.message.count`,
   `opencode.session.token.total`, `opencode.session.cost.total`,
   `opencode.model.usage`, `opencode.retry.count`, `opencode.subtask.count`.
+  v2 no longer emits `lines_of_code.count`/`.total`.
 - **`@gcornut/opencode-otel`** offers 8 counters with a
   `telemetryProfile: "claude-code"` rename.
 
@@ -209,10 +214,32 @@ is native to OpenCode itself.
 
 ## Sources
 
-- OpenCode: https://github.com/sst/opencode — traces signal and the
-  attribute matrix above, last verified 2026-10-19 against OpenCode 1.19.3
-- OpenCode plugin `@devtheops/opencode-plugin-otel`:
-  https://github.com/DEVtheOPS/opencode-plugin-otel — metrics catalog
+- OpenCode: https://github.com/anomalyco/opencode (formerly `sst/opencode`)
+  — traces signal and the attribute matrix above, last verified 2026-10-19
+  against OpenCode 1.19.3 and the live capture of 2026-10-19 (OpenCode 1.19.3,
+  `opencode-go` provider, `glm-5.3-flash`)
+- OpenCode v1.19.3 source, checked 2026-10-19:
+  - [`packages/core/src/observability/otlp.ts`](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/core/src/observability/otlp.ts#L50-L76)
+    — log and trace exporters gated only on `OTEL_EXPORTER_OTLP_ENDPOINT`; no
+    metrics exporter
+  - [`packages/opencode/src/session/llm.ts`](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/opencode/src/session/llm.ts#L208-L262)
+    — `experimental.openTelemetry` tracer, `session.id` proxy,
+    `OPENCODE_EXPERIMENTAL_NATIVE_LLM` runtime switch; `userId` defaults to
+    `unknown` ([L344-L351](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/opencode/src/session/llm.ts#L344-L351))
+  - [`packages/core/src/v1/config/config.ts`](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/core/src/v1/config/config.ts#L173-L175)
+    — `experimental.openTelemetry` config key
+  - [`packages/opencode/src/session/llm/AGENTS.md`](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/opencode/src/session/llm/AGENTS.md#L86-L89)
+    — providers the native LLM runtime supports
+- OpenCode v1.4.5 release notes (2026-04-15):
+  https://github.com/anomalyco/opencode/releases/tag/v1.4.5 and
+  https://github.com/anomalyco/opencode/pull/22526 — first release exporting
+  AI SDK spans, checked 2026-10-19
+- OpenCode plugin `@devtheops/opencode-plugin-otel` v2.0.1:
+  https://github.com/DEVtheOPS/opencode-plugin-otel/blob/v2.0.1/README.md
+  — metrics catalog, checked 2026-10-19
+- OpenCode plugin `@gcornut/opencode-otel`:
+  https://github.com/gcornut/opencode-otel/blob/68f2caf9f7f01530f6bafa07a2cdd6b17aee5316/README.md
+  — 8 counters and `telemetryProfile`, checked 2026-10-19
 - [docs/otel-signals.md](../otel-signals.md) — traces/logs/metrics signal
   summary, refreshed 2026-08-29
 - [docs/metrics.md](../metrics.md) — full metrics instrument catalog,
