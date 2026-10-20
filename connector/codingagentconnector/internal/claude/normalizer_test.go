@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -81,35 +82,22 @@ func TestClaudeTraceNormalizerPreservesTreeAndAddsCanonicalSemantics(t *testing.
 }
 
 // TestClaudeTraceNormalizerAgainstRealCapture pins the normalizer to a real
-// Claude Code 2.1.207 run (GLM-4.7) captured by the e2e harness. Unlike the
-// hand-built input above, this guards against upstream schema drift: if a future
-// Claude Code release renames its native spans or attributes, this test fails and
-// tells us to update the normalizer. The capture is split across several OTLP
-// batches (one per span flush, interaction root last), so feeding each batch
-// separately also exercises the stateless, order-independent path.
+// Claude Code 2.1.304 run (claude-haiku-5-5 via OpenCode Go, API-key auth)
+// captured by the e2e harness. Unlike the hand-built input above, this guards
+// against upstream schema drift: if a future Claude Code release renames its
+// native spans or attributes, this test fails and tells us to update the
+// normalizer. The capture is split across several OTLP batches (one per span
+// flush, interaction root last), so feeding each batch separately also exercises
+// the stateless, order-independent path.
 func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
-	data, err := os.ReadFile("testdata/claude-native-traces.json")
-	require.NoError(t, err)
-	unmarshaler := &ptrace.JSONUnmarshaler{}
-	sink := &traceSink{}
-	normalizer := New(sink, true)
-	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		batch, err := unmarshaler.UnmarshalTraces(line)
-		require.NoError(t, err)
-		require.NoError(t, normalizer.ConsumeTraces(context.Background(), batch))
-	}
-
-	all := reassemble(sink)
+	all := normalizeFixture(t)
 	root := findSpan(t, all, "invoke_agent claude_code")
 	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "interaction root must stay a root")
 	require.Equal(t, "invoke_agent", attrString(t, root, "gen_ai.operation.name"))
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
 	require.Equal(t, "anthropic", attrString(t, root, "gen_ai.provider.name"))
 	require.Equal(t, "native", attrString(t, root, "coding_agent.source"))
-	require.Equal(t, "2.1.207", attrString(t, root, "coding_agent.client.version"))
+	require.Equal(t, "2.1.304", attrString(t, root, "coding_agent.client.version"))
 	// The prompt is redacted at the source and dropped from canonical output
 	// entirely: raw leftovers never survive the strip.
 	_, exists := root.Attributes().Get("user_prompt")
@@ -119,16 +107,16 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 		require.False(t, exists, "raw %s must not reach canonical output", raw)
 	}
 
-	chat := findSpan(t, all, "chat glm-4.7")
+	chat := findSpan(t, all, "chat claude-haiku-5-5")
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
 	require.Equal(t, "chat", attrString(t, chat, "gen_ai.operation.name"))
-	require.Equal(t, "glm-4.7", attrString(t, chat, "gen_ai.request.model"))
+	require.Equal(t, "claude-haiku-5-5", attrString(t, chat, "gen_ai.request.model"))
 	// Totals span both llm_request spans in the capture.
 	usage := map[string]int64{
-		"gen_ai.usage.input_tokens":             477,
-		"gen_ai.usage.output_tokens":            166,
-		"gen_ai.usage.cache_read.input_tokens":  1216,
-		"gen_ai.usage.cache_write.input_tokens": 0,
+		"gen_ai.usage.input_tokens":             6,
+		"gen_ai.usage.output_tokens":            87,
+		"gen_ai.usage.cache_read.input_tokens":  947,
+		"gen_ai.usage.cache_write.input_tokens": 1047,
 	}
 	for key, want := range usage {
 		total := int64(0)
@@ -154,7 +142,7 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 			}
 		}
 	}
-	require.ElementsMatch(t, []float64{2.188, 3.084, 1.197}, ttfts)
+	require.ElementsMatch(t, []float64{0.784, 1.137}, ttfts)
 	require.True(t, finishReasons["end_turn"] && finishReasons["tool_use"], "stop reasons must be remapped: %v", finishReasons)
 	for _, raw := range []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
 		"ttft_ms", "stop_reason", "model", "duration_ms", "speed", "llm_request.context", "attempt",
@@ -174,6 +162,126 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	assertRequiredKeys(t, execution)
 	blocked := findSpan(t, all, "claude_code.tool.blocked_on_user")
 	assertRequiredKeys(t, blocked)
+}
+
+// TestClaudeTraceNormalizerMapsEffortToReasoningLevel pins the effort rename:
+// Claude Code carries the selected reasoning effort as a raw `effort` string and
+// canonical output stores it verbatim as gen_ai.request.reasoning.level. The wire
+// omits `effort` for models without a reasoning-effort selection, and canonical
+// output then carries no reasoning level at all rather than a guessed one.
+func TestClaudeTraceNormalizerMapsEffortToReasoningLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		effort string
+		want   string
+	}{
+		{name: "medium effort", effort: "medium", want: "medium"},
+		{name: "low effort", effort: "low", want: "low"},
+		{name: "empty effort", effort: "", want: ""},
+		{name: "absent effort", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+			spans.AppendEmpty().SetName("claude_code.interaction")
+			llm := spans.AppendEmpty()
+			llm.SetName("claude_code.llm_request")
+			llm.Attributes().PutStr("model", "claude-test")
+			if tc.effort != "" {
+				llm.Attributes().PutStr("effort", tc.effort)
+			}
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			chat := findSpan(t, reassemble(sink), "chat claude-test")
+			if tc.want == "" {
+				_, exists := chat.Attributes().Get("gen_ai.request.reasoning.level")
+				require.False(t, exists, "no effort on the wire means no reasoning level on canonical output")
+				return
+			}
+			require.Equal(t, tc.want, attrString(t, chat, "gen_ai.request.reasoning.level"))
+		})
+	}
+}
+
+// TestClaudeCaptureNewerKeysMapOrDrop walks every attribute Claude Code 2.1.304
+// added relative to the previous capture and pins its fate: it either lands on its
+// canonical key or the strip drops it. Raw leftovers cannot survive the allowlist
+// at all, so this test proves the new keys are accounted for deliberately rather
+// than passing silently through the vocabulary.
+func TestClaudeCaptureNewerKeysMapOrDrop(t *testing.T) {
+	all := normalizeFixture(t)
+
+	// effort is the one new raw key with a canonical counterpart, and every
+	// llm_request span in this capture selected the same effort.
+	for i := 0; i < all.Len(); i++ {
+		if strings.HasPrefix(all.At(i).Name(), "chat ") {
+			require.Equal(t, "medium", attrString(t, all.At(i), "gen_ai.request.reasoning.level"))
+		}
+	}
+
+	// Claude Code now emits these canonical keys itself. They reach output
+	// natively, so a chat span keeps its conversation id even though the
+	// interaction root lands in a later batch.
+	sessionID := "c5e992ba-9688-47dd-96a9-0ec52b58c92e"
+	for _, span := range []ptrace.Span{
+		findSpan(t, all, "invoke_agent claude_code"),
+		findSpan(t, all, "chat claude-haiku-5-5"),
+		findSpan(t, all, "execute_tool Bash"),
+		findSpan(t, all, "claude_code.tool.execution"),
+		findSpan(t, all, "claude_code.tool.blocked_on_user"),
+	} {
+		require.Equal(t, sessionID, attrString(t, span, "gen_ai.conversation.id"))
+		require.Equal(t, "anthropic", attrString(t, span, "gen_ai.provider.name"))
+	}
+	tool := findSpan(t, all, "execute_tool Bash")
+	require.Equal(t, "execute_tool", attrString(t, tool, "gen_ai.operation.name"))
+	require.Equal(t, "Bash", attrString(t, tool, "gen_ai.tool.name"))
+
+	// Everything else the newer wire adds stays raw and is stripped. effort is
+	// in this list too: its canonical counterpart must be the only surviving
+	// spelling of the value.
+	raw := []string{"effort", "first_content_ms", "query_source_safe", "parent.source",
+		"queued_sends", "bash_argv0", "bash_command_class", "tool_name_safe"}
+	for i := 0; i < all.Len(); i++ {
+		span := all.At(i)
+		for _, key := range raw {
+			_, exists := span.Attributes().Get(key)
+			require.False(t, exists, "raw %s must not reach canonical output (span %q)", key, span.Name())
+		}
+	}
+}
+
+// TestClaudeNativeCanonicalKeysCannotConflict pins precedence where Claude Code
+// emits a canonical key that this edge also writes. Wire-carried data wins over
+// the edge's fallback derivation (conversation id, tool name), while the
+// connector-written provenance keys win outright: a claimed group is Claude Code
+// by definition, so provider and operation come from the edge, not the wire.
+func TestClaudeNativeCanonicalKeysCannotConflict(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	root := spans.AppendEmpty()
+	root.SetName("claude_code.interaction")
+	root.Attributes().PutStr("gen_ai.conversation.id", "native-conversation")
+	root.Attributes().PutStr("session.id", "session-1")
+	root.Attributes().PutStr("gen_ai.provider.name", "not-anthropic")
+	root.Attributes().PutStr("gen_ai.operation.name", "not-invoke-agent")
+	llm := spans.AppendEmpty()
+	llm.SetName("claude_code.llm_request")
+	llm.Attributes().PutStr("model", "claude-test")
+	llm.Attributes().PutStr("gen_ai.conversation.id", "native-conversation")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	rootOut := findSpan(t, all, "invoke_agent claude_code")
+	require.Equal(t, "native-conversation", attrString(t, rootOut, "gen_ai.conversation.id"),
+		"a native conversation id beats the session.id fallback")
+	require.Equal(t, "invoke_agent", attrString(t, rootOut, "gen_ai.operation.name"))
+	require.Equal(t, "anthropic", attrString(t, rootOut, "gen_ai.provider.name"))
+	// The llm_request span keeps its own native conversation id: the edge never
+	// derives one for chat spans.
+	require.Equal(t, "native-conversation", attrString(t, findSpan(t, all, "chat claude-test"), "gen_ai.conversation.id"))
 }
 
 // TestRemapUsageConvertsTTFTToSeconds pins the canonical TTFT unit: the wire
@@ -261,6 +369,27 @@ func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
 	}
 	require.FailNow(t, "span not found", name)
 	return ptrace.Span{}
+}
+
+// normalizeFixture replays every committed capture batch through the edge and
+// flattens the output, the way a trace backend stitches a trace back together
+// from separate exports.
+func normalizeFixture(t *testing.T) ptrace.SpanSlice {
+	t.Helper()
+	data, err := os.ReadFile("testdata/claude-native-traces.json")
+	require.NoError(t, err)
+	unmarshaler := &ptrace.JSONUnmarshaler{}
+	sink := &traceSink{}
+	normalizer := New(sink, true)
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		batch, err := unmarshaler.UnmarshalTraces(line)
+		require.NoError(t, err)
+		require.NoError(t, normalizer.ConsumeTraces(context.Background(), batch))
+	}
+	return reassemble(sink)
 }
 
 // reassemble flattens every span the sink received into one slice, the way a trace
