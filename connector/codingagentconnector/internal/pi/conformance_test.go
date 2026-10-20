@@ -11,30 +11,56 @@ import (
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 )
 
-// TestPiConformance pins the Pi edge to the canonical attribute contract:
-// every emitted span carries the required keys, nothing outside the shared
-// vocabulary survives, and every usage/stop-reason signal present in the
-// native fixture lands under its canonical counterpart.
+// TestPiConformance pins the Pi edge to the canonical attribute contract for
+// both wires it supports: the flat usage.* attributes of pi-telemetry 0.1.9 and
+// the serialized usage object of 0.1.28, which carries no flat usage keys.
 func TestPiConformance(t *testing.T) {
-	canonical.Conformance(t, canonical.Edge{
-		Name:      "pi",
-		LoadRaw:   loadNativeFixtureTraces,
-		Normalize: normalizeViaNormalizer,
-		Signals: []canonical.Signal{
-			{RawKey: "usage.input", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
-			{RawKey: "usage.output", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
-			{RawKey: "usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
-			{RawKey: "usage.cache_read", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
-			{RawKey: "usage.cache_write", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
-			{RawKey: "stopReason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
+	for _, fixture := range []struct {
+		name    string
+		path    string
+		signals []canonical.Signal
+	}{
+		{
+			name: "pi-telemetry-0.1.9",
+			path: "testdata/pi-native-traces-0.1.9.json",
+			signals: []canonical.Signal{
+				{RawKey: "usage.input", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
+				{RawKey: "usage.output", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
+				{RawKey: "usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
+				{RawKey: "usage.cache_read", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
+				{RawKey: "usage.cache_write", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				{RawKey: "stopReason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
+			},
 		},
-	})
+		{
+			name: "pi-telemetry-0.1.28",
+			path: "testdata/pi-native-traces.json",
+			signals: []canonical.Signal{
+				{RawKey: "usage", RawField: "input", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
+				{RawKey: "usage", RawField: "output", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
+				{RawKey: "usage", RawField: "totalTokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
+				{RawKey: "usage", RawField: "cacheRead", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
+				{RawKey: "usage", RawField: "cacheWrite", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				{RawKey: "usage", RawField: "reasoning", CanonicalKey: "gen_ai.usage.reasoning.output_tokens", Kind: canonical.Sum},
+				{RawKey: "stopReason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
+			},
+		},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			canonical.Conformance(t, canonical.Edge{
+				Name:      "pi",
+				LoadRaw:   func() (canonical.RawInput, error) { return loadNativeFixtureTraces(fixture.path) },
+				Normalize: normalizeViaNormalizer,
+				Signals:   fixture.signals,
+			})
+		})
+	}
 }
 
-// loadNativeFixtureTraces parses the JSONL OTLP capture of a real Pi run into
+// loadNativeFixtureTraces parses a JSONL OTLP capture of a real Pi run into
 // one raw Traces value.
-func loadNativeFixtureTraces() (canonical.RawInput, error) {
-	data, err := os.ReadFile("testdata/pi-native-traces.json")
+func loadNativeFixtureTraces(path string) (canonical.RawInput, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return canonical.RawInput{}, err
 	}

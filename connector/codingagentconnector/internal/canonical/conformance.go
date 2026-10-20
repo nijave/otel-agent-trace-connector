@@ -4,6 +4,7 @@
 package canonical
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -38,6 +39,11 @@ type Signal struct {
 	// contributes. Use it when the wire duplicates one measurement across
 	// parent and child spans so a trace-wide total would double-count.
 	RawSpanName string
+	// RawField optionally names a member of a JSON-object raw string
+	// attribute (RawKey). Sums then total that member instead of the whole
+	// attribute, so wires that serialize their counters into one blob are
+	// still source-backed. RawSpanName still restricts which spans count.
+	RawField string
 	// OutputSpanPrefix optionally restricts the sum's output-side total to
 	// canonical spans whose name carries this prefix; empty means every span
 	// contributes.
@@ -217,6 +223,9 @@ func checkSignals(name string, raw RawInput, out ptrace.Traces, signals []Signal
 					rawTotal += spanNumericTotal(span, sig.RawKey)
 				}
 			}
+			if sig.RawField != "" {
+				rawTotal = spanBlobTotal(raw.Traces, sig.RawKey, sig.RawField, sig.RawSpanName)
+			}
 			outTotal := outTotals[sig.CanonicalKey]
 			if sig.OutputSpanPrefix != "" {
 				outTotal = 0
@@ -253,6 +262,35 @@ func spanNumericTotal(span ptrace.Span, key string) int64 {
 		}
 		return true
 	})
+	return total
+}
+
+// spanBlobTotal sums one member of a JSON-object string attribute across the
+// raw spans carrying it, optionally limited to spans with spanName. Members
+// coerce like numericValue: numbers truncate, numeric strings parse.
+func spanBlobTotal(traces ptrace.Traces, blobKey, field, spanName string) int64 {
+	var total int64
+	for _, span := range spans(traces) {
+		if spanName != "" && span.Name() != spanName {
+			continue
+		}
+		value, ok := span.Attributes().Get(blobKey)
+		if !ok || value.Type() != pcommon.ValueTypeStr {
+			continue
+		}
+		var members map[string]any
+		if err := json.Unmarshal([]byte(value.Str()), &members); err != nil {
+			continue
+		}
+		switch member := members[field].(type) {
+		case float64:
+			total += int64(member)
+		case string:
+			if n, err := strconv.ParseInt(member, 10, 64); err == nil {
+				total += n
+			}
+		}
+	}
 	return total
 }
 

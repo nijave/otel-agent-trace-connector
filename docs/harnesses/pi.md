@@ -18,8 +18,9 @@ this file draws on.
 | Logs | via extension (`pi-otel` only, of extensions surveyed) | not consumed |
 | Metrics | via extension (`pi-otel-telemetry`, `devkade/pi-opentelemetry`) | not applicable |
 
-Last verified: 2026-08-29 (Logs, Metrics rows); 2026-08-27 (Traces row, this
-file's attribute matrix). See Sources below.
+Last verified: 2026-08-29 (Logs, Metrics rows); 2026-10-19 (Traces row, this
+file's attribute matrix — live captures of `@amaster.ai/pi-telemetry` 0.1.9
+under pi 0.84.2 and 0.1.28 under pi 1.3.0). See Sources below.
 
 ## Traces
 
@@ -29,7 +30,9 @@ file's attribute matrix). See Sources below.
 its package name (with `telemetry.sdk.name` set to match on the resource).
 Turn spans arrive as `chat-turn`, generations as `llm-generation …`, and
 tools as spans named after the bare tool with the identity in attributes.
-Sibling extensions also provide traces — `pi-otel-telemetry`,
+Release 0.1.28 also emits `llm-stream` spans (model output content) and moved
+token accounting into one serialized `usage` object; both wires are covered
+below. Sibling extensions also provide traces — `pi-otel-telemetry`,
 `@the-agency/pi-observability`, `pi-otel` (NikiforovAll), `maxmalkin/pi-OTEL`
 — each with its own span shape; see
 [docs/otel-signals.md](../otel-signals.md#pi) for the full roster. None of
@@ -41,8 +44,14 @@ The connector claims any group carrying the `@amaster.ai/pi-telemetry` scope
 or matching `sdk.name` and rewrites each trace as an `invoke_agent pi` root
 with reparented `chat <model>` and `execute_tool <tool>` children. Non-native
 spans in a claimed group (sibling instrumentation scopes swept in by the
-process-wide claim) drop from canonical output; the raw pipelines preserve
-the originals.
+process-wide claim, and the extension's own `llm-stream` spans) drop from
+canonical output; the raw pipelines preserve the originals.
+
+Every native span rebuilds its attribute map from scratch: the canonical keys
+below plus the connector-written set are written into a fresh map that
+replaces the raw one. The mapping is an allowlist by construction, so a raw
+key this file does not name — including whatever a future extension release
+adds — cannot reach canonical output.
 
 #### Attribute matrix
 
@@ -50,39 +59,47 @@ Status is one of **mapped** (remapped onto the canonical key; a parenthetical
 names any wire condition under which the key is absent), **dropped**
 (deliberately removed from canonical output; recoverable only via a raw
 preservation pipeline branch), or **not provided** (the source never emits a
-raw key that would map there).
+raw key that would map there). The 0.1.9 capture carries flat `usage.*`
+attributes and a `provider` attribute; 0.1.28 replaced both (usage now lives
+only in one serialized object, provider only inside the model id).
 
 ##### llm-generation span → chat
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `model` | `gen_ai.request.model` | mapped (also names the span; a generation without `model` emits as bare `chat` with no key) |
-| `provider` | `gen_ai.provider.name` | mapped (verbatim, when non-empty; deliberate divergence — the value is operator-authored and often a gateway/harness label, unlike the recognized-provider values other edges emit) |
-| `usage.input` | `gen_ai.usage.input_tokens` | mapped |
-| `usage.output` | `gen_ai.usage.output_tokens` | mapped |
-| `usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped |
-| `usage.cache_read` | `gen_ai.usage.cache_read.input_tokens` | mapped (the extension reports no-cache as `0`, not by omission) |
-| `usage.cache_write` | `gen_ai.usage.cache_write.input_tokens` | mapped (same zero-not-absent behavior) |
-| `stopReason` | `gen_ai.response.finish_reasons` | mapped (single-element slice, when non-empty; yields to a pre-existing canonical value) |
+| `requestedModel` | `gen_ai.request.model` | mapped (also names the span; absent when the extension omits it — the 0.1.9 wire — and `model` then supplies both) |
+| `model` | `gen_ai.request.model` | mapped (only as the fallback when `requestedModel` is absent; on 0.1.28 the value is gateway-prefixed and names the span only through `requestedModel`) |
+| `provider` | `gen_ai.provider.name` | mapped (verbatim, when non-empty — 0.1.9 wire only; deliberate divergence, the value is operator-authored and often a gateway/harness label, unlike the recognized-provider values other edges emit) |
+| `model` of the exact shape `<prefix>/<requestedModel>` | `gen_ai.provider.name` | mapped (the prefix, for example `opencode-go`; absent when `provider` is present, when `model` carries no `/`, when `requestedModel` is absent, or when the remainder differs from `requestedModel` — the edge never guesses a provider) |
+| `thinkingLevel` | `gen_ai.request.reasoning.level` | mapped (verbatim, when non-empty — 0.1.28 wire only) |
+| `usage` → `input` | `gen_ai.usage.input_tokens` | mapped (serialized object, 0.1.28) |
+| `usage` → `output` | `gen_ai.usage.output_tokens` | mapped (serialized object, 0.1.28) |
+| `usage` → `totalTokens` | `gen_ai.usage.total_tokens` | mapped (serialized object, 0.1.28) |
+| `usage` → `cacheRead` | `gen_ai.usage.cache_read.input_tokens` | mapped (serialized object, 0.1.28; the extension reports no-cache as `0`, not by omission) |
+| `usage` → `cacheWrite` | `gen_ai.usage.cache_write.input_tokens` | mapped (serialized object, 0.1.28; same zero-not-absent behavior) |
+| `usage` → `reasoning` | `gen_ai.usage.reasoning.output_tokens` | mapped (serialized object, 0.1.28 only; no flat counterpart exists) |
+| `usage.input`, `usage.output`, `usage.total_tokens`, `usage.cache_read`, `usage.cache_write` | the same five canonical usage keys | mapped (flat attributes, 0.1.9; each field falls back to its flat key when the `usage` object omits it, and an unparsable object leaves the flat keys in charge) |
+| `stopReason` | `gen_ai.response.finish_reasons` | mapped (single-element slice, when non-empty) |
 | `responseId` | `gen_ai.response.id` | mapped (when non-empty) |
-| `usage`, `usage.cost.total` | — | dropped (deliberate: cost has no canonical counterpart) |
+| `usage` → `cost`, `usage` → `cacheWrite1h`, `usage.cost.total` | — | dropped (no canonical counterpart; cost detail stays in the raw pipeline) |
+| `reasoning`, `cacheWrite1h` (standalone attributes) | — | dropped (0.1.28 duplicates the same numbers inside the `usage` object, which is the source the edge reads) |
 | `llmGenerationId` | — | dropped |
 | `sessionId` | — | dropped (the turn root carries the conversation id — but only when the `chat-turn` ships in the same batch; see below) |
-| `status` | — | dropped |
+| `status`, `api`, `source`, `costSource` | — | dropped |
 | any per-request duration field | — | not provided (no TTFT source on generation spans) |
 
-The edge removes the flat `usage.*` keys per-span after mapping and drops
-the serialized `usage` object (which additionally carries cost detail) whole.
 Provider values may carry harness/route labels (for example a router or
-gateway tag); the edge passes them through verbatim rather than normalizing
-them.
+gateway tag); the edge passes an explicit `provider` through verbatim rather
+than normalizing it, and derives one from `model` only in the exact
+`<prefix>/<requestedModel>` case above.
 
 ##### chat-turn span → invoke_agent root
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `sessionId` | `gen_ai.conversation.id` | mapped (`chat-turn` spans only; Pi exports children in batches without their turn, and such a batch emits `chat`/`execute_tool` spans with no conversation id anywhere — the `sessionId` they carry strips) |
+| `sessionId` | `gen_ai.conversation.id` | mapped (`chat-turn` spans only; Pi exports children in batches without their turn, and such a batch emits `chat`/`execute_tool` spans with no conversation id anywhere — the `sessionId` they carry drops) |
 | `eventType` | (`coding_agent.source.event`) | dropped (the connector pins the event name to `chat-turn`) |
+| `promptNumber` | — | dropped (0.1.28 prompt counter; no canonical counterpart) |
 | `durationMs` | — | dropped (whole-turn duration, not a TTFT source) |
 
 Because `gen_ai.response.time_to_first_chunk` needs a first-chunk latency and
@@ -97,6 +114,14 @@ for this edge.
 | `toolCallId` | `gen_ai.tool.call.id` | mapped (when non-empty; `toolName` alone still produces the span) |
 | `status` | — | dropped |
 | `sessionId` | — | dropped (see the `chat-turn` row for the split-batch consequence) |
+| `durationMs` | — | dropped (0.1.28 tool duration; no canonical counterpart) |
+
+##### llm-stream span → dropped
+
+0.1.28 adds `llm-stream` spans that carry the model output content in
+`output.value` and `langfuse.observation.output`. `llm-stream` is not a
+canonical span type, so the whole span drops along with that content; no
+canonical key maps from it.
 
 #### Connector-written attributes
 
@@ -111,22 +136,23 @@ output (the raw pipelines preserve it):
 - `coding_agent.source` = `native`
 - `coding_agent.client.name` = `pi`
 - `coding_agent.client.version` (from the resource's `service.version` when
-  present — the pinned capture's resource carries none, so no span from it
+  present — both pinned captures' resources carry none, so no span from them
   has this key)
 - `coding_agent.source.event` (original native span name for turns and
   tools; the constant `llm-generation` for generation spans, so the lane and
   index suffix drops)
 
-Langfuse observation baggage (`langfuse.*`) is exporter-local metadata; the
-edge strips it from every native span.
+Because the canonical attribute map is rebuilt rather than filtered, no raw
+key survives on a kept span — Langfuse observation baggage (`langfuse.*`),
+the serialized `usage` object, cost detail, and diagnostic `status` fields all
+drop without a denylist entry naming them.
 
 #### Canonical keys with no Pi source
 
 | Canonical key | Status |
 |---|---|
 | `gen_ai.response.time_to_first_chunk` | not provided (only whole-turn durations exist upstream) |
-| `gen_ai.usage.reasoning.output_tokens` | not provided |
-| `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
+| `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided (0.1.28 carries `max_tokens` only inside Langfuse model-parameter bags, which the edge does not parse) |
 | `gen_ai.response.model` | not provided |
 | `server.address` / `server.port` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
@@ -224,4 +250,6 @@ metrics at all.
   traces/logs/metrics survey this file draws on (refreshed 2026-08-29)
 - [docs/metrics.md](../metrics.md) — Pi instrument catalog (refreshed
   2026-08-21)
-- This file's Traces attribute matrix — last verified 2026-08-27
+- This file's Traces attribute matrix — last verified 2026-10-19 against
+  live captures of `@amaster.ai/pi-telemetry` 0.1.9 (pi 0.84.2) and 0.1.28
+  (pi 1.3.0)

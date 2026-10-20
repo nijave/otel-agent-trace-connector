@@ -614,17 +614,40 @@ goes out.
 
 The edge claims groups by instrumentation-scope prefix
 (`@amaster.ai/pi-telemetry`) or by the resource `telemetry.sdk.name`
-attribute. A live capture on 2026-08-22 (extension 0.1.9, pi 0.84.2) pinned
-the wire shape and ships as the golden fixture:
+attribute. Live captures on 2026-08-22 (extension 0.1.9, pi 0.84.2) and
+2026-10-19 (extension 0.1.28, pi 1.3.0) pin the wire shape; both ship as
+golden fixtures:
 
 | Native span | Canonical name | Notes |
 | --- | --- | --- |
 | `chat-turn` (one per iteration) | `invoke_agent pi` | parent cleared |
-| `llm-generation [lane] [n]` (prefix match) | `chat <model>` | usage keys renamed to canonical `gen_ai.usage.*`; cache keys use the dotted semconv form |
+| `llm-generation [lane] [n]` (prefix match) | `chat <model>` | named from `requestedModel` when the wire has it, else `model`; usage maps from the serialized `usage` object (0.1.28) or the flat `usage.*` keys (0.1.9), cache names using the dotted semconv form |
 | `<tool name>` with a `toolName` attribute | `execute_tool <tool>` | tool identity lives in attributes (`toolName`, `toolCallId`); the span name is the bare tool name |
+| `llm-stream` (0.1.28) | — | not a canonical span type: the span and its captured output content drop |
 
 ### Decision record
 
+- Canonical attributes are rebuilt, not filtered. Each native span writes its
+  canonical keys into a fresh attribute map that replaces the raw one, so the
+  extension's own vocabulary — Langfuse observation baggage, the serialized
+  `usage` object, cost detail, `status`, `thinkingLevel`-era additions — never
+  reaches canonical output. The 0.1.28 release added a dozen raw keys
+  (`thinkingLevel`, `promptNumber`, `api`, `source`, `costSource`, …); a
+  denylist had to learn each one and leaked the ones it missed, which is why
+  the edge now allows by construction.
+- Usage primary source follows the wire: 0.1.28 sends counters only inside a
+  serialized `usage` JSON object, older releases send flat `usage.*`
+  attributes, and each canonical counter falls back to the flat key when the
+  object omits it. Cost (`usage.cost.total`, the object's `cost` and
+  `cacheWrite1h`) has no canonical counterpart and stays in the raw pipeline.
+- `gen_ai.provider.name` comes from the wire's `provider` attribute when it
+  exists (0.1.9). 0.1.28 dropped it and prefixes `model` with the gateway
+  instead, so the edge derives the provider only when `model` is exactly
+  `<prefix>/<requestedModel>` and stays silent otherwise rather than guessing.
+  The canonical request model is `requestedModel`, which is also the value in
+  the span name; payload capture stays off by default in the extension
+  (`includePayloads`), so output content normally never leaves the process at
+  all.
 - Hierarchy does not survive export intact. Children reference the
   `chat-turn` span they ran under, but a batch can arrive without the turn it
   references, and the pinned capture shows successive iterations reusing one
@@ -635,11 +658,6 @@ the wire shape and ships as the golden fixture:
   `chat`/`execute_tool` spans re-attach to the first agent root in their
   batch; children arriving in a batch of their own become roots, mirroring
   the Claude Code sub-batch behavior.
-- Exporter-local metadata never reaches canonical output: the edge drops
-  `langfuse.*` attribute baggage, the serialized `usage` JSON object
-  (renaming the flat per-field source keys instead), cost totals, and
-  diagnostic `status` / `stopReason` fields. Payload capture stays off by
-  default in the extension (`includePayloads`).
 - Unknown span names match no native shape, so they drop from canonical
   output along with non-native sibling spans; the raw pipelines preserve
   them, and a future extension event needs a new mapping here to reach

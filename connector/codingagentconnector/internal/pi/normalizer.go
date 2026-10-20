@@ -3,14 +3,16 @@
 
 // Package pi normalizes Pi (@amaster.ai/pi-telemetry) native traces into the
 // canonical coding-agent vocabulary. It is stateless: hierarchy, IDs, kinds,
-// and status pass through; only names and attributes change, and the raw
-// usage blob, Langfuse observation baggage, and flat usage source keys never
-// reach canonical output. Non-native spans in claimed groups are dropped, so
-// canonical output carries only coding-agent spans.
+// and status pass through; only names and attributes change. Every native span
+// rebuilds its attribute map from the raw one, so canonical output carries the
+// mapped vocabulary and nothing else no matter what the extension adds to its
+// wire. Non-native spans in claimed groups are dropped, so canonical output
+// carries only coding-agent spans.
 package pi
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -104,72 +106,79 @@ func ContainsPiSpans(resourceSpans ptrace.ResourceSpans) bool {
 
 // normalizePiSpan rewrites one span into the canonical vocabulary and reports
 // whether the span is native Pi and whether it becomes a canonical child of
-// an agent root.
+// an agent root. Canonical attributes are collected in a fresh map that
+// replaces the raw one, so every raw key the wire carries is dropped by
+// construction.
 func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
+	wire := span.Attributes()
+	attrs := pcommon.NewMap()
+	putPiCommon(attrs, version)
 	if toolName := firstSpanString(span, "toolName"); toolName != "" {
 		// Live captures show tool spans named after the bare tool with the
 		// identity in attributes, so the attribute is the discriminator.
 		originalName := span.Name()
 		span.SetName("execute_tool" + optionalNameSuffix(toolName))
-		attrs := span.Attributes()
 		attrs.PutStr("gen_ai.operation.name", "execute_tool")
 		attrs.PutStr("gen_ai.tool.name", toolName)
 		attrs.PutStr("coding_agent.source.event", originalName)
 		if callID := firstSpanString(span, "toolCallId"); callID != "" {
 			attrs.PutStr("gen_ai.tool.call.id", callID)
 		}
-		putPiCommon(attrs, version)
-		stripPiBaggage(span)
+		attrs.CopyTo(wire)
 		return true, true
 	}
 	switch name := span.Name(); {
 	case name == turnSpanName:
-		native = true
 		span.SetName("invoke_agent pi")
 		// Turn spans arrive as roots or referencing a parent absent from
 		// their batch, so each becomes a canonical agent root with any
 		// dangling parent cleared.
 		span.SetParentSpanID(pcommon.SpanID{})
-		attrs := span.Attributes()
 		attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 		attrs.PutStr("gen_ai.agent.name", "pi")
 		attrs.PutStr("coding_agent.source.event", turnSpanName)
 		if sessionID := firstSpanString(span, "sessionId"); sessionID != "" {
 			attrs.PutStr("gen_ai.conversation.id", sessionID)
 		}
-		putPiCommon(attrs, version)
 	case strings.HasPrefix(name, generation):
 		child = true
-		native = true
+		// requestedModel is the model the caller asked for; model is what the
+		// gateway records, prefixed with the provider. The canonical request
+		// model is the requested one, and only an exact
+		// "<prefix>/<requestedModel>" pair reveals a provider.
+		requestedModel := firstSpanString(span, "requestedModel")
 		model := firstSpanString(span, "model")
-		span.SetName("chat" + optionalNameSuffix(model))
-		attrs := span.Attributes()
+		requestModel := requestedModel
+		if requestModel == "" {
+			requestModel = model
+		}
+		span.SetName("chat" + optionalNameSuffix(requestModel))
 		attrs.PutStr("gen_ai.operation.name", "chat")
 		attrs.PutStr("coding_agent.source.event", generation)
-		if model != "" {
-			attrs.PutStr("gen_ai.request.model", model)
+		if requestModel != "" {
+			attrs.PutStr("gen_ai.request.model", requestModel)
 		}
 		if provider := firstSpanString(span, "provider"); provider != "" {
 			attrs.PutStr("gen_ai.provider.name", provider)
+		} else if provider := modelProviderPrefix(model, requestedModel); provider != "" {
+			attrs.PutStr("gen_ai.provider.name", provider)
+		}
+		if level := firstSpanString(span, "thinkingLevel"); level != "" {
+			attrs.PutStr("gen_ai.request.reasoning.level", level)
 		}
 		if stop := firstSpanString(span, "stopReason"); stop != "" {
-			if _, exists := attrs.Get("gen_ai.response.finish_reasons"); !exists {
-				reasons := attrs.PutEmptySlice("gen_ai.response.finish_reasons")
-				reasons.AppendEmpty().SetStr(stop)
-			}
+			reasons := attrs.PutEmptySlice("gen_ai.response.finish_reasons")
+			reasons.AppendEmpty().SetStr(stop)
 		}
 		if responseID := firstSpanString(span, "responseId"); responseID != "" {
 			attrs.PutStr("gen_ai.response.id", responseID)
 		}
-		mapUsageCount(attrs, "usage.input", "gen_ai.usage.input_tokens")
-		mapUsageCount(attrs, "usage.output", "gen_ai.usage.output_tokens")
-		mapUsageCount(attrs, "usage.total_tokens", "gen_ai.usage.total_tokens")
-		mapUsageCount(attrs, "usage.cache_read", "gen_ai.usage.cache_read.input_tokens")
-		mapUsageCount(attrs, "usage.cache_write", "gen_ai.usage.cache_write.input_tokens")
-		putPiCommon(attrs, version)
+		mapUsage(attrs, wire)
+	default:
+		return false, false
 	}
-	stripPiBaggage(span)
-	return child, native
+	attrs.CopyTo(wire)
+	return child, true
 }
 
 // reparentOrphans repairs hierarchy inside a batch: canonical children
@@ -210,22 +219,86 @@ func putPiCommon(attrs pcommon.Map, version string) {
 	}
 }
 
-// mapUsageCount copies a usage source attribute onto its canonical key,
-// coercing the wire value to an integer, then drops the source key. Values
-// arrive as strings through some paths (ClickHouse maps) and numbers through
-// others (OTLP JSON), so every representation coerces.
-func mapUsageCount(attrs pcommon.Map, sourceKey, canonicalKey string) {
-	value, ok := attrs.Get(sourceKey)
-	if !ok {
-		return
+// modelProviderPrefix derives the provider a gateway encodes in front of the
+// requested model id ("<prefix>/<requestedModel>"). Anything else yields no
+// provider: guessing one from an arbitrary model id would publish a wrong
+// gen_ai.provider.name.
+func modelProviderPrefix(model, requestedModel string) string {
+	if model == "" || requestedModel == "" {
+		return ""
 	}
-	count, ok := coerceInt(value)
-	if ok {
-		if _, exists := attrs.Get(canonicalKey); !exists {
-			attrs.PutInt(canonicalKey, count)
+	prefix, rest, found := strings.Cut(model, "/")
+	if !found || prefix == "" || rest != requestedModel {
+		return ""
+	}
+	return prefix
+}
+
+// usageCounters pairs each token counter with its canonical key. The wire
+// carries counters either inside the serialized `usage` object (pi-telemetry
+// 0.1.28 and later) or as flat `usage.*` attributes (older releases), so both
+// sources map. cost and cacheWrite1h have no canonical counterpart.
+var usageCounters = []struct {
+	field        string // member of the serialized usage object
+	flatKey      string // older wire's standalone attribute, empty when none
+	canonicalKey string
+}{
+	{"input", "usage.input", "gen_ai.usage.input_tokens"},
+	{"output", "usage.output", "gen_ai.usage.output_tokens"},
+	{"totalTokens", "usage.total_tokens", "gen_ai.usage.total_tokens"},
+	{"cacheRead", "usage.cache_read", "gen_ai.usage.cache_read.input_tokens"},
+	{"cacheWrite", "usage.cache_write", "gen_ai.usage.cache_write.input_tokens"},
+	{"reasoning", "", "gen_ai.usage.reasoning.output_tokens"},
+}
+
+// mapUsage writes the canonical token counts, preferring the serialized usage
+// object per field and falling back to the flat source key when the object
+// omits it. A zero count is mapped: the wire reports no cache as 0 rather than
+// by omission.
+func mapUsage(attrs, wire pcommon.Map) {
+	blob := usageBlob(wire)
+	for _, counter := range usageCounters {
+		if count, ok := blobCount(blob, counter.field); ok {
+			attrs.PutInt(counter.canonicalKey, count)
+			continue
+		}
+		if counter.flatKey == "" {
+			continue
+		}
+		if value, ok := wire.Get(counter.flatKey); ok {
+			if count, ok := coerceInt(value); ok {
+				attrs.PutInt(counter.canonicalKey, count)
+			}
 		}
 	}
-	attrs.Remove(sourceKey)
+}
+
+// usageBlob parses the serialized usage object. A missing or malformed
+// attribute yields no members, so the flat keys supply every counter.
+func usageBlob(wire pcommon.Map) map[string]any {
+	value, ok := wire.Get("usage")
+	if !ok || value.Type() != pcommon.ValueTypeStr {
+		return nil
+	}
+	var members map[string]any
+	if err := json.Unmarshal([]byte(value.Str()), &members); err != nil {
+		return nil
+	}
+	return members
+}
+
+// blobCount coerces one usage member to a token count: OTLP JSON numbers
+// decode as float64 and some paths deliver numbers as strings.
+func blobCount(blob map[string]any, field string) (int64, bool) {
+	switch value := blob[field].(type) {
+	case float64:
+		return int64(value), true
+	case string:
+		count, err := strconv.ParseInt(value, 10, 64)
+		return count, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func coerceInt(value pcommon.Value) (int64, bool) {
@@ -239,37 +312,6 @@ func coerceInt(value pcommon.Value) (int64, bool) {
 		return count, err == nil
 	default:
 		return 0, false
-	}
-}
-
-// stripPiBaggage removes exporter-local metadata that must not reach
-// canonical output: Langfuse observation baggage, the serialized usage object,
-// and the raw wire keys whose canonical counterparts (if any) were already
-// written by normalizePiSpan. Cost has no canonical counterpart and stays
-// dropped.
-var stripKeys = []string{
-	"usage",
-	"usage.cost.total",
-	"stopReason",
-	"status",
-	"model",
-	"provider",
-	"sessionId",
-	"durationMs",
-	"llmGenerationId",
-	"responseId",
-	"eventType",
-	"toolName",
-	"toolCallId",
-}
-
-func stripPiBaggage(span ptrace.Span) {
-	attrs := span.Attributes()
-	attrs.RemoveIf(func(key string, _ pcommon.Value) bool {
-		return strings.HasPrefix(key, "langfuse.")
-	})
-	for _, key := range stripKeys {
-		attrs.Remove(key)
 	}
 }
 
