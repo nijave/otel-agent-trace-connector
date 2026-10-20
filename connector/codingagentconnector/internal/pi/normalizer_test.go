@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -423,28 +424,330 @@ func attrInt(t *testing.T, span ptrace.Span, key string) int64 {
 	return value.Int()
 }
 
-// TestPiTraceNormalizerAgainstRealCapture pins the normalizer to a real
-// @amaster.ai/pi-telemetry 0.1.9 wire capture (one tool-using turn on
-// 2026-08-22: two agentic iterations and a bash tool call, captured by a local
-// OTLP listener). Unlike hand-built inputs, this guards against upstream
-// schema drift: if a future extension release renames its spans or attributes,
-// this test fails and tells us to update the normalizer.
-func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
-	data, err := os.ReadFile("testdata/pi-native-traces.json")
-	require.NoError(t, err)
-	unmarshaler := &ptrace.JSONUnmarshaler{}
+// TestPiTraceNormalizerAllowlistsEverySpanType pins canonical attributes
+// key-for-key: the wire carries far more than the edge maps, and a release that
+// adds another key must not leak one. Each span type is checked with raw noise
+// (including a made-up future key) on input.
+func TestPiTraceNormalizerAllowlistsEverySpanType(t *testing.T) {
+	input := ptrace.NewTraces()
+	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	spans := scope.Spans()
+
+	turn := spans.AppendEmpty()
+	turn.SetName("chat-turn")
+	turn.SetSpanID(pcommon.SpanID{2})
+	turn.Attributes().PutStr("sessionId", "session-1")
+	turn.Attributes().PutStr("eventType", "chat_turn_completed")
+	turn.Attributes().PutInt("promptNumber", 1)
+	turn.Attributes().PutInt("durationMs", 1423)
+	turn.Attributes().PutStr("langfuse.trace.name", "chat-turn")
+	turn.Attributes().PutStr("futureWireKey", "leak")
+
+	gen := spans.AppendEmpty()
+	gen.SetName("llm-generation [main] [request]")
+	gen.SetParentSpanID(pcommon.SpanID{2})
+	gen.Attributes().PutStr("model", "opencode-go/claude-haiku-5-5")
+	gen.Attributes().PutStr("requestedModel", "claude-haiku-5-5")
+	gen.Attributes().PutStr("thinkingLevel", "high")
+	gen.Attributes().PutStr("stopReason", "stop")
+	gen.Attributes().PutStr("responseId", "resp-1")
+	gen.Attributes().PutStr("api", "anthropic-messages")
+	gen.Attributes().PutStr("status", "completed")
+	gen.Attributes().PutStr("costSource", "model-pricing")
+	gen.Attributes().PutStr("usage", `{"input":1,"output":2,"totalTokens":3,"cacheRead":4,"cacheWrite":5,"reasoning":6,"cacheWrite1h":0,"cost":{"total":0.5}}`)
+	gen.Attributes().PutStr("langfuse.observation.output", "secret")
+	gen.Attributes().PutStr("futureWireKey", "leak")
+
+	tool := spans.AppendEmpty()
+	tool.SetName("bash")
+	tool.SetParentSpanID(pcommon.SpanID{2})
+	tool.Attributes().PutStr("toolName", "bash")
+	tool.Attributes().PutStr("toolCallId", "call-1")
+	tool.Attributes().PutInt("durationMs", 11)
+	tool.Attributes().PutStr("sessionId", "session-1")
+	tool.Attributes().PutStr("futureWireKey", "leak")
+
 	sink := &traceSink{}
-	normalizer := New(sink, true)
-	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+
+	common := map[string]any{
+		"coding_agent.source":      "native",
+		"coding_agent.client.name": "pi",
+	}
+	withCommon := func(pairs map[string]any) map[string]any {
+		attrs := make(map[string]any, len(pairs)+len(common))
+		for key, value := range common {
+			attrs[key] = value
 		}
-		batch, err := unmarshaler.UnmarshalTraces(line)
-		require.NoError(t, err)
-		require.NoError(t, normalizer.ConsumeTraces(context.Background(), batch))
+		for key, value := range pairs {
+			attrs[key] = value
+		}
+		return attrs
 	}
 
+	require.Equal(t, withCommon(map[string]any{
+		"gen_ai.operation.name":     "invoke_agent",
+		"gen_ai.agent.name":         "pi",
+		"gen_ai.conversation.id":    "session-1",
+		"coding_agent.source.event": "chat-turn",
+	}), findSpan(t, all, "invoke_agent pi").Attributes().AsRaw(), "chat-turn")
+
+	require.Equal(t, withCommon(map[string]any{
+		"gen_ai.operation.name":                 "chat",
+		"gen_ai.request.model":                  "claude-haiku-5-5",
+		"gen_ai.provider.name":                  "opencode-go",
+		"gen_ai.request.reasoning.level":        "high",
+		"gen_ai.response.finish_reasons":        []any{"stop"},
+		"gen_ai.response.id":                    "resp-1",
+		"gen_ai.usage.input_tokens":             int64(1),
+		"gen_ai.usage.output_tokens":            int64(2),
+		"gen_ai.usage.total_tokens":             int64(3),
+		"gen_ai.usage.cache_read.input_tokens":  int64(4),
+		"gen_ai.usage.cache_write.input_tokens": int64(5),
+		"gen_ai.usage.reasoning.output_tokens":  int64(6),
+		"coding_agent.source.event":             "llm-generation",
+	}), findSpan(t, all, "chat claude-haiku-5-5").Attributes().AsRaw(), "llm-generation")
+
+	require.Equal(t, withCommon(map[string]any{
+		"gen_ai.operation.name":     "execute_tool",
+		"gen_ai.tool.name":          "bash",
+		"gen_ai.tool.call.id":       "call-1",
+		"coding_agent.source.event": "bash",
+	}), findSpan(t, all, "execute_tool bash").Attributes().AsRaw(), "tool")
+}
+
+// TestPiTraceNormalizerDropsLLMStreamSpans covers the span type 0.1.28 added
+// for model output: it is not a canonical shape, so it drops (and takes the
+// captured output content with it).
+func TestPiTraceNormalizerDropsLLMStreamSpans(t *testing.T) {
+	input := ptrace.NewTraces()
+	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	spans := scope.Spans()
+	turn := spans.AppendEmpty()
+	turn.SetName("chat-turn")
+	turn.SetSpanID(pcommon.SpanID{2})
+	stream := spans.AppendEmpty()
+	stream.SetName("llm-stream")
+	stream.SetParentSpanID(pcommon.SpanID{2})
+	stream.Attributes().PutStr("output.value", "SENSITIVE")
+	stream.Attributes().PutStr("langfuse.observation.output", "SENSITIVE")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 	all := reassemble(sink)
+	findSpan(t, all, "invoke_agent pi")
+	require.Equal(t, 1, all.Len(), "only the agent root survives")
+	for i := 0; i < all.Len(); i++ {
+		_, hasOutput := all.At(i).Attributes().Get("output.value")
+		require.False(t, hasOutput, "model output content must not reach canonical output")
+	}
+}
+
+// TestPiTraceNormalizerDerivesProviderFromModelPrefix pins the provider rules:
+// the old wire's provider attribute wins verbatim, and the new wire's
+// "<prefix>/<requestedModel>" model id reveals a provider only on an exact
+// match — never by guessing.
+func TestPiTraceNormalizerDerivesProviderFromModelPrefix(t *testing.T) {
+	cases := []struct {
+		name           string
+		model          string
+		requestedModel string
+		provider       string
+		wantModel      string
+		wantProvider   string
+	}{
+		{
+			name:           "exact prefix",
+			model:          "opencode-go/claude-haiku-5-5",
+			requestedModel: "claude-haiku-5-5",
+			wantModel:      "claude-haiku-5-5",
+			wantProvider:   "opencode-go",
+		},
+		{
+			name:           "model does not match the requested model",
+			model:          "opencode-go/claude-haiku-5-5",
+			requestedModel: "claude-sonnet-5-5",
+			wantModel:      "claude-sonnet-5-5",
+			wantProvider:   "",
+		},
+		{
+			name:         "model without a prefix",
+			model:        "deepseek-v4-flash",
+			wantModel:    "deepseek-v4-flash",
+			wantProvider: "",
+		},
+		{
+			name:         "prefixed model with no requested model",
+			model:        "opencode-go/claude-haiku-5-5",
+			wantModel:    "opencode-go/claude-haiku-5-5",
+			wantProvider: "",
+		},
+		{
+			name:         "provider attribute wins",
+			model:        "deepseek-v4-flash",
+			provider:     "opencode-go",
+			wantModel:    "deepseek-v4-flash",
+			wantProvider: "opencode-go",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+			scope.Scope().SetName("@amaster.ai/pi-telemetry")
+			gen := scope.Spans().AppendEmpty()
+			gen.SetName("llm-generation [main] [request]")
+			gen.Attributes().PutStr("model", tc.model)
+			if tc.requestedModel != "" {
+				gen.Attributes().PutStr("requestedModel", tc.requestedModel)
+			}
+			if tc.provider != "" {
+				gen.Attributes().PutStr("provider", tc.provider)
+			}
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			chat := findSpan(t, reassemble(sink), "chat "+tc.wantModel)
+			require.Equal(t, tc.wantModel, attrString(t, chat, "gen_ai.request.model"))
+			provider, ok := chat.Attributes().Get("gen_ai.provider.name")
+			if tc.wantProvider == "" {
+				require.False(t, ok, "no provider may be guessed")
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tc.wantProvider, provider.Str())
+		})
+	}
+}
+
+// TestPiTraceNormalizerMapsThinkingLevel pins the reasoning-level rename; the
+// wire omits the key on models without a thinking level.
+func TestPiTraceNormalizerMapsThinkingLevel(t *testing.T) {
+	for _, tc := range []struct{ thinkingLevel, want string }{{thinkingLevel: "medium", want: "medium"}, {thinkingLevel: ""}} {
+		input := ptrace.NewTraces()
+		scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+		scope.Scope().SetName("@amaster.ai/pi-telemetry")
+		gen := scope.Spans().AppendEmpty()
+		gen.SetName("llm-generation [main] [request]")
+		gen.Attributes().PutStr("model", "glm-5.3")
+		if tc.thinkingLevel != "" {
+			gen.Attributes().PutStr("thinkingLevel", tc.thinkingLevel)
+		}
+
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		chat := findSpan(t, reassemble(sink), "chat glm-5.3")
+		level, ok := chat.Attributes().Get("gen_ai.request.reasoning.level")
+		if tc.want == "" {
+			require.False(t, ok, "an empty thinkingLevel maps no key")
+			continue
+		}
+		require.True(t, ok)
+		require.Equal(t, tc.want, level.Str())
+	}
+}
+
+// TestPiTraceNormalizerMapsUsageBlobAndFallsBackToFlatKeys covers the two
+// usage wires together: the serialized object wins per field, the flat keys
+// cover fields the object omits, and a malformed object leaves the flat keys
+// in charge.
+func TestPiTraceNormalizerMapsUsageBlobAndFallsBackToFlatKeys(t *testing.T) {
+	cases := []struct {
+		name  string
+		usage string
+		flat  map[string]string
+		want  map[string]int64
+		gone  []string
+	}{
+		{
+			name:  "blob only",
+			usage: `{"input":4,"output":56,"cacheRead":1227,"cacheWrite":0,"cacheWrite1h":0,"reasoning":9,"totalTokens":1287,"cost":{"total":0.00004}}`,
+			want: map[string]int64{
+				"gen_ai.usage.input_tokens":             4,
+				"gen_ai.usage.output_tokens":            56,
+				"gen_ai.usage.total_tokens":             1287,
+				"gen_ai.usage.cache_read.input_tokens":  1227,
+				"gen_ai.usage.cache_write.input_tokens": 0,
+				"gen_ai.usage.reasoning.output_tokens":  9,
+			},
+		},
+		{
+			name:  "blob wins over flat keys, flat fills the gaps",
+			usage: `{"input":7}`,
+			flat: map[string]string{
+				"usage.input":        "99",
+				"usage.output":       "8",
+				"usage.total_tokens": "15",
+				"usage.cache_read":   "0",
+				"usage.cache_write":  "6",
+			},
+			want: map[string]int64{
+				"gen_ai.usage.input_tokens":             7,
+				"gen_ai.usage.output_tokens":            8,
+				"gen_ai.usage.total_tokens":             15,
+				"gen_ai.usage.cache_read.input_tokens":  0,
+				"gen_ai.usage.cache_write.input_tokens": 6,
+			},
+			gone: []string{"gen_ai.usage.reasoning.output_tokens"},
+		},
+		{
+			name:  "malformed blob leaves the flat keys in charge",
+			usage: `not json`,
+			flat: map[string]string{
+				"usage.input":        "3335",
+				"usage.output":       "3",
+				"usage.total_tokens": "3338",
+			},
+			want: map[string]int64{
+				"gen_ai.usage.input_tokens":  3335,
+				"gen_ai.usage.output_tokens": 3,
+				"gen_ai.usage.total_tokens":  3338,
+			},
+			gone: []string{"gen_ai.usage.cache_read.input_tokens"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+			scope.Scope().SetName("@amaster.ai/pi-telemetry")
+			gen := scope.Spans().AppendEmpty()
+			gen.SetName("llm-generation [main] [request]")
+			gen.Attributes().PutStr("model", "glm-5.3")
+			gen.Attributes().PutStr("usage", tc.usage)
+			for key, value := range tc.flat {
+				gen.Attributes().PutStr(key, value)
+			}
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			chat := findSpan(t, reassemble(sink), "chat glm-5.3")
+			for key, want := range tc.want {
+				require.Equal(t, want, attrInt(t, chat, key), key)
+			}
+			for _, key := range tc.gone {
+				_, ok := chat.Attributes().Get(key)
+				require.False(t, ok, "%s must be absent", key)
+			}
+			for _, key := range []string{"usage", "usage.cost.total", "cacheWrite1h"} {
+				_, ok := chat.Attributes().Get(key)
+				require.False(t, ok, "%s must not reach canonical output", key)
+			}
+		})
+	}
+}
+
+// TestPiTraceNormalizerAgainstCaptureV019 pins the normalizer to a real
+// @amaster.ai/pi-telemetry 0.1.9 wire capture (one tool-using turn on
+// 2026-08-22: two agentic iterations and a bash tool call, captured by a local
+// OTLP listener). This wire carries a flat usage.* attribute per counter and a
+// provider attribute; it stays supported for older extension releases.
+func TestPiTraceNormalizerAgainstCaptureV019(t *testing.T) {
+	all := normalizeFixture(t, "testdata/pi-native-traces-0.1.9.json")
+
 	root := findSpan(t, all, "invoke_agent pi")
 	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "the agent root carries no dangling parent")
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
@@ -452,6 +755,7 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 
 	chat := findSpan(t, all, "chat deepseek-v4-flash")
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
+	require.Equal(t, "opencode-go", attrString(t, chat, "gen_ai.provider.name"))
 	require.Equal(t, int64(2286), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(2334), attrInt(t, chat, "gen_ai.usage.total_tokens"))
 
@@ -496,6 +800,87 @@ func TestPiTraceNormalizerAgainstRealCapture(t *testing.T) {
 func attrStrSliceElem(t *testing.T, span ptrace.Span, key string) string {
 	t.Helper()
 	return attrSlice(t, span, key).At(0).Str()
+}
+
+// TestPiTraceNormalizerAgainstCaptureV0128 pins the normalizer to a real
+// @amaster.ai/pi-telemetry 0.1.28 wire capture (one tool-using turn on
+// 2026-10-19, pi 1.3.0). That release dropped the provider attribute and the
+// flat usage.* keys, prefixed model with the gateway, added thinkingLevel and
+// a promptNumber, and introduced llm-stream spans.
+func TestPiTraceNormalizerAgainstCaptureV0128(t *testing.T) {
+	all := normalizeFixture(t, "testdata/pi-native-traces.json")
+
+	root := findSpan(t, all, "invoke_agent pi")
+	require.Equal(t, pcommon.SpanID{}, root.ParentSpanID(), "the agent root carries no dangling parent")
+	require.Equal(t, "01a1568c-4a0b-766c-9f64-8056c3c86f9e", attrString(t, root, "gen_ai.conversation.id"))
+
+	var chats []ptrace.Span
+	for i := 0; i < all.Len(); i++ {
+		if span := all.At(i); span.Name() == "chat claude-haiku-5-5" {
+			chats = append(chats, span)
+		}
+	}
+	require.Len(t, chats, 2, "the span name takes requestedModel, not the provider-prefixed model")
+	for _, chat := range chats {
+		require.Equal(t, root.SpanID(), chat.ParentSpanID())
+		require.Equal(t, "claude-haiku-5-5", attrString(t, chat, "gen_ai.request.model"))
+		require.Equal(t, "opencode-go", attrString(t, chat, "gen_ai.provider.name"),
+			"the provider comes from the model's <prefix>/<requestedModel> shape")
+		require.Equal(t, "medium", attrString(t, chat, "gen_ai.request.reasoning.level"))
+		require.Equal(t, int64(0), attrInt(t, chat, "gen_ai.usage.reasoning.output_tokens"))
+	}
+
+	// Usage arrives only inside the serialized object on this wire.
+	for i, want := range []struct{ input, output, total, cacheRead, cacheWrite int64 }{
+		{input: 4, output: 56, total: 1287, cacheRead: 1227, cacheWrite: 0},
+		{input: 2, output: 3, total: 1304, cacheRead: 1299, cacheWrite: 0},
+	} {
+		require.Equal(t, want.input, attrInt(t, chats[i], "gen_ai.usage.input_tokens"))
+		require.Equal(t, want.output, attrInt(t, chats[i], "gen_ai.usage.output_tokens"))
+		require.Equal(t, want.total, attrInt(t, chats[i], "gen_ai.usage.total_tokens"))
+		require.Equal(t, want.cacheRead, attrInt(t, chats[i], "gen_ai.usage.cache_read.input_tokens"))
+		require.Equal(t, want.cacheWrite, attrInt(t, chats[i], "gen_ai.usage.cache_write.input_tokens"))
+	}
+	require.Equal(t, "toolUse", attrStrSliceElem(t, chats[0], "gen_ai.response.finish_reasons"))
+	require.Equal(t, "stop", attrStrSliceElem(t, chats[1], "gen_ai.response.finish_reasons"))
+	require.Equal(t, "msg_011CgCUymZEdEn1F9FhtDGEW", attrString(t, chats[0], "gen_ai.response.id"))
+	require.Equal(t, "msg_011CgCUyq5p9wHm8A4AMEZuK", attrString(t, chats[1], "gen_ai.response.id"))
+
+	tool := findSpan(t, all, "execute_tool bash")
+	require.Equal(t, root.SpanID(), tool.ParentSpanID())
+	require.Equal(t, "bash", attrString(t, tool, "gen_ai.tool.name"))
+	require.Equal(t, "toolu_01LUsBwN85yx7wHRRL4z1PuA", attrString(t, tool, "gen_ai.tool.call.id"))
+
+	// llm-stream is not a canonical span type, and no raw key survives.
+	for i := 0; i < all.Len(); i++ {
+		span := all.At(i)
+		require.NotEqual(t, "llm-stream", span.Name(), "llm-stream spans never reach canonical output")
+		span.Attributes().Range(func(key string, _ pcommon.Value) bool {
+			require.True(t, strings.HasPrefix(key, "gen_ai.") || strings.HasPrefix(key, "coding_agent."),
+				"raw key %s must not reach canonical output on span %s", key, span.Name())
+			return true
+		})
+	}
+}
+
+// normalizeFixture replays one JSONL OTLP capture through the normalizer and
+// returns the reassembled canonical spans.
+func normalizeFixture(t *testing.T, path string) ptrace.SpanSlice {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	unmarshaler := &ptrace.JSONUnmarshaler{}
+	sink := &traceSink{}
+	normalizer := New(sink, true)
+	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		batch, err := unmarshaler.UnmarshalTraces(line)
+		require.NoError(t, err)
+		require.NoError(t, normalizer.ConsumeTraces(context.Background(), batch))
+	}
+	return reassemble(sink)
 }
 
 func attrSlice(t *testing.T, span ptrace.Span, key string) pcommon.Slice {
