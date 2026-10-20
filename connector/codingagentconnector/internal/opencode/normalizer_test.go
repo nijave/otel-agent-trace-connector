@@ -330,7 +330,7 @@ func TestNormalizerFixtureReplay(t *testing.T) {
 				}
 				switch stringAttrOf(span, "gen_ai.operation.name") {
 				case "invoke_agent", "chat":
-					require.Equal(t, "oclaude.chat", stringAttrOf(span, "gen_ai.provider.name"),
+					require.Equal(t, "opencode-go.chat", stringAttrOf(span, "gen_ai.provider.name"),
 						"the wire names the provider on every model-call span")
 				case "execute_tool":
 					_, hasProvider := span.Attributes().Get("gen_ai.provider.name")
@@ -366,35 +366,40 @@ func TestNormalizerFixtureReplayChatCarriesUsage(t *testing.T) {
 
 	var chat *ptrace.Span
 	out := sink.all()[0]
-	for i := 0; i < out.ResourceSpans().Len() && chat == nil; i++ {
+	chats := 0
+	for i := 0; i < out.ResourceSpans().Len(); i++ {
 		rs := out.ResourceSpans().At(i)
-		for j := 0; j < rs.ScopeSpans().Len() && chat == nil; j++ {
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
 				if strings.HasPrefix(spans.At(k).Name(), "chat") {
 					s := spans.At(k)
 					chat = &s
-					break
+					chats++
 				}
 			}
 		}
 	}
 	require.NotNil(t, chat, "fixture must contain a chat span")
+	require.Equal(t, 2, chats, "fixture must contain the title-generator and main-turn chat spans")
+	// The capture holds two model conversations in wire order: OpenCode's title
+	// generator, then the main agent turn. The assertions below are the main
+	// turn's, which is the last chat span emitted.
 
 	usageInt := func(key string) int64 {
 		v, ok := chat.Attributes().Get(key)
 		require.True(t, ok, "chat span must carry %s", key)
 		return v.Int()
 	}
-	require.Equal(t, int64(7136), usageInt("gen_ai.usage.input_tokens"))
-	require.Equal(t, int64(48), usageInt("gen_ai.usage.output_tokens"))
-	require.Equal(t, int64(7184), usageInt("gen_ai.usage.total_tokens"))
-	require.Equal(t, int64(7), usageInt("gen_ai.usage.reasoning.output_tokens"))
-	// Canonical TTFT is fractional seconds: 3276.662537 ms on the wire.
+	require.Equal(t, int64(7517), usageInt("gen_ai.usage.input_tokens"))
+	require.Equal(t, int64(55), usageInt("gen_ai.usage.output_tokens"))
+	require.Equal(t, int64(7572), usageInt("gen_ai.usage.total_tokens"))
+	require.Equal(t, int64(37), usageInt("gen_ai.usage.reasoning.output_tokens"))
+	// Canonical TTFT is fractional seconds: 2878.648566 ms on the wire.
 	ttft, ok := chat.Attributes().Get("gen_ai.response.time_to_first_chunk")
 	require.True(t, ok)
 	require.Equal(t, pcommon.ValueTypeDouble, ttft.Type())
-	require.InDelta(t, 3.276662537, ttft.Double(), 1e-9)
+	require.InDelta(t, 2.878648566, ttft.Double(), 1e-9)
 
 	for _, dropped := range []string{
 		"ai.usage.totalTokens",

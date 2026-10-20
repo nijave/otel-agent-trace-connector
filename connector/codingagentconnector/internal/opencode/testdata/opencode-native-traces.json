@@ -18,13 +18,13 @@
           {
             "key": "opencode.run",
             "value": {
-              "stringValue": "10276e72"
+              "stringValue": "034d1d0a"
             }
           },
           {
             "key": "service.instance.id",
             "value": {
-              "stringValue": "10276e72"
+              "stringValue": "034d1d0a"
             }
           },
           {
@@ -48,13 +48,13 @@
           {
             "key": "service.version",
             "value": {
-              "stringValue": "1.18.21"
+              "stringValue": "1.19.3"
             }
           },
           {
             "key": "e2e.run.id",
             "value": {
-              "stringValue": "opencode-otel-1787441959-4147347"
+              "stringValue": "opencode-otel-1792453547-3751383"
             }
           }
         ]
@@ -63,18 +63,530 @@
         {
           "scope": {
             "name": "opencode",
-            "version": "1.18.21"
+            "version": "1.19.3"
           },
           "spans": [
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "0cccabfca52d2534",
-              "parentSpanId": "7a9223861af96d15",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "ec97c73e426fe43a",
+              "parentSpanId": "de055123382210dc",
+              "flags": 257,
+              "name": "ai.streamText.doStream",
+              "kind": 1,
+              "startTimeUnixNano": "1792453582998000000",
+              "endTimeUnixNano": "1792453583910267233",
+              "attributes": [
+                {
+                  "key": "operation.name",
+                  "value": {
+                    "stringValue": "ai.streamText.doStream session.llm"
+                  }
+                },
+                {
+                  "key": "resource.name",
+                  "value": {
+                    "stringValue": "session.llm"
+                  }
+                },
+                {
+                  "key": "ai.operationId",
+                  "value": {
+                    "stringValue": "ai.streamText.doStream"
+                  }
+                },
+                {
+                  "key": "ai.telemetry.functionId",
+                  "value": {
+                    "stringValue": "session.llm"
+                  }
+                },
+                {
+                  "key": "ai.model.provider",
+                  "value": {
+                    "stringValue": "opencode-go.chat"
+                  }
+                },
+                {
+                  "key": "ai.model.id",
+                  "value": {
+                    "stringValue": "glm-5.3-flash"
+                  }
+                },
+                {
+                  "key": "ai.settings.maxOutputTokens",
+                  "value": {
+                    "intValue": "32000"
+                  }
+                },
+                {
+                  "key": "ai.settings.temperature",
+                  "value": {
+                    "doubleValue": 0.5
+                  }
+                },
+                {
+                  "key": "ai.settings.maxRetries",
+                  "value": {
+                    "intValue": "2"
+                  }
+                },
+                {
+                  "key": "ai.telemetry.metadata.userId",
+                  "value": {
+                    "stringValue": "unknown"
+                  }
+                },
+                {
+                  "key": "ai.telemetry.metadata.sessionId",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-session-id",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-project",
+                  "value": {
+                    "stringValue": "global"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-session",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-request",
+                  "value": {
+                    "stringValue": "msg_1568f1e97001kZm6D2A8cqC76g"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-client",
+                  "value": {
+                    "stringValue": "cli"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.User-Agent",
+                  "value": {
+                    "stringValue": "opencode/1.19.3"
+                  }
+                },
+                {
+                  "key": "ai.prompt.messages",
+                  "value": {
+                    "stringValue": "[{\"role\":\"system\",\"content\":\"You are a title generator. You output ONLY a thread title. Nothing else.\\n\\n<task>\\nGenerate a brief title that would help the user find this conversation later.\\n\\nFollow all rules in <rules>\\nUse the <examples> so you know what a good title looks like.\\nYour output must be:\\n- A single line\\n- ≤50 characters\\n- No explanations\\n</task>\\n\\n<rules>\\n- you MUST use the same language as the user message you are summarizing\\n- Title must be grammatically correct and read naturally - no word salad\\n- Never include tool names in the title (e.g. \\\"read tool\\\", \\\"bash tool\\\", \\\"edit tool\\\")\\n- Focus on the main topic or question the user needs to retrieve\\n- Vary your phrasing - avoid repetitive patterns like always starting with \\\"Analyzing\\\"\\n- When a file is mentioned, focus on WHAT the user wants to do WITH the file, not just that they shared it\\n- Keep exact: technical terms, numbers, filenames, HTTP codes\\n- Remove: the, this, my, a, an\\n- Never assume tech stack\\n- Never use tools\\n- NEVER respond to questions, just generate a title for the conversation\\n- The title should NEVER include \\\"summarizing\\\" or \\\"generating\\\" when generating a title\\n- DO NOT SAY YOU CANNOT GENERATE A TITLE OR COMPLAIN ABOUT THE INPUT\\n- Always output something meaningful, even if the input is minimal.\\n- If the user message is short or conversational (e.g. \\\"hello\\\", \\\"lol\\\", \\\"what's up\\\", \\\"hey\\\"):\\n  → create a title that reflects the user's tone or intent (such as Greeting, Quick check-in, Light chat, Intro message, etc.)\\n</rules>\\n\\n<examples>\\n\\\"debug 500 errors in production\\\" → Debugging production 500 errors\\n\\\"refactor user service\\\" → Refactoring user service\\n\\\"why is app.js failing\\\" → app.js failure investigation\\n\\\"implement rate limiting\\\" → Rate limiting implementation\\n\\\"how do I connect postgres to my API\\\" → Postgres API connection\\n\\\"best practices for React hooks\\\" → React hooks best practices\\n\\\"@src/auth.ts can you add refresh token support\\\" → Auth refresh token support\\n\\\"@utils/parser.ts this is broken\\\" → Parser bug fix\\n\\\"look at @config.json\\\" → Config review\\n\\\"@App.tsx add dark mode toggle\\\" → Dark mode toggle in App\\n</examples>\\n\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Generate a title for this conversation:\\n\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\\"Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done.\\\"\"}]}]"
+                  }
+                },
+                {
+                  "key": "gen_ai.system",
+                  "value": {
+                    "stringValue": "opencode-go.chat"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.model",
+                  "value": {
+                    "stringValue": "glm-5.3-flash"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.max_tokens",
+                  "value": {
+                    "intValue": "32000"
+                  }
+                },
+                {
+                  "key": "gen_ai.request.temperature",
+                  "value": {
+                    "doubleValue": 0.5
+                  }
+                },
+                {
+                  "key": "session.id",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.response.msToFirstChunk",
+                  "value": {
+                    "doubleValue": 829.2801000000002
+                  }
+                },
+                {
+                  "key": "ai.response.msToFinish",
+                  "value": {
+                    "doubleValue": 909.3375520000002
+                  }
+                },
+                {
+                  "key": "ai.response.avgOutputTokensPerSecond",
+                  "value": {
+                    "doubleValue": 7.697911501184764
+                  }
+                },
+                {
+                  "key": "ai.response.finishReason",
+                  "value": {
+                    "stringValue": "stop"
+                  }
+                },
+                {
+                  "key": "ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-e60e376e"
+                  }
+                },
+                {
+                  "key": "ai.response.model",
+                  "value": {
+                    "stringValue": "glm-5.3-flash"
+                  }
+                },
+                {
+                  "key": "ai.response.timestamp",
+                  "value": {
+                    "stringValue": "2026-10-19T23:46:23.000Z"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokens",
+                  "value": {
+                    "intValue": "549"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                  "value": {
+                    "intValue": "37"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                  "value": {
+                    "intValue": "512"
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokens",
+                  "value": {
+                    "intValue": "7"
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.textTokens",
+                  "value": {
+                    "intValue": "7"
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                  "value": {
+                    "intValue": "0"
+                  }
+                },
+                {
+                  "key": "ai.usage.totalTokens",
+                  "value": {
+                    "intValue": "556"
+                  }
+                },
+                {
+                  "key": "ai.usage.reasoningTokens",
+                  "value": {
+                    "intValue": "0"
+                  }
+                },
+                {
+                  "key": "ai.usage.cachedInputTokens",
+                  "value": {
+                    "intValue": "512"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.finish_reasons",
+                  "value": {
+                    "arrayValue": {
+                      "values": [
+                        {
+                          "stringValue": "stop"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "key": "gen_ai.response.id",
+                  "value": {
+                    "stringValue": "chatcmpl-e60e376e"
+                  }
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "value": {
+                    "stringValue": "glm-5.3-flash"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.input_tokens",
+                  "value": {
+                    "intValue": "549"
+                  }
+                },
+                {
+                  "key": "gen_ai.usage.output_tokens",
+                  "value": {
+                    "intValue": "7"
+                  }
+                },
+                {
+                  "key": "ai.response.text",
+                  "value": {
+                    "stringValue": "Bash printf command execution"
+                  }
+                },
+                {
+                  "key": "ai.response.providerMetadata",
+                  "value": {
+                    "stringValue": "{\"opencode-go\":{}}"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "timeUnixNano": "1792453583827444158",
+                  "name": "ai.stream.firstChunk",
+                  "attributes": [
+                    {
+                      "key": "ai.response.msToFirstChunk",
+                      "value": {
+                        "doubleValue": 829.2801000000002
+                      }
+                    }
+                  ]
+                },
+                {
+                  "timeUnixNano": "1792453583907487161",
+                  "name": "ai.stream.finish"
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "de055123382210dc",
+              "parentSpanId": "8232a155cb0fc23a",
+              "flags": 257,
+              "name": "ai.streamText",
+              "kind": 1,
+              "startTimeUnixNano": "1792453582994000000",
+              "endTimeUnixNano": "1792453583911248113",
+              "attributes": [
+                {
+                  "key": "operation.name",
+                  "value": {
+                    "stringValue": "ai.streamText session.llm"
+                  }
+                },
+                {
+                  "key": "resource.name",
+                  "value": {
+                    "stringValue": "session.llm"
+                  }
+                },
+                {
+                  "key": "ai.operationId",
+                  "value": {
+                    "stringValue": "ai.streamText"
+                  }
+                },
+                {
+                  "key": "ai.telemetry.functionId",
+                  "value": {
+                    "stringValue": "session.llm"
+                  }
+                },
+                {
+                  "key": "ai.model.provider",
+                  "value": {
+                    "stringValue": "opencode-go.chat"
+                  }
+                },
+                {
+                  "key": "ai.model.id",
+                  "value": {
+                    "stringValue": "glm-5.3-flash"
+                  }
+                },
+                {
+                  "key": "ai.settings.maxOutputTokens",
+                  "value": {
+                    "intValue": "32000"
+                  }
+                },
+                {
+                  "key": "ai.settings.temperature",
+                  "value": {
+                    "doubleValue": 0.5
+                  }
+                },
+                {
+                  "key": "ai.settings.maxRetries",
+                  "value": {
+                    "intValue": "2"
+                  }
+                },
+                {
+                  "key": "ai.telemetry.metadata.userId",
+                  "value": {
+                    "stringValue": "unknown"
+                  }
+                },
+                {
+                  "key": "ai.telemetry.metadata.sessionId",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-session-id",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-project",
+                  "value": {
+                    "stringValue": "global"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-session",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-request",
+                  "value": {
+                    "stringValue": "msg_1568f1e97001kZm6D2A8cqC76g"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-client",
+                  "value": {
+                    "stringValue": "cli"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.User-Agent",
+                  "value": {
+                    "stringValue": "opencode/1.19.3"
+                  }
+                },
+                {
+                  "key": "ai.prompt",
+                  "value": {
+                    "stringValue": "{\"messages\":[{\"role\":\"system\",\"content\":\"You are a title generator. You output ONLY a thread title. Nothing else.\\n\\n<task>\\nGenerate a brief title that would help the user find this conversation later.\\n\\nFollow all rules in <rules>\\nUse the <examples> so you know what a good title looks like.\\nYour output must be:\\n- A single line\\n- ≤50 characters\\n- No explanations\\n</task>\\n\\n<rules>\\n- you MUST use the same language as the user message you are summarizing\\n- Title must be grammatically correct and read naturally - no word salad\\n- Never include tool names in the title (e.g. \\\"read tool\\\", \\\"bash tool\\\", \\\"edit tool\\\")\\n- Focus on the main topic or question the user needs to retrieve\\n- Vary your phrasing - avoid repetitive patterns like always starting with \\\"Analyzing\\\"\\n- When a file is mentioned, focus on WHAT the user wants to do WITH the file, not just that they shared it\\n- Keep exact: technical terms, numbers, filenames, HTTP codes\\n- Remove: the, this, my, a, an\\n- Never assume tech stack\\n- Never use tools\\n- NEVER respond to questions, just generate a title for the conversation\\n- The title should NEVER include \\\"summarizing\\\" or \\\"generating\\\" when generating a title\\n- DO NOT SAY YOU CANNOT GENERATE A TITLE OR COMPLAIN ABOUT THE INPUT\\n- Always output something meaningful, even if the input is minimal.\\n- If the user message is short or conversational (e.g. \\\"hello\\\", \\\"lol\\\", \\\"what's up\\\", \\\"hey\\\"):\\n  → create a title that reflects the user's tone or intent (such as Greeting, Quick check-in, Light chat, Intro message, etc.)\\n</rules>\\n\\n<examples>\\n\\\"debug 500 errors in production\\\" → Debugging production 500 errors\\n\\\"refactor user service\\\" → Refactoring user service\\n\\\"why is app.js failing\\\" → app.js failure investigation\\n\\\"implement rate limiting\\\" → Rate limiting implementation\\n\\\"how do I connect postgres to my API\\\" → Postgres API connection\\n\\\"best practices for React hooks\\\" → React hooks best practices\\n\\\"@src/auth.ts can you add refresh token support\\\" → Auth refresh token support\\n\\\"@utils/parser.ts this is broken\\\" → Parser bug fix\\n\\\"look at @config.json\\\" → Config review\\n\\\"@App.tsx add dark mode toggle\\\" → Dark mode toggle in App\\n</examples>\\n\"},{\"role\":\"user\",\"content\":\"Generate a title for this conversation:\\n\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\\"Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done.\\\"\"}]}]}"
+                  }
+                },
+                {
+                  "key": "session.id",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.response.finishReason",
+                  "value": {
+                    "stringValue": "stop"
+                  }
+                },
+                {
+                  "key": "ai.response.text",
+                  "value": {
+                    "stringValue": "Bash printf command execution"
+                  }
+                },
+                {
+                  "key": "ai.response.providerMetadata",
+                  "value": {
+                    "stringValue": "{\"opencode-go\":{}}"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokens",
+                  "value": {
+                    "intValue": "549"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.noCacheTokens",
+                  "value": {
+                    "intValue": "37"
+                  }
+                },
+                {
+                  "key": "ai.usage.inputTokenDetails.cacheReadTokens",
+                  "value": {
+                    "intValue": "512"
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokens",
+                  "value": {
+                    "intValue": "7"
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.textTokens",
+                  "value": {
+                    "intValue": "7"
+                  }
+                },
+                {
+                  "key": "ai.usage.outputTokenDetails.reasoningTokens",
+                  "value": {
+                    "intValue": "0"
+                  }
+                },
+                {
+                  "key": "ai.usage.totalTokens",
+                  "value": {
+                    "intValue": "556"
+                  }
+                },
+                {
+                  "key": "ai.usage.reasoningTokens",
+                  "value": {
+                    "intValue": "0"
+                  }
+                },
+                {
+                  "key": "ai.usage.cachedInputTokens",
+                  "value": {
+                    "intValue": "512"
+                  }
+                }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "e9b1e2ee12b35c7c",
+              "parentSpanId": "abdb16714ac6f016",
               "flags": 257,
               "name": "ai.toolCall",
               "kind": 1,
-              "startTimeUnixNano": "1787441986049000000",
-              "endTimeUnixNano": "1787441986107707601",
+              "startTimeUnixNano": "1792453587116000000",
+              "endTimeUnixNano": "1792453587172251380",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -109,7 +621,7 @@
                 {
                   "key": "ai.toolCall.id",
                   "value": {
-                    "stringValue": "call_9d8a59722f4f47fab760ffc1"
+                    "stringValue": "chatcmpl-tool-beb4c279fbf39dcd"
                   }
                 },
                 {
@@ -121,7 +633,7 @@
                 {
                   "key": "session.id",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
@@ -134,14 +646,14 @@
               "status": {}
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "8f452368c23fd27e",
-              "parentSpanId": "7a9223861af96d15",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "7d2c30203ea6e1b8",
+              "parentSpanId": "abdb16714ac6f016",
               "flags": 257,
               "name": "ai.streamText.doStream",
               "kind": 1,
-              "startTimeUnixNano": "1787441982258000000",
-              "endTimeUnixNano": "1787441986112741893",
+              "startTimeUnixNano": "1792453583512000000",
+              "endTimeUnixNano": "1792453587175961454",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -170,13 +682,13 @@
                 {
                   "key": "ai.model.provider",
                   "value": {
-                    "stringValue": "oclaude.chat"
+                    "stringValue": "opencode-go.chat"
                   }
                 },
                 {
                   "key": "ai.model.id",
                   "value": {
-                    "stringValue": "ox-alpha-free"
+                    "stringValue": "glm-5.3-flash"
                   }
                 },
                 {
@@ -200,31 +712,49 @@
                 {
                   "key": "ai.telemetry.metadata.sessionId",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
-                  "key": "ai.request.headers.x-session-affinity",
+                  "key": "ai.request.headers.x-opencode-session-id",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
-                  "key": "ai.request.headers.X-Session-Id",
+                  "key": "ai.request.headers.x-opencode-project",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "global"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-session",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-request",
+                  "value": {
+                    "stringValue": "msg_1568f1e97001kZm6D2A8cqC76g"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-client",
+                  "value": {
+                    "stringValue": "cli"
                   }
                 },
                 {
                   "key": "ai.request.headers.User-Agent",
                   "value": {
-                    "stringValue": "opencode/1.18.21"
+                    "stringValue": "opencode/1.19.3"
                   }
                 },
                 {
                   "key": "ai.prompt.messages",
                   "value": {
-                    "stringValue": "[{\"role\":\"system\",\"content\":\"You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.\\n\\nIMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.\\n\\nIf the user asks for help or wants to give feedback inform them of the following:\\n- /help: Get help with using opencode\\n- To give feedback, users should report the issue at https://github.com/anomalyco/opencode/issues\\n\\nWhen the user directly asks about opencode (eg 'can opencode do...', 'does opencode have...') or asks in second person (eg 'are you able...', 'can you do...'), first use the WebFetch tool to gather information to answer the question from opencode docs at https://opencode.ai\\n\\n# Tone and style\\nYou should be concise, direct, and to the point. When you run a non-trivial bash command, you should explain what the command does and why you are running it, to make sure the user understands what you are doing (this is especially important when you are running a command that will make changes to the user's system).\\nRemember that your output will be displayed on a command line interface. Your responses can use GitHub-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.\\nOutput text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks. Never use tools like Bash or code comments as means to communicate with the user during the session.\\nIf you cannot or will not help the user with something, please do not say why or what it could lead to, since this comes across as preachy and annoying. Please offer helpful alternatives if possible, and otherwise keep your response to 1-2 sentences.\\nOnly use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\\nIMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.\\nIMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.\\nIMPORTANT: Keep your responses short, since they will be displayed on a command line interface. You MUST answer concisely with fewer than 4 lines (not including tool use or code generation), unless user asks for detail. Answer the user's question directly, without elaboration, explanation, or details. One word answers are best. Avoid introductions, conclusions, and explanations. You MUST avoid text before/after your response, such as \\\"The answer is <answer>.\\\", \\\"Here is the content of the file...\\\" or \\\"Based on the information provided, the answer is...\\\" or \\\"Here is what I will do next...\\\". Here are some examples to demonstrate appropriate verbosity:\\n<example>\\nuser: what is 2+2?\\nassistant: 4\\n</example>\\n\\n<example>\\nuser: is 11 a prime number?\\nassistant: Yes\\n</example>\\n\\n<example>\\nuser: what command should I run to list files in the current directory?\\nassistant: ls\\n</example>\\n\\n<example>\\nuser: what command should I run to watch files in the current directory?\\nassistant: [use the ls tool to list the files in the current directory, then read docs/commands in the relevant file to find out how to watch files]\\nnpm run dev\\n</example>\\n\\n<example>\\nuser: what files are in the directory src/?\\nassistant: [runs ls and sees foo.c, bar.c, baz.c]\\nuser: which file contains the implementation of foo?\\nassistant: src/foo.c\\n</example>\\n\\n<example>\\nuser: write tests for new feature\\nassistant: [uses grep and glob search tools to find where similar tests are defined, uses concurrent read file tool use blocks in one tool call to read relevant files at the same time, uses edit file tool to write new tests]\\n</example>\\n\\n# Proactiveness\\nYou are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between:\\n1. Doing the right thing when asked, including taking actions and follow-up actions\\n2. Not surprising the user with actions you take without asking\\nFor example, if the user asks you how to approach something, you should do your best to answer their question first, and not immediately jump into taking actions.\\n3. Do not add additional code explanation summary unless requested by the user. After working on a file, just stop, rather than providing an explanation of what you did.\\n\\n# Following conventions\\nWhen making changes to files, first understand the file's code conventions. Mimic code style, use existing libraries and utilities, and follow existing patterns.\\n- NEVER assume that a given library is available, even if it is well known. Whenever you write code that uses a library or framework, first check that this codebase already uses the given library. For example, you might look at neighboring files, or check the package.json (or cargo.toml, and so on depending on the language).\\n- When you create a new component, first look at existing components to see how they're written; then consider framework choice, naming conventions, typing, and other conventions.\\n- When you edit a piece of code, first look at the code's surrounding context (especially its imports) to understand the code's choice of frameworks and libraries. Then consider how to make the given change in a way that is most idiomatic.\\n- Always follow security best practices. Never introduce code that exposes or logs secrets and keys. Never commit secrets or keys to the repository.\\n\\n# Code style\\n- IMPORTANT: DO NOT ADD ***ANY*** COMMENTS unless asked\\n\\n# Doing tasks\\nThe user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. For these tasks the following steps are recommended:\\n- Use the available search tools to understand the codebase and the user's query. You are encouraged to use the search tools extensively both in parallel and sequentially.\\n- Implement the solution using all tools available to you\\n- Verify the solution if possible with tests. NEVER assume specific test framework or test script. Check the README or search codebase to determine the testing approach.\\n- VERY IMPORTANT: When you have completed a task, you MUST run the lint and typecheck commands (e.g. npm run lint, npm run typecheck, ruff, etc.) with Bash if they were provided to you to ensure your code is correct. If you are unable to find the correct command, ask the user for the command to run and if they supply it, proactively suggest writing it to AGENTS.md so that you will know to run it next time.\\nNEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.\\n\\n- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input or the tool result.\\n\\n# Tool usage policy\\n- When doing file search, prefer to use the Task tool in order to reduce context usage.\\n- You have the capability to call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance. When making multiple bash tool calls, you MUST send a single message with multiple tools calls to run the calls in parallel. For example, if you need to run \\\"git status\\\" and \\\"git diff\\\", send a single message with two tool calls to run the calls in parallel.\\n\\nYou MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail.\\n\\nIMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.\\n\\n# Code References\\n\\nWhen referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.\\n\\n<example>\\nuser: Where are errors from the client handled?\\nassistant: Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712.\\n</example>\\n\\nYou are powered by the model named ox-alpha-free. The exact model ID is oclaude/ox-alpha-free\\nHere is some useful information about the environment you are running in:\\n<env>\\n  Working directory: /work\\n  Workspace root folder: /work\\n  Is directory a git repo: yes\\n  Platform: linux\\n  Today's date: Sat Aug 22 2026\\n</env>\\nSkills provide specialized instructions and workflows for specific tasks.\\nUse the skill tool to load a skill when a task matches its description.\\n<available_skills>\\n  <skill>\\n    <name>customize-opencode</name>\\n    <description>Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.</description>\\n    <location>&lt;built-in&gt;</location>\\n  </skill>\\n</available_skills>\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\\"Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done.\\\"\"}]}]"
+                    "stringValue": "[{\"role\":\"system\",\"content\":\"You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.\\n\\nIMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.\\n\\nIf the user asks for help or wants to give feedback inform them of the following:\\n- /help: Get help with using opencode\\n- To give feedback, users should report the issue at https://github.com/anomalyco/opencode/issues\\n\\nWhen the user directly asks about opencode (eg 'can opencode do...', 'does opencode have...') or asks in second person (eg 'are you able...', 'can you do...'), first use the WebFetch tool to gather information to answer the question from opencode docs at https://opencode.ai\\n\\n# Tone and style\\nYou should be concise, direct, and to the point. When you run a non-trivial bash command, you should explain what the command does and why you are running it, to make sure the user understands what you are doing (this is especially important when you are running a command that will make changes to the user's system).\\nRemember that your output will be displayed on a command line interface. Your responses can use GitHub-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.\\nOutput text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks. Never use tools like Bash or code comments as means to communicate with the user during the session.\\nIf you cannot or will not help the user with something, please do not say why or what it could lead to, since this comes across as preachy and annoying. Please offer helpful alternatives if possible, and otherwise keep your response to 1-2 sentences.\\nOnly use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\\nIMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.\\nIMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.\\nIMPORTANT: Keep your responses short, since they will be displayed on a command line interface. You MUST answer concisely with fewer than 4 lines (not including tool use or code generation), unless user asks for detail. Answer the user's question directly, without elaboration, explanation, or details. One word answers are best. Avoid introductions, conclusions, and explanations. You MUST avoid text before/after your response, such as \\\"The answer is <answer>.\\\", \\\"Here is the content of the file...\\\" or \\\"Based on the information provided, the answer is...\\\" or \\\"Here is what I will do next...\\\". Here are some examples to demonstrate appropriate verbosity:\\n<example>\\nuser: what is 2+2?\\nassistant: 4\\n</example>\\n\\n<example>\\nuser: is 11 a prime number?\\nassistant: Yes\\n</example>\\n\\n<example>\\nuser: what command should I run to list files in the current directory?\\nassistant: ls\\n</example>\\n\\n<example>\\nuser: what command should I run to watch files in the current directory?\\nassistant: [use the ls tool to list the files in the current directory, then read docs/commands in the relevant file to find out how to watch files]\\nnpm run dev\\n</example>\\n\\n<example>\\nuser: what files are in the directory src/?\\nassistant: [runs ls and sees foo.c, bar.c, baz.c]\\nuser: which file contains the implementation of foo?\\nassistant: src/foo.c\\n</example>\\n\\n<example>\\nuser: write tests for new feature\\nassistant: [uses grep and glob search tools to find where similar tests are defined, uses concurrent read file tool use blocks in one tool call to read relevant files at the same time, uses edit file tool to write new tests]\\n</example>\\n\\n# Proactiveness\\nYou are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between:\\n1. Doing the right thing when asked, including taking actions and follow-up actions\\n2. Not surprising the user with actions you take without asking\\nFor example, if the user asks you how to approach something, you should do your best to answer their question first, and not immediately jump into taking actions.\\n3. Do not add additional code explanation summary unless requested by the user. After working on a file, just stop, rather than providing an explanation of what you did.\\n\\n# Following conventions\\nWhen making changes to files, first understand the file's code conventions. Mimic code style, use existing libraries and utilities, and follow existing patterns.\\n- NEVER assume that a given library is available, even if it is well known. Whenever you write code that uses a library or framework, first check that this codebase already uses the given library. For example, you might look at neighboring files, or check the package.json (or cargo.toml, and so on depending on the language).\\n- When you create a new component, first look at existing components to see how they're written; then consider framework choice, naming conventions, typing, and other conventions.\\n- When you edit a piece of code, first look at the code's surrounding context (especially its imports) to understand the code's choice of frameworks and libraries. Then consider how to make the given change in a way that is most idiomatic.\\n- Always follow security best practices. Never introduce code that exposes or logs secrets and keys. Never commit secrets or keys to the repository.\\n\\n# Code style\\n- IMPORTANT: DO NOT ADD ***ANY*** COMMENTS unless asked\\n\\n# Doing tasks\\nThe user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. For these tasks the following steps are recommended:\\n- Use the available search tools to understand the codebase and the user's query. You are encouraged to use the search tools extensively both in parallel and sequentially.\\n- Implement the solution using all tools available to you\\n- Verify the solution if possible with tests. NEVER assume specific test framework or test script. Check the README or search codebase to determine the testing approach.\\n- VERY IMPORTANT: When you have completed a task, you MUST run the lint and typecheck commands (e.g. npm run lint, npm run typecheck, ruff, etc.) with Bash if they were provided to you to ensure your code is correct. If you are unable to find the correct command, ask the user for the command to run and if they supply it, proactively suggest writing it to AGENTS.md so that you will know to run it next time.\\nNEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.\\n\\n- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input or the tool result.\\n\\n# Tool usage policy\\n- When doing file search, prefer to use the Task tool in order to reduce context usage.\\n- You have the capability to call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance. When making multiple bash tool calls, you MUST send a single message with multiple tools calls to run the calls in parallel. For example, if you need to run \\\"git status\\\" and \\\"git diff\\\", send a single message with two tool calls to run the calls in parallel.\\n\\nYou MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail.\\n\\nIMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.\\n\\n# Code References\\n\\nWhen referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.\\n\\n<example>\\nuser: Where are errors from the client handled?\\nassistant: Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712.\\n</example>\\n\\nYou are powered by the model named glm-5.3-flash. The exact model ID is opencode-go/glm-5.3-flash\\nHere is some useful information about the environment you are running in:\\n<env>\\n  Working directory: /work\\n  Workspace root folder: /work\\n  Is directory a git repo: yes\\n  Platform: linux\\n  Today's date: Mon Oct 19 2026\\n</env>\\nSkills provide specialized instructions and workflows for specific tasks.\\nUse the skill tool to load a skill when a task matches its description.\\n<available_skills>\\n  <skill>\\n    <name>customize-opencode</name>\\n    <description>Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.</description>\\n    <location>&lt;built-in&gt;</location>\\n  </skill>\\n</available_skills>\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\\"Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done.\\\"\"}]}]"
                   }
                 },
                 {
@@ -260,6 +790,9 @@
                           "stringValue": "{\"type\":\"function\",\"name\":\"webfetch\",\"description\":\"- Fetches content from a specified URL\\n- Takes a URL and optional format as input\\n- Fetches the URL content, converts to requested format (markdown by default)\\n- Returns the content in the specified format\\n- Use this tool when you need to retrieve and analyze web content\\n\\nUsage notes:\\n  - IMPORTANT: if another tool is present that offers better web fetching capabilities, is more targeted to the task, or has fewer restrictions, prefer using that tool instead of this one.\\n  - The URL must be a fully-formed valid URL\\n  - HTTP URLs will be automatically upgraded to HTTPS\\n  - Format options: \\\"markdown\\\" (default), \\\"text\\\", or \\\"html\\\"\\n  - This tool is read-only and does not modify any files\\n  - Results may be summarized if the content is very large\\n\",\"inputSchema\":{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"The URL to fetch content from\"},\"format\":{\"type\":\"string\",\"enum\":[\"text\",\"markdown\",\"html\"],\"description\":\"The format to return the content in (text, markdown, or html). Defaults to markdown.\",\"default\":\"markdown\"},\"timeout\":{\"type\":\"number\",\"description\":\"Optional timeout in seconds (max 120)\"}},\"required\":[\"url\"]}}"
                         },
                         {
+                          "stringValue": "{\"type\":\"function\",\"name\":\"websearch\",\"description\":\"- Search the web using the session's web search provider - performs real-time web searches and can scrape content from specific URLs\\n- Provides up-to-date information for current events and recent data\\n- Supports configurable result counts and returns the content from the most relevant websites\\n- Use this tool for accessing information beyond knowledge cutoff\\n- Searches are performed automatically within a single API call\\n\\nUsage notes:\\n  - Supports live crawling modes when available: 'fallback' (backup if cached unavailable) or 'preferred' (prioritize live crawling)\\n  - Search types when available: 'auto' (balanced), 'fast' (quick results), 'deep' (comprehensive search)\\n  - Configurable context length for optimal LLM integration\\n  - Domain filtering and advanced search options available\\n\\nThe current year is 2026. You MUST use this year when searching for recent information or current events\\n- Example: If the current year is 2026 and the user asks for \\\"latest AI news\\\", search for \\\"AI news 2026\\\", NOT \\\"AI news 2025\\\"\\n\",\"inputSchema\":{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Websearch query\"},\"numResults\":{\"type\":\"number\",\"description\":\"Number of search results to return (default: 8)\"},\"livecrawl\":{\"type\":\"string\",\"enum\":[\"fallback\",\"preferred\"],\"description\":\"Live crawl mode - 'fallback': use live crawling as backup if cached content unavailable, 'preferred': prioritize live crawling (default: 'fallback')\"},\"type\":{\"type\":\"string\",\"enum\":[\"auto\",\"fast\",\"deep\"],\"description\":\"Search type - 'auto': balanced search (default), 'fast': quick results, 'deep': comprehensive search\"},\"contextMaxCharacters\":{\"type\":\"number\",\"description\":\"Maximum characters for context string optimized for LLMs (default: 10000)\"}},\"required\":[\"query\"]}}"
+                        },
+                        {
                           "stringValue": "{\"type\":\"function\",\"name\":\"write\",\"description\":\"Writes a file to the local filesystem.\\n\\nUsage:\\n- This tool will overwrite the existing file if there is one at the provided path.\\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.\\n\",\"inputSchema\":{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"description\":\"The content to write to the file\"},\"filePath\":{\"type\":\"string\",\"description\":\"The absolute path to the file to write (must be absolute, not relative)\"}},\"required\":[\"content\",\"filePath\"]}}"
                         }
                       ]
@@ -275,13 +808,13 @@
                 {
                   "key": "gen_ai.system",
                   "value": {
-                    "stringValue": "oclaude.chat"
+                    "stringValue": "opencode-go.chat"
                   }
                 },
                 {
                   "key": "gen_ai.request.model",
                   "value": {
-                    "stringValue": "ox-alpha-free"
+                    "stringValue": "glm-5.3-flash"
                   }
                 },
                 {
@@ -293,25 +826,25 @@
                 {
                   "key": "session.id",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
                   "key": "ai.response.msToFirstChunk",
                   "value": {
-                    "doubleValue": 3276.662537
+                    "doubleValue": 2878.648566
                   }
                 },
                 {
                   "key": "ai.response.msToFinish",
                   "value": {
-                    "doubleValue": 3849.783192
+                    "doubleValue": 3659.8702140000005
                   }
                 },
                 {
                   "key": "ai.response.avgOutputTokensPerSecond",
                   "value": {
-                    "doubleValue": 12.468234600781123
+                    "doubleValue": 15.027855301974922
                   }
                 },
                 {
@@ -323,79 +856,79 @@
                 {
                   "key": "ai.response.toolCalls",
                   "value": {
-                    "stringValue": "[{\"type\":\"tool-call\",\"toolCallId\":\"call_9d8a59722f4f47fab760ffc1\",\"toolName\":\"bash\",\"input\":{\"command\":\"printf opencode-otel-e2e\"}}]"
+                    "stringValue": "[{\"type\":\"tool-call\",\"toolCallId\":\"chatcmpl-tool-beb4c279fbf39dcd\",\"toolName\":\"bash\",\"input\":{\"command\":\"printf opencode-otel-e2e\"}}]"
                   }
                 },
                 {
                   "key": "ai.response.id",
                   "value": {
-                    "stringValue": "20260823073942a1b490f4afa54095"
+                    "stringValue": "chatcmpl-1714d35ece99f346a1a4353c3c72cff5"
                   }
                 },
                 {
                   "key": "ai.response.model",
                   "value": {
-                    "stringValue": "ox-alpha-free"
+                    "stringValue": "glm-5.3-flash"
                   }
                 },
                 {
                   "key": "ai.response.timestamp",
                   "value": {
-                    "stringValue": "2026-08-22T23:39:42.000Z"
+                    "stringValue": "2026-10-19T23:46:26.000Z"
                   }
                 },
                 {
                   "key": "ai.usage.inputTokens",
                   "value": {
-                    "intValue": "7136"
+                    "intValue": "7517"
                   }
                 },
                 {
                   "key": "ai.usage.inputTokenDetails.noCacheTokens",
                   "value": {
-                    "intValue": "288"
+                    "intValue": "2077"
                   }
                 },
                 {
                   "key": "ai.usage.inputTokenDetails.cacheReadTokens",
                   "value": {
-                    "intValue": "6848"
+                    "intValue": "5440"
                   }
                 },
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": "48"
+                    "intValue": "55"
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": "41"
+                    "intValue": "18"
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.reasoningTokens",
                   "value": {
-                    "intValue": "7"
+                    "intValue": "37"
                   }
                 },
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": "7184"
+                    "intValue": "7572"
                   }
                 },
                 {
                   "key": "ai.usage.reasoningTokens",
                   "value": {
-                    "intValue": "7"
+                    "intValue": "37"
                   }
                 },
                 {
                   "key": "ai.usage.cachedInputTokens",
                   "value": {
-                    "intValue": "6848"
+                    "intValue": "5440"
                   }
                 },
                 {
@@ -413,25 +946,25 @@
                 {
                   "key": "gen_ai.response.id",
                   "value": {
-                    "stringValue": "20260823073942a1b490f4afa54095"
+                    "stringValue": "chatcmpl-1714d35ece99f346a1a4353c3c72cff5"
                   }
                 },
                 {
                   "key": "gen_ai.response.model",
                   "value": {
-                    "stringValue": "ox-alpha-free"
+                    "stringValue": "glm-5.3-flash"
                   }
                 },
                 {
                   "key": "gen_ai.usage.input_tokens",
                   "value": {
-                    "intValue": "7136"
+                    "intValue": "7517"
                   }
                 },
                 {
                   "key": "gen_ai.usage.output_tokens",
                   "value": {
-                    "intValue": "48"
+                    "intValue": "55"
                   }
                 },
                 {
@@ -443,45 +976,45 @@
                 {
                   "key": "ai.response.reasoning",
                   "value": {
-                    "stringValue": "The user wants me to use the bash tool exactly once to run 'printf opencode-otel-e2e', then reply with only \"done.\""
+                    "stringValue": "The user wants me to run a simple printf command once with the bash tool, then reply with only \"done\". Simple and direct — I'll execute the command and respond as requested."
                   }
                 },
                 {
                   "key": "ai.response.providerMetadata",
                   "value": {
-                    "stringValue": "{\"oclaude\":{}}"
+                    "stringValue": "{\"opencode-go\":{}}"
                   }
                 }
               ],
               "events": [
                 {
-                  "timeUnixNano": "1787441985534759056",
+                  "timeUnixNano": "1792453586390736366",
                   "name": "ai.stream.firstChunk",
                   "attributes": [
                     {
                       "key": "ai.response.msToFirstChunk",
                       "value": {
-                        "doubleValue": 3276.662537
+                        "doubleValue": 2878.648566
                       }
                     }
                   ]
                 },
                 {
-                  "timeUnixNano": "1787441986107838152",
+                  "timeUnixNano": "1792453587171952864",
                   "name": "ai.stream.finish"
                 }
               ],
               "status": {}
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "7a9223861af96d15",
-              "parentSpanId": "6a21f6df17cc74d4",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "abdb16714ac6f016",
+              "parentSpanId": "e1a97ac775ad80ac",
               "flags": 257,
               "name": "ai.streamText",
               "kind": 1,
-              "startTimeUnixNano": "1787441982258000000",
-              "endTimeUnixNano": "1787441986114077969",
+              "startTimeUnixNano": "1792453583511000000",
+              "endTimeUnixNano": "1792453587176109193",
               "attributes": [
                 {
                   "key": "operation.name",
@@ -510,13 +1043,13 @@
                 {
                   "key": "ai.model.provider",
                   "value": {
-                    "stringValue": "oclaude.chat"
+                    "stringValue": "opencode-go.chat"
                   }
                 },
                 {
                   "key": "ai.model.id",
                   "value": {
-                    "stringValue": "ox-alpha-free"
+                    "stringValue": "glm-5.3-flash"
                   }
                 },
                 {
@@ -540,37 +1073,55 @@
                 {
                   "key": "ai.telemetry.metadata.sessionId",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
-                  "key": "ai.request.headers.x-session-affinity",
+                  "key": "ai.request.headers.x-opencode-session-id",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
-                  "key": "ai.request.headers.X-Session-Id",
+                  "key": "ai.request.headers.x-opencode-project",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "global"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-session",
+                  "value": {
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-request",
+                  "value": {
+                    "stringValue": "msg_1568f1e97001kZm6D2A8cqC76g"
+                  }
+                },
+                {
+                  "key": "ai.request.headers.x-opencode-client",
+                  "value": {
+                    "stringValue": "cli"
                   }
                 },
                 {
                   "key": "ai.request.headers.User-Agent",
                   "value": {
-                    "stringValue": "opencode/1.18.21"
+                    "stringValue": "opencode/1.19.3"
                   }
                 },
                 {
                   "key": "ai.prompt",
                   "value": {
-                    "stringValue": "{\"messages\":[{\"role\":\"system\",\"content\":\"You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.\\n\\nIMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.\\n\\nIf the user asks for help or wants to give feedback inform them of the following:\\n- /help: Get help with using opencode\\n- To give feedback, users should report the issue at https://github.com/anomalyco/opencode/issues\\n\\nWhen the user directly asks about opencode (eg 'can opencode do...', 'does opencode have...') or asks in second person (eg 'are you able...', 'can you do...'), first use the WebFetch tool to gather information to answer the question from opencode docs at https://opencode.ai\\n\\n# Tone and style\\nYou should be concise, direct, and to the point. When you run a non-trivial bash command, you should explain what the command does and why you are running it, to make sure the user understands what you are doing (this is especially important when you are running a command that will make changes to the user's system).\\nRemember that your output will be displayed on a command line interface. Your responses can use GitHub-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.\\nOutput text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks. Never use tools like Bash or code comments as means to communicate with the user during the session.\\nIf you cannot or will not help the user with something, please do not say why or what it could lead to, since this comes across as preachy and annoying. Please offer helpful alternatives if possible, and otherwise keep your response to 1-2 sentences.\\nOnly use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\\nIMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.\\nIMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.\\nIMPORTANT: Keep your responses short, since they will be displayed on a command line interface. You MUST answer concisely with fewer than 4 lines (not including tool use or code generation), unless user asks for detail. Answer the user's question directly, without elaboration, explanation, or details. One word answers are best. Avoid introductions, conclusions, and explanations. You MUST avoid text before/after your response, such as \\\"The answer is <answer>.\\\", \\\"Here is the content of the file...\\\" or \\\"Based on the information provided, the answer is...\\\" or \\\"Here is what I will do next...\\\". Here are some examples to demonstrate appropriate verbosity:\\n<example>\\nuser: what is 2+2?\\nassistant: 4\\n</example>\\n\\n<example>\\nuser: is 11 a prime number?\\nassistant: Yes\\n</example>\\n\\n<example>\\nuser: what command should I run to list files in the current directory?\\nassistant: ls\\n</example>\\n\\n<example>\\nuser: what command should I run to watch files in the current directory?\\nassistant: [use the ls tool to list the files in the current directory, then read docs/commands in the relevant file to find out how to watch files]\\nnpm run dev\\n</example>\\n\\n<example>\\nuser: what files are in the directory src/?\\nassistant: [runs ls and sees foo.c, bar.c, baz.c]\\nuser: which file contains the implementation of foo?\\nassistant: src/foo.c\\n</example>\\n\\n<example>\\nuser: write tests for new feature\\nassistant: [uses grep and glob search tools to find where similar tests are defined, uses concurrent read file tool use blocks in one tool call to read relevant files at the same time, uses edit file tool to write new tests]\\n</example>\\n\\n# Proactiveness\\nYou are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between:\\n1. Doing the right thing when asked, including taking actions and follow-up actions\\n2. Not surprising the user with actions you take without asking\\nFor example, if the user asks you how to approach something, you should do your best to answer their question first, and not immediately jump into taking actions.\\n3. Do not add additional code explanation summary unless requested by the user. After working on a file, just stop, rather than providing an explanation of what you did.\\n\\n# Following conventions\\nWhen making changes to files, first understand the file's code conventions. Mimic code style, use existing libraries and utilities, and follow existing patterns.\\n- NEVER assume that a given library is available, even if it is well known. Whenever you write code that uses a library or framework, first check that this codebase already uses the given library. For example, you might look at neighboring files, or check the package.json (or cargo.toml, and so on depending on the language).\\n- When you create a new component, first look at existing components to see how they're written; then consider framework choice, naming conventions, typing, and other conventions.\\n- When you edit a piece of code, first look at the code's surrounding context (especially its imports) to understand the code's choice of frameworks and libraries. Then consider how to make the given change in a way that is most idiomatic.\\n- Always follow security best practices. Never introduce code that exposes or logs secrets and keys. Never commit secrets or keys to the repository.\\n\\n# Code style\\n- IMPORTANT: DO NOT ADD ***ANY*** COMMENTS unless asked\\n\\n# Doing tasks\\nThe user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. For these tasks the following steps are recommended:\\n- Use the available search tools to understand the codebase and the user's query. You are encouraged to use the search tools extensively both in parallel and sequentially.\\n- Implement the solution using all tools available to you\\n- Verify the solution if possible with tests. NEVER assume specific test framework or test script. Check the README or search codebase to determine the testing approach.\\n- VERY IMPORTANT: When you have completed a task, you MUST run the lint and typecheck commands (e.g. npm run lint, npm run typecheck, ruff, etc.) with Bash if they were provided to you to ensure your code is correct. If you are unable to find the correct command, ask the user for the command to run and if they supply it, proactively suggest writing it to AGENTS.md so that you will know to run it next time.\\nNEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.\\n\\n- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input or the tool result.\\n\\n# Tool usage policy\\n- When doing file search, prefer to use the Task tool in order to reduce context usage.\\n- You have the capability to call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance. When making multiple bash tool calls, you MUST send a single message with multiple tools calls to run the calls in parallel. For example, if you need to run \\\"git status\\\" and \\\"git diff\\\", send a single message with two tool calls to run the calls in parallel.\\n\\nYou MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail.\\n\\nIMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.\\n\\n# Code References\\n\\nWhen referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.\\n\\n<example>\\nuser: Where are errors from the client handled?\\nassistant: Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712.\\n</example>\\n\\nYou are powered by the model named ox-alpha-free. The exact model ID is oclaude/ox-alpha-free\\nHere is some useful information about the environment you are running in:\\n<env>\\n  Working directory: /work\\n  Workspace root folder: /work\\n  Is directory a git repo: yes\\n  Platform: linux\\n  Today's date: Sat Aug 22 2026\\n</env>\\nSkills provide specialized instructions and workflows for specific tasks.\\nUse the skill tool to load a skill when a task matches its description.\\n<available_skills>\\n  <skill>\\n    <name>customize-opencode</name>\\n    <description>Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.</description>\\n    <location>&lt;built-in&gt;</location>\\n  </skill>\\n</available_skills>\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\\"Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done.\\\"\"}]}]}"
+                    "stringValue": "{\"messages\":[{\"role\":\"system\",\"content\":\"You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.\\n\\nIMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.\\n\\nIf the user asks for help or wants to give feedback inform them of the following:\\n- /help: Get help with using opencode\\n- To give feedback, users should report the issue at https://github.com/anomalyco/opencode/issues\\n\\nWhen the user directly asks about opencode (eg 'can opencode do...', 'does opencode have...') or asks in second person (eg 'are you able...', 'can you do...'), first use the WebFetch tool to gather information to answer the question from opencode docs at https://opencode.ai\\n\\n# Tone and style\\nYou should be concise, direct, and to the point. When you run a non-trivial bash command, you should explain what the command does and why you are running it, to make sure the user understands what you are doing (this is especially important when you are running a command that will make changes to the user's system).\\nRemember that your output will be displayed on a command line interface. Your responses can use GitHub-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.\\nOutput text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks. Never use tools like Bash or code comments as means to communicate with the user during the session.\\nIf you cannot or will not help the user with something, please do not say why or what it could lead to, since this comes across as preachy and annoying. Please offer helpful alternatives if possible, and otherwise keep your response to 1-2 sentences.\\nOnly use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\\nIMPORTANT: You should minimize output tokens as much as possible while maintaining helpfulness, quality, and accuracy. Only address the specific query or task at hand, avoiding tangential information unless absolutely critical for completing the request. If you can answer in 1-3 sentences or a short paragraph, please do.\\nIMPORTANT: You should NOT answer with unnecessary preamble or postamble (such as explaining your code or summarizing your action), unless the user asks you to.\\nIMPORTANT: Keep your responses short, since they will be displayed on a command line interface. You MUST answer concisely with fewer than 4 lines (not including tool use or code generation), unless user asks for detail. Answer the user's question directly, without elaboration, explanation, or details. One word answers are best. Avoid introductions, conclusions, and explanations. You MUST avoid text before/after your response, such as \\\"The answer is <answer>.\\\", \\\"Here is the content of the file...\\\" or \\\"Based on the information provided, the answer is...\\\" or \\\"Here is what I will do next...\\\". Here are some examples to demonstrate appropriate verbosity:\\n<example>\\nuser: what is 2+2?\\nassistant: 4\\n</example>\\n\\n<example>\\nuser: is 11 a prime number?\\nassistant: Yes\\n</example>\\n\\n<example>\\nuser: what command should I run to list files in the current directory?\\nassistant: ls\\n</example>\\n\\n<example>\\nuser: what command should I run to watch files in the current directory?\\nassistant: [use the ls tool to list the files in the current directory, then read docs/commands in the relevant file to find out how to watch files]\\nnpm run dev\\n</example>\\n\\n<example>\\nuser: what files are in the directory src/?\\nassistant: [runs ls and sees foo.c, bar.c, baz.c]\\nuser: which file contains the implementation of foo?\\nassistant: src/foo.c\\n</example>\\n\\n<example>\\nuser: write tests for new feature\\nassistant: [uses grep and glob search tools to find where similar tests are defined, uses concurrent read file tool use blocks in one tool call to read relevant files at the same time, uses edit file tool to write new tests]\\n</example>\\n\\n# Proactiveness\\nYou are allowed to be proactive, but only when the user asks you to do something. You should strive to strike a balance between:\\n1. Doing the right thing when asked, including taking actions and follow-up actions\\n2. Not surprising the user with actions you take without asking\\nFor example, if the user asks you how to approach something, you should do your best to answer their question first, and not immediately jump into taking actions.\\n3. Do not add additional code explanation summary unless requested by the user. After working on a file, just stop, rather than providing an explanation of what you did.\\n\\n# Following conventions\\nWhen making changes to files, first understand the file's code conventions. Mimic code style, use existing libraries and utilities, and follow existing patterns.\\n- NEVER assume that a given library is available, even if it is well known. Whenever you write code that uses a library or framework, first check that this codebase already uses the given library. For example, you might look at neighboring files, or check the package.json (or cargo.toml, and so on depending on the language).\\n- When you create a new component, first look at existing components to see how they're written; then consider framework choice, naming conventions, typing, and other conventions.\\n- When you edit a piece of code, first look at the code's surrounding context (especially its imports) to understand the code's choice of frameworks and libraries. Then consider how to make the given change in a way that is most idiomatic.\\n- Always follow security best practices. Never introduce code that exposes or logs secrets and keys. Never commit secrets or keys to the repository.\\n\\n# Code style\\n- IMPORTANT: DO NOT ADD ***ANY*** COMMENTS unless asked\\n\\n# Doing tasks\\nThe user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. For these tasks the following steps are recommended:\\n- Use the available search tools to understand the codebase and the user's query. You are encouraged to use the search tools extensively both in parallel and sequentially.\\n- Implement the solution using all tools available to you\\n- Verify the solution if possible with tests. NEVER assume specific test framework or test script. Check the README or search codebase to determine the testing approach.\\n- VERY IMPORTANT: When you have completed a task, you MUST run the lint and typecheck commands (e.g. npm run lint, npm run typecheck, ruff, etc.) with Bash if they were provided to you to ensure your code is correct. If you are unable to find the correct command, ask the user for the command to run and if they supply it, proactively suggest writing it to AGENTS.md so that you will know to run it next time.\\nNEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.\\n\\n- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input or the tool result.\\n\\n# Tool usage policy\\n- When doing file search, prefer to use the Task tool in order to reduce context usage.\\n- You have the capability to call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance. When making multiple bash tool calls, you MUST send a single message with multiple tools calls to run the calls in parallel. For example, if you need to run \\\"git status\\\" and \\\"git diff\\\", send a single message with two tool calls to run the calls in parallel.\\n\\nYou MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail.\\n\\nIMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure.\\n\\n# Code References\\n\\nWhen referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.\\n\\n<example>\\nuser: Where are errors from the client handled?\\nassistant: Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712.\\n</example>\\n\\nYou are powered by the model named glm-5.3-flash. The exact model ID is opencode-go/glm-5.3-flash\\nHere is some useful information about the environment you are running in:\\n<env>\\n  Working directory: /work\\n  Workspace root folder: /work\\n  Is directory a git repo: yes\\n  Platform: linux\\n  Today's date: Mon Oct 19 2026\\n</env>\\nSkills provide specialized instructions and workflows for specific tasks.\\nUse the skill tool to load a skill when a task matches its description.\\n<available_skills>\\n  <skill>\\n    <name>customize-opencode</name>\\n    <description>Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.</description>\\n    <location>&lt;built-in&gt;</location>\\n  </skill>\\n</available_skills>\"},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"\\\"Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done.\\\"\"}]}]}"
                   }
                 },
                 {
                   "key": "session.id",
                   "value": {
-                    "stringValue": "ses_fd427d856ffeF76leFdcEE8L9B"
+                    "stringValue": "ses_ea970e198ffejVHeTy0lXqGfrN"
                   }
                 },
                 {
@@ -588,233 +1139,100 @@
                 {
                   "key": "ai.response.reasoning",
                   "value": {
-                    "stringValue": "The user wants me to use the bash tool exactly once to run 'printf opencode-otel-e2e', then reply with only \"done.\""
+                    "stringValue": "The user wants me to run a simple printf command once with the bash tool, then reply with only \"done\". Simple and direct — I'll execute the command and respond as requested."
                   }
                 },
                 {
                   "key": "ai.response.toolCalls",
                   "value": {
-                    "stringValue": "[{\"type\":\"tool-call\",\"toolCallId\":\"call_9d8a59722f4f47fab760ffc1\",\"toolName\":\"bash\",\"input\":{\"command\":\"printf opencode-otel-e2e\"}}]"
+                    "stringValue": "[{\"type\":\"tool-call\",\"toolCallId\":\"chatcmpl-tool-beb4c279fbf39dcd\",\"toolName\":\"bash\",\"input\":{\"command\":\"printf opencode-otel-e2e\"}}]"
                   }
                 },
                 {
                   "key": "ai.response.providerMetadata",
                   "value": {
-                    "stringValue": "{\"oclaude\":{}}"
+                    "stringValue": "{\"opencode-go\":{}}"
                   }
                 },
                 {
                   "key": "ai.usage.inputTokens",
                   "value": {
-                    "intValue": "7136"
+                    "intValue": "7517"
                   }
                 },
                 {
                   "key": "ai.usage.inputTokenDetails.noCacheTokens",
                   "value": {
-                    "intValue": "288"
+                    "intValue": "2077"
                   }
                 },
                 {
                   "key": "ai.usage.inputTokenDetails.cacheReadTokens",
                   "value": {
-                    "intValue": "6848"
+                    "intValue": "5440"
                   }
                 },
                 {
                   "key": "ai.usage.outputTokens",
                   "value": {
-                    "intValue": "48"
+                    "intValue": "55"
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.textTokens",
                   "value": {
-                    "intValue": "41"
+                    "intValue": "18"
                   }
                 },
                 {
                   "key": "ai.usage.outputTokenDetails.reasoningTokens",
                   "value": {
-                    "intValue": "7"
+                    "intValue": "37"
                   }
                 },
                 {
                   "key": "ai.usage.totalTokens",
                   "value": {
-                    "intValue": "7184"
+                    "intValue": "7572"
                   }
                 },
                 {
                   "key": "ai.usage.reasoningTokens",
                   "value": {
-                    "intValue": "7"
+                    "intValue": "37"
                   }
                 },
                 {
                   "key": "ai.usage.cachedInputTokens",
                   "value": {
-                    "intValue": "6848"
+                    "intValue": "5440"
                   }
                 }
               ],
               "status": {}
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "ddde1807d5a7e82d",
-              "parentSpanId": "7e8eb35e5225819a",
-              "flags": 257,
-              "name": "Plugin.add",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981939574372",
-              "endTimeUnixNano": "1787441981943572362",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "4b951319670653be",
-              "parentSpanId": "e049252ed7786024",
-              "flags": 257,
-              "name": "State.transform",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981943891699",
-              "endTimeUnixNano": "1787441981943939998",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "ce994911051fe5bc",
-              "parentSpanId": "e049252ed7786024",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "e69fa283f209ab2e",
+              "parentSpanId": "135e07a44927a1dd",
               "flags": 257,
               "name": "AISDK.hook",
               "kind": 1,
-              "startTimeUnixNano": "1787441981943963618",
-              "endTimeUnixNano": "1787441981943990488",
+              "startTimeUnixNano": "1792453583153529644",
+              "endTimeUnixNano": "1792453583153574924",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "bee4be12dd3867e4",
-              "parentSpanId": "e049252ed7786024",
-              "flags": 257,
-              "name": "AISDK.hook",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981944117646",
-              "endTimeUnixNano": "1787441981944152586",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "e049252ed7786024",
-              "parentSpanId": "ac41a5cca4f838f4",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "135e07a44927a1dd",
+              "parentSpanId": "645b8f35cbd795fa",
               "flags": 257,
               "name": "Plugin.load",
               "kind": 1,
-              "startTimeUnixNano": "1787441981943687021",
-              "endTimeUnixNano": "1787441981944160426",
-              "attributes": [
-                {
-                  "key": "plugin.id",
-                  "value": {
-                    "stringValue": "cloudflare-workers-ai"
-                  }
-                }
-              ],
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "ac41a5cca4f838f4",
-              "parentSpanId": "7e8eb35e5225819a",
-              "flags": 257,
-              "name": "Plugin.add",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981943605042",
-              "endTimeUnixNano": "1787441981944243475",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "9e1e2bb25c7ba60f",
-              "parentSpanId": "bb4972467ddddb87",
-              "flags": 257,
-              "name": "AISDK.hook",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981944498833",
-              "endTimeUnixNano": "1787441981944532972",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "bb4972467ddddb87",
-              "parentSpanId": "28e491a6a8033255",
-              "flags": 257,
-              "name": "Plugin.load",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981944353024",
-              "endTimeUnixNano": "1787441981944543842",
-              "attributes": [
-                {
-                  "key": "plugin.id",
-                  "value": {
-                    "stringValue": "cohere"
-                  }
-                }
-              ],
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "28e491a6a8033255",
-              "parentSpanId": "7e8eb35e5225819a",
-              "flags": 257,
-              "name": "Plugin.add",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981944265475",
-              "endTimeUnixNano": "1787441981944633611",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "b432a9963af3e53c",
-              "parentSpanId": "6173f7b9b324c590",
-              "flags": 257,
-              "name": "AISDK.hook",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981944869519",
-              "endTimeUnixNano": "1787441981944916168",
-              "status": {
-                "code": 1
-              }
-            },
-            {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "6173f7b9b324c590",
-              "parentSpanId": "975c113152878132",
-              "flags": 257,
-              "name": "Plugin.load",
-              "kind": 1,
-              "startTimeUnixNano": "1787441981944724500",
-              "endTimeUnixNano": "1787441981944924808",
+              "startTimeUnixNano": "1792453583153362826",
+              "endTimeUnixNano": "1792453583153591194",
               "attributes": [
                 {
                   "key": "plugin.id",
@@ -828,40 +1246,40 @@
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "975c113152878132",
-              "parentSpanId": "7e8eb35e5225819a",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "645b8f35cbd795fa",
+              "parentSpanId": "42aad004373935a6",
               "flags": 257,
               "name": "Plugin.add",
               "kind": 1,
-              "startTimeUnixNano": "1787441981944656631",
-              "endTimeUnixNano": "1787441981945004198",
+              "startTimeUnixNano": "1792453583153247547",
+              "endTimeUnixNano": "1792453583153692273",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "b291bba3f642511b",
-              "parentSpanId": "0be1b13034a50311",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "39257d6bdc58f824",
+              "parentSpanId": "b0c8574c8569f859",
               "flags": 257,
               "name": "AISDK.hook",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945245035",
-              "endTimeUnixNano": "1787441981945279255",
+              "startTimeUnixNano": "1792453583153953850",
+              "endTimeUnixNano": "1792453583153985760",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "0be1b13034a50311",
-              "parentSpanId": "4f1c1b92a25aaa8c",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "b0c8574c8569f859",
+              "parentSpanId": "cc89d5996fc60883",
               "flags": 257,
               "name": "Plugin.load",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945101647",
-              "endTimeUnixNano": "1787441981945287785",
+              "startTimeUnixNano": "1792453583153806502",
+              "endTimeUnixNano": "1792453583153996760",
               "attributes": [
                 {
                   "key": "plugin.id",
@@ -875,66 +1293,66 @@
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "4f1c1b92a25aaa8c",
-              "parentSpanId": "7e8eb35e5225819a",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "cc89d5996fc60883",
+              "parentSpanId": "42aad004373935a6",
               "flags": 257,
               "name": "Plugin.add",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945025177",
-              "endTimeUnixNano": "1787441981945370534",
+              "startTimeUnixNano": "1792453583153716463",
+              "endTimeUnixNano": "1792453583154076029",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "4674efd3accfb389",
-              "parentSpanId": "8b45272323e32710",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "ca0b9f46ccb7e72e",
+              "parentSpanId": "40a4c8ec7e4d4303",
               "flags": 257,
               "name": "State.transform",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945663211",
-              "endTimeUnixNano": "1787441981945712560",
+              "startTimeUnixNano": "1792453583154413506",
+              "endTimeUnixNano": "1792453583154467755",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "41b5b25b512c016c",
-              "parentSpanId": "8b45272323e32710",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "660f709b41ef7e38",
+              "parentSpanId": "40a4c8ec7e4d4303",
               "flags": 257,
               "name": "AISDK.hook",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945737500",
-              "endTimeUnixNano": "1787441981945763950",
+              "startTimeUnixNano": "1792453583154494355",
+              "endTimeUnixNano": "1792453583154525074",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "43a0ec49ac924884",
-              "parentSpanId": "8b45272323e32710",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "0fed8e9e739c0fee",
+              "parentSpanId": "40a4c8ec7e4d4303",
               "flags": 257,
               "name": "AISDK.hook",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945786860",
-              "endTimeUnixNano": "1787441981945811359",
+              "startTimeUnixNano": "1792453583154545744",
+              "endTimeUnixNano": "1792453583154568434",
               "status": {
                 "code": 1
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "8b45272323e32710",
-              "parentSpanId": "7774a81ef069eed7",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "40a4c8ec7e4d4303",
+              "parentSpanId": "eeb9af64fe2cd48a",
               "flags": 257,
               "name": "Plugin.load",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945463333",
-              "endTimeUnixNano": "1787441981945818749",
+              "startTimeUnixNano": "1792453583154185488",
+              "endTimeUnixNano": "1792453583154578584",
               "attributes": [
                 {
                   "key": "plugin.id",
@@ -948,14 +1366,147 @@
               }
             },
             {
-              "traceId": "62883c1035521be3dcd202c5d7732244",
-              "spanId": "7774a81ef069eed7",
-              "parentSpanId": "7e8eb35e5225819a",
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "eeb9af64fe2cd48a",
+              "parentSpanId": "42aad004373935a6",
               "flags": 257,
               "name": "Plugin.add",
               "kind": 1,
-              "startTimeUnixNano": "1787441981945392914",
-              "endTimeUnixNano": "1787441981945907198",
+              "startTimeUnixNano": "1792453583154100199",
+              "endTimeUnixNano": "1792453583154668103",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "9003b044713e3dc1",
+              "parentSpanId": "39c60c951159d059",
+              "flags": 257,
+              "name": "AISDK.hook",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583154957990",
+              "endTimeUnixNano": "1792453583154988290",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "1683917dc3efb37c",
+              "parentSpanId": "39c60c951159d059",
+              "flags": 257,
+              "name": "AISDK.hook",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583155011970",
+              "endTimeUnixNano": "1792453583155045259",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "39c60c951159d059",
+              "parentSpanId": "f6563e7a6aedf686",
+              "flags": 257,
+              "name": "Plugin.load",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583154763222",
+              "endTimeUnixNano": "1792453583155054239",
+              "attributes": [
+                {
+                  "key": "plugin.id",
+                  "value": {
+                    "stringValue": "gitlab"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "f6563e7a6aedf686",
+              "parentSpanId": "42aad004373935a6",
+              "flags": 257,
+              "name": "Plugin.add",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583154688463",
+              "endTimeUnixNano": "1792453583155149718",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "26730967087ac9c3",
+              "parentSpanId": "5a80e09832de2e1a",
+              "flags": 257,
+              "name": "AISDK.hook",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583155441215",
+              "endTimeUnixNano": "1792453583155472915",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "5a80e09832de2e1a",
+              "parentSpanId": "8633a09017af6254",
+              "flags": 257,
+              "name": "Plugin.load",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583155275027",
+              "endTimeUnixNano": "1792453583155483565",
+              "attributes": [
+                {
+                  "key": "plugin.id",
+                  "value": {
+                    "stringValue": "google"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "8633a09017af6254",
+              "parentSpanId": "42aad004373935a6",
+              "flags": 257,
+              "name": "Plugin.add",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583155184018",
+              "endTimeUnixNano": "1792453583155577284",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "134b08357f581700",
+              "parentSpanId": "e9ccd6aa25694f06",
+              "flags": 257,
+              "name": "State.transform",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583155892481",
+              "endTimeUnixNano": "1792453583155937770",
+              "status": {
+                "code": 1
+              }
+            },
+            {
+              "traceId": "7e4dcb5cb63f9c2de3ed797ce0e5a499",
+              "spanId": "4e5f31694e84008a",
+              "parentSpanId": "e9ccd6aa25694f06",
+              "flags": 257,
+              "name": "AISDK.hook",
+              "kind": 1,
+              "startTimeUnixNano": "1792453583155962970",
+              "endTimeUnixNano": "1792453583155992220",
               "status": {
                 "code": 1
               }

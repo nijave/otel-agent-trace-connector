@@ -18,8 +18,8 @@ and the policy behind it.
 | Logs | native — Effect spans/logs, exported whenever `OTEL_EXPORTER_OTLP_ENDPOINT` points at a collector, independent of the trace path | not consumed |
 | Metrics | none native (`experimental.openTelemetry` is traces-focused and reported broken for `opencode run`); available only via plugins | not applicable |
 
-Last verified: Traces 2026-08-27, Logs 2026-08-29, Metrics 2026-08-21 (see
-Sources).
+Last verified: Traces 2026-10-19 (OpenCode 1.19.3), Logs 2026-08-29, Metrics
+2026-08-21 (see Sources).
 
 ## Traces
 
@@ -67,10 +67,11 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.model.id` | — | dropped (`gen_ai.request.model` carries the model) |
 | `ai.settings.maxOutputTokens` | — | dropped |
 | `ai.settings.maxRetries` | — | dropped |
+| `ai.settings.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
 | `ai.telemetry.functionId` | — | dropped |
 | `ai.telemetry.metadata.sessionId` | — | dropped (the edge reads `session.id` instead) |
 | `ai.telemetry.metadata.userId` | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
-| `ai.request.headers.*` | — | dropped |
+| `ai.request.headers.*` — including `x-opencode-session`, `x-opencode-session-id`, `x-opencode-client`, `x-opencode-project`, `x-opencode-request`, `User-Agent` | — | dropped (per-request routing/transport headers; the ids they repeat already map from `session.id` and `ai.telemetry.metadata.userId`) |
 | `ai.prompt`, `ai.prompt.messages`, `ai.prompt.tools`, `ai.prompt.toolChoice` | — | dropped (prompt content) |
 | `ai.response.text`, `ai.response.reasoning` | — | dropped (completion content) |
 | `ai.response.toolCalls`, `ai.response.providerMetadata` | — | dropped |
@@ -99,6 +100,7 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `session.id` | `gen_ai.conversation.id` | not mapped on this span (the parent `invoke_agent` carries it) |
 | `gen_ai.system` | — | dropped (`gen_ai.provider.name` comes from `ai.model.provider` instead) |
 | `gen_ai.request.max_tokens` | — | dropped today; candidate future mapping (`ai.settings.maxOutputTokens` duplicates it) |
+| `gen_ai.request.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
 | `gen_ai.response.finish_reasons` | — | dropped (deliberate: wire value reflects the SDK's finish event, not a normalized stop-reason set) |
 | `gen_ai.response.id` | — | dropped (deliberate) |
 | `gen_ai.response.model` | — | dropped |
@@ -108,19 +110,25 @@ no `ai.usage.*` on the wire, so its canonical span emits with no
 | `ai.response.id`, `ai.response.model`, `ai.response.timestamp` | — | dropped |
 | `ai.response.toolCalls`, `ai.response.providerMetadata` | — | dropped |
 | `ai.response.text`, `ai.response.reasoning` | — | dropped (completion content) |
-| `ai.request.headers.*` | — | dropped |
+| `ai.request.headers.*` — including `x-opencode-session`, `x-opencode-session-id`, `x-opencode-client`, `x-opencode-project`, `x-opencode-request`, `User-Agent` | — | dropped (per-request routing/transport headers) |
 | `ai.prompt.*` | — | dropped (prompt content) |
 | `ai.telemetry.functionId` | — | dropped |
 | `ai.telemetry.metadata.userId` | — | dropped |
 | `ai.telemetry.metadata.sessionId` | — | dropped |
 | `ai.model.id` | — | dropped |
 | `ai.settings.maxOutputTokens`, `ai.settings.maxRetries` | — | dropped |
+| `ai.settings.temperature` | — | dropped (only sent when the caller pins a temperature; the pinned 1.19.3 capture carries 0.5 on the title-generator call and omits it on the main turn) |
 | `ai.usage.inputTokenDetails.noCacheTokens` | — | dropped |
 | `ai.usage.inputTokenDetails.cacheReadTokens` | — | dropped (redundant duplicate of `ai.usage.cachedInputTokens`) |
 | `ai.usage.outputTokenDetails.textTokens` | — | dropped |
 
 The edge drops the span events (`ai.stream.firstChunk`, `ai.stream.finish`);
 first-chunk latency survives via the `msToFirstChunk` mapping above.
+
+Capture shape: OpenCode also makes an unrequested model call to generate the
+session title, so a pinned capture holds two model conversations — the title
+generator, then the main turn — and replays as two `invoke_agent opencode`
+roots (the 1.19.3 fixture has two chat spans and one `execute_tool bash`).
 
 ##### ai.toolCall → execute_tool
 
@@ -202,7 +210,7 @@ is native to OpenCode itself.
 ## Sources
 
 - OpenCode: https://github.com/sst/opencode — traces signal and the
-  attribute matrix above, last verified 2026-08-27
+  attribute matrix above, last verified 2026-10-19 against OpenCode 1.19.3
 - OpenCode plugin `@devtheops/opencode-plugin-otel`:
   https://github.com/DEVtheOPS/opencode-plugin-otel — metrics catalog
 - [docs/otel-signals.md](../otel-signals.md) — traces/logs/metrics signal
