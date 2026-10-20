@@ -328,46 +328,47 @@ func rejectGenAIContent(spans []ptrace.Span) error {
 	return nil
 }
 
-// validateOpenAIAdhocSpans requires one normalized chat span per semconv
-// mode; run.sh runs the agent twice under these two service names.
+// validateOpenAIAdhocSpans requires a normalized chat span from the agent's
+// single run. It deliberately does not pin service.name: run.sh runs the agent
+// once as openai-adhoc, while the committed capture predates that and keeps the
+// two former run names (both runs emitted identical spans), and the e2e.run.id
+// marker already ties every span here to this run.
 func validateOpenAIAdhocSpans(spans []ptrace.Span) error {
-	for _, service := range []string{"openai-adhoc-legacy", "openai-adhoc-latest"} {
-		if err := validateAdhocChat(spans, service); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateAdhocChat(spans []ptrace.Span, service string) error {
 	var lastErr error
 	for _, span := range spans {
-		if stringAttr(span, "coding_agent.client.name") != service ||
-			stringAttr(span, "gen_ai.operation.name") != "chat" {
+		if stringAttr(span, "gen_ai.operation.name") != "chat" {
 			continue
 		}
-		if stringAttr(span, "gen_ai.provider.name") != "openai" {
-			lastErr = fmt.Errorf("%s: chat provider is not openai", service)
-			continue
+		lastErr = validateAdhocChat(span)
+		if lastErr == nil {
+			return nil
 		}
-		if stringAttr(span, "coding_agent.source") != "native" {
-			lastErr = fmt.Errorf("%s: telemetry source is not native", service)
-			continue
-		}
-		if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
-			lastErr = fmt.Errorf("%s: chat input token usage is missing", service)
-			continue
-		}
-		if _, ok := span.Attributes().Get("gen_ai.usage.output_tokens"); !ok {
-			lastErr = fmt.Errorf("%s: chat output token usage is missing", service)
-			continue
-		}
-		return nil
 	}
 	if lastErr != nil {
 		return lastErr
 	}
-	return fmt.Errorf("no normalized chat span for service %q", service)
+	return errors.New("no normalized chat span in the run")
+}
+
+func validateAdhocChat(span ptrace.Span) error {
+	// The client name comes from the agent's resource service.name; its value is
+	// not pinned, but a missing identity means the resource did not survive.
+	if stringAttr(span, "coding_agent.client.name") == "" {
+		return errors.New("chat client name is missing")
+	}
+	if stringAttr(span, "gen_ai.provider.name") != "openai" {
+		return errors.New("chat provider is not openai")
+	}
+	if stringAttr(span, "coding_agent.source") != "native" {
+		return errors.New("telemetry source is not native")
+	}
+	if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); !ok {
+		return errors.New("chat input token usage is missing")
+	}
+	if _, ok := span.Attributes().Get("gen_ai.usage.output_tokens"); !ok {
+		return errors.New("chat output token usage is missing")
+	}
+	return nil
 }
 
 // validateStrandsSpans checks names within the root's trace rather than

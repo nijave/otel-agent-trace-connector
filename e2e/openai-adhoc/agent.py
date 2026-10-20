@@ -1,7 +1,6 @@
 """Minimal ad-hoc agent: one chat completion against OpenRouter's
 OpenAI-compatible endpoint, instrumented by opentelemetry-instrumentation-openai-v2.
-run.sh executes this once per semconv mode; OTEL_SERVICE_NAME and
-OTEL_SEMCONV_STABILITY_OPT_IN select the mode per process."""
+run.sh sets OTEL_SERVICE_NAME and runs this once."""
 
 import os
 

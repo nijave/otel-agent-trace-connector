@@ -126,21 +126,21 @@ E2E_CLAUDE_MODEL=claude-haiku-5-5 ./scripts/e2e-claude.sh
 The OpenAI-SDK stack uses a pinned Python image with pinned `openai`,
 `opentelemetry-instrumentation-openai-v2`, SDK, and OTLP exporter packages. A
 small ad-hoc agent script makes one chat-completions call to OpenRouter's
-OpenAI-compatible endpoint and force-flushes. The script runs twice in one
-paid container run, once per convention mode, under distinct service names.
-Validation checks rootless normalized `chat` spans for both modes, provider
-`openai`, usage tokens, and no content keys.
+OpenAI-compatible endpoint and force-flushes. Validation checks the rootless
+normalized `chat` span for provider `openai`, usage tokens, and no content
+keys.
 
 ```bash
 export OPENROUTER_API_KEY=...   # your OpenRouter key
 ./scripts/e2e-openai.sh
 ```
 
-The first run uses default semconv v1.30.0 under service name
-`openai-adhoc-legacy`; the second run sets
-`OTEL_SEMCONV_STABILITY_OPT_IN=genai_latest_experimental` under
-`openai-adhoc-latest`. Override the model with `E2E_OPENAI_MODEL` (default
-`z-ai/glm-5.3-flash`):
+It runs the agent once under service name `openai-adhoc`. A second run under
+`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` used to cover the
+other convention mode, but the pinned `opentelemetry-util-genai` (1.1b0)
+ignores that variable — `is_experimental_mode()` always returns true — so both
+runs emitted identical spans and the legacy run tested nothing. Override the
+model with `E2E_OPENAI_MODEL` (default `z-ai/glm-5.3-flash`):
 
 ```bash
 E2E_OPENAI_MODEL=z-ai/glm-5.3-flash ./scripts/e2e-openai.sh
