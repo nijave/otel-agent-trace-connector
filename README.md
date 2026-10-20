@@ -30,7 +30,8 @@ OCB-built distribution for coding-agent traces:
   interaction, LLM, and tool span names and attributes into the same canonical
   vocabulary.
 - **GenAI semconv sources:** normalizes native traces from
-  `opentelemetry-instrumentation-openai-v2` (both semconv modes),
+  `opentelemetry-instrumentation-openai-v2` (legacy and latest semconv
+  spellings; util-genai ≥ 1.0b0 ignores `OTEL_SEMCONV_STABILITY_OPT_IN`),
   direct `opentelemetry-util-genai` users, and the Strands Agents SDK into
   the same canonical vocabulary, stripping prompt/completion/tool content
   from canonical output.
@@ -119,9 +120,10 @@ output, and raw API bodies stay out of the raw destination.
 
 OpenCode enables its tracer with `"experimental": {"openTelemetry": true}` in
 `opencode.json` and exports wherever `OTEL_EXPORTER_OTLP_ENDPOINT` points
-(set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`). Releases since
-`opencode-ai` 1.18.21 ship the native tracer; older releases emit nothing
-under the flag alone.
+(set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`). The native AI SDK tracer
+ships since `opencode-ai` v1.4.5 (2026-04-15,
+[anomalyco/opencode#22526](https://github.com/anomalyco/opencode/pull/22526));
+the key is still under `experimental` in 1.19.3 (checked 2026-10-19).
 
 Pi has no native OTel surface. Install the
 [`@amaster.ai/pi-telemetry`](https://www.npmjs.com/package/@amaster.ai/pi-telemetry)
