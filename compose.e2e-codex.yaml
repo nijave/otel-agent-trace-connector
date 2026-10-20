@@ -22,9 +22,8 @@ services:
     build:
       context: e2e/codex
       args:
-        # Must match the e2e/codex/Dockerfile ARG default: this compose default
-        # overrides it, so bumping only the Dockerfile never reaches live runs.
-        CODEX_VERSION: "${CODEX_VERSION:-0.150.1}"
+        # The pin lives in the Dockerfile ARG default; set CODEX_VERSION in the environment to override.
+        - CODEX_VERSION
     environment:
       CODEX_HOME: /codex-home
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"

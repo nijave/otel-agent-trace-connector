@@ -12,7 +12,7 @@ services:
     build:
       context: e2e/claude
       args:
-        CLAUDE_CODE_VERSION: "${CLAUDE_CODE_VERSION:-2.1.207}"
+        - CLAUDE_CODE_VERSION
     environment:
       # Route Claude Code at z.ai's Anthropic-compatible endpoint instead of Bedrock.
       ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic"

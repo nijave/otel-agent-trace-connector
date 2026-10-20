@@ -11,7 +11,7 @@ services:
     build:
       context: e2e/pi
       args:
-        PI_CODING_AGENT_VERSION: "${PI_CODING_AGENT_VERSION:-0.84.2}"
+        - PI_CODING_AGENT_VERSION
     environment:
       # Pi reaches z.ai's Anthropic-compatible endpoint through the baked
       # models.json provider; scripts/e2e-pi.sh checks this credential before
