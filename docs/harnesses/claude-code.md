@@ -75,9 +75,11 @@ raw key that would map there).
 | `interaction.sequence` | interaction | — | dropped |
 | `interaction.duration_ms` | interaction | — | dropped |
 | `user.id` | interaction | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent when the span carries no `user.id`) |
+| `user.email` | all span types | `coding_agent.user.email` | mapped (only when `capture_identity` is on; absent when the span carries no `user.email`, including the whole 2.1.304 capture; unlike `user.id` it is not root-only — every span type that carries it keeps it. The edge reads the span attribute only: a resource-carried copy would drop with the rest of the non-canonical resource keys) |
+| `agent_id` | all span types | `gen_ai.agent.id` | mapped (verbatim; absent when the span carries no `agent_id` — the main agent's spans omit it and Claude Code sets it only under a subagent — and absent in the 2.1.304 capture; `capture_identity` does not control it) |
 | `terminal.type` | interaction | `coding_agent.terminal.type` | mapped (absent when the span carries no `terminal.type`, which Claude Code sets only when it detects a terminal; `capture_identity` does not control it) |
 | `span.type` | interaction | — | dropped |
-| `user.email`, `organization.id`, `user.account_uuid`, `user.account_id` | all span types | — | dropped (standard attributes, documented upstream; absent in the 2.1.304 capture) |
+| `organization.id`, `user.account_uuid`, `user.account_id` | all span types | — | dropped (standard attributes, documented upstream; absent in the 2.1.304 capture) |
 
 ##### claude_code.llm_request
 
@@ -103,7 +105,7 @@ raw key that would map there).
 | `llm_request.context` | llm_request | — | dropped |
 | `attempt` | llm_request | — | dropped |
 | `success` | llm_request | — | dropped |
-| `query_source`, `agent_id`, `parent_agent_id`, `workflow.run_id`, `workflow.name` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
+| `query_source`, `parent_agent_id`, `workflow.run_id`, `workflow.name` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
 | `request_id`, `client_request_id`, `status_code`, `error`, `error_class`, `response.has_tool_call` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
 | `gen_ai.system` | llm_request | — | dropped (`gen_ai.provider.name` is connector-derived, not remapped) |
 | `session.id`, `user.id`, `terminal.type`, `span.type` | llm_request | — | dropped |
@@ -122,7 +124,7 @@ raw key that would map there).
 | `gen_ai.tool.call.id` | tool / tool.execution | `gen_ai.tool.call.id` | kept (already canonical) |
 | `tool_use_id` | tool / tool.execution | — | dropped |
 | `duration_ms` | tool / tool.execution | — | dropped |
-| `result_tokens`, `agent_id`, `parent_agent_id`, `workflow.run_id`, `workflow.name` | tool | — | dropped (documented upstream; absent in the 2.1.304 capture) |
+| `result_tokens`, `parent_agent_id`, `workflow.run_id`, `workflow.name` | tool | — | dropped (documented upstream; absent in the 2.1.304 capture) |
 | `file_path`, `full_command`, `skill_name`, `subagent_type` | tool | — | dropped (content; Claude Code emits them only with `OTEL_LOG_TOOL_DETAILS=1`) |
 | `success` | tool.execution | — | dropped (Claude Code also sets span status `ERROR` on a failed execution; the connector passes span status through unchanged) |
 | `error`, `error_class` | tool.execution | — | dropped (present only on a failed execution) |
@@ -192,9 +194,8 @@ canonical allowlist.
 | `gen_ai.response.model` | not provided |
 | `gen_ai.request.max_tokens` | not provided |
 | `gen_ai.request.stream` | not provided |
-| `gen_ai.agent.id` | not provided (the subagent `agent_id` on llm_request and tool spans drops; the edge does not map it) |
 | `gen_ai.agent.version` | not provided |
-| `coding_agent.user.email` / `coding_agent.team.id` | not provided (the `user.email` and `organization.id` standard attributes drop; the edge does not map them) |
+| `coding_agent.team.id` | not provided (the `organization.id` standard attribute drops; the edge does not map it) |
 | `server.address` / `server.port` | not provided |
 | `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
 | `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
