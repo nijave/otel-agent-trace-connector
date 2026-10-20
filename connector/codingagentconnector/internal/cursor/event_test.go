@@ -25,7 +25,7 @@ func testResource() pcommon.Resource {
 
 func apiRequestRecord(ts time.Time, attrs map[string]any) plog.LogRecord {
 	record := plog.NewLogRecord()
-	record.Body().SetStr(BodyAPIRequest)
+	record.Body().SetStr(NameAPIRequest)
 	record.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 	// FromRaw replaces the whole map, so merge overrides into one map first.
 	merged := map[string]any{
@@ -58,7 +58,7 @@ func TestParseRecordClaimsCursorScope(t *testing.T) {
 	ts := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	event, ok := ParseRecord(apiRequestRecord(ts, nil), "cursor.telemetry", testResource())
 	require.True(t, ok)
-	require.Equal(t, BodyAPIRequest, event.Body)
+	require.Equal(t, NameAPIRequest, event.Name)
 	require.Equal(t, "customer-telemetry:v1:ev-1", event.EventID)
 	require.Equal(t, "11111111-2222-3333-4444-555555555555", event.ConversationID)
 	require.Equal(t, "ue-1", event.UsageEventID)
@@ -164,18 +164,95 @@ func TestInt64ValueAcceptsTokenCountsUpToMaxInt64(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestBodyClassification(t *testing.T) {
-	require.True(t, IsCorrectionBody("api_correction_not_billed_errored"))
-	require.False(t, IsCorrectionBody("api_request"))
+func TestEventClassification(t *testing.T) {
+	require.True(t, IsCorrectionEvent("api_correction_not_billed_errored"))
+	require.True(t, IsCorrectionEvent("api_correction"))
+	require.False(t, IsCorrectionEvent("api_request"))
 }
 
-func TestParseRecordKeepsUnknownBody(t *testing.T) {
+func TestParseRecordNamesFromEventName(t *testing.T) {
+	ts := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	record := apiRequestRecord(ts, nil)
+	record.SetEventName("cursor.api.request")
+	event, ok := ParseRecord(record, "cursor.telemetry", testResource())
+	require.True(t, ok)
+	require.Equal(t, NameAPIRequest, event.Name)
+
+	// The event.name attribute carries the same name on a record that leaves
+	// the OTLP field empty.
+	attribute := apiRequestRecord(ts, map[string]any{"event.name": "cursor.skill.activated"})
+	attribute.Body().SetStr("skill_activated")
+	event, ok = ParseRecord(attribute, "cursor.telemetry", testResource())
+	require.True(t, ok)
+	require.Equal(t, "skill_activated", event.Name)
+}
+
+func TestParseRecordAppendsKindTheEventNameOmits(t *testing.T) {
+	// The wire carries the correction kind in an attribute and in the body, not
+	// in the event name, so the canonical name reconstructs the body's form.
+	ts := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	record := apiRequestRecord(ts, map[string]any{"cursor.api.correction.kind": "not_billed_errored"})
+	record.SetEventName("cursor.api.correction")
+	request, ok := ParseRecord(record, "cursor.telemetry", testResource())
+	require.True(t, ok)
+	require.Equal(t, "api_correction_not_billed_errored", request.Name)
+
+	setup := apiRequestRecord(ts, map[string]any{"cursor.cloud_agent.setup.kind": "completed"})
+	setup.SetEventName("cursor.cloud_agent.setup")
+	request, ok = ParseRecord(setup, "cursor.telemetry", testResource())
+	require.True(t, ok)
+	require.Equal(t, "cloud_agent_setup_completed", request.Name)
+}
+
+func TestParseRecordNeverNamesFromTheBodyWhenAnEventNameExists(t *testing.T) {
+	// Payload text in the body must not become a name even when it looks like
+	// an event name of the conversation_content family.
+	ts := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	for _, body := range []string{
+		"conversation_user_message: rewrite the deploy script",
+		`{"path":"/tmp/secret.txt"}`,
+	} {
+		record := apiRequestRecord(ts, nil)
+		record.SetEventName("cursor.cloud_agent.commit")
+		record.Body().SetStr(body)
+		event, ok := ParseRecord(record, "cursor.telemetry", testResource())
+		require.True(t, ok)
+		require.Equal(t, "cloud_agent_commit", event.Name)
+	}
+}
+
+func TestParseRecordDeclinesConversationContent(t *testing.T) {
+	ts := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	const prompt = "secret-free prompt text that must not reach canonical output"
+
+	// The event name routes the family, whether it arrives in the OTLP field or
+	// the event.name attribute.
+	byField := apiRequestRecord(ts, nil)
+	byField.SetEventName("cursor.conversation.user_message")
+	byField.Body().SetStr(prompt)
+	_, ok := ParseRecord(byField, "cursor.telemetry", testResource())
+	require.False(t, ok)
+
+	byAttribute := apiRequestRecord(ts, map[string]any{"event.name": "cursor.conversation.tool_io"})
+	byAttribute.Body().SetStr(prompt)
+	_, ok = ParseRecord(byAttribute, "cursor.telemetry", testResource())
+	require.False(t, ok)
+
+	// The always-present content_truncated attribute declines a record that
+	// arrives with no event name at all, whatever its body holds.
+	byAttributeOnly := apiRequestRecord(ts, map[string]any{"cursor.conversation.content_truncated": false})
+	byAttributeOnly.Body().SetStr(prompt)
+	_, ok = ParseRecord(byAttributeOnly, "cursor.telemetry", testResource())
+	require.False(t, ok)
+}
+
+func TestParseRecordNamesUnknownBodyFromItsBodyWithoutAnEventName(t *testing.T) {
 	ts := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	record := apiRequestRecord(ts, nil)
 	record.Body().SetStr("future_event_kind")
 	event, ok := ParseRecord(record, "cursor.telemetry", testResource())
 	require.True(t, ok)
-	require.Equal(t, "future_event_kind", event.Body)
+	require.Equal(t, "future_event_kind", event.Name)
 }
 
 func TestParseRecordHandlesNonStringBody(t *testing.T) {
@@ -184,5 +261,5 @@ func TestParseRecordHandlesNonStringBody(t *testing.T) {
 	record.Body().SetEmptyMap().PutStr("kind", "api_request")
 	event, ok := ParseRecord(record, "cursor.telemetry", testResource())
 	require.True(t, ok)
-	require.Equal(t, "", event.Body)
+	require.Equal(t, "", event.Name)
 }

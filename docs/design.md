@@ -129,8 +129,11 @@ prefix (`api_request`, `api_error`, `api_correction_<kind>`,
 `skill_activated`, `hook_execution_complete`, `plugin_installed`,
 `cloud_agent_*`). Delivery is at-least-once with no ordering guarantee, so
 corrections can arrive after the requests they amend. No prompt, completion,
-or tool content exists anywhere on this wire; tool calls appear only as
-metric datapoints without correlation IDs. See the
+or tool content exists on this wire outside the opt-in `conversation_content`
+family (Cloud Agents and Grok Bot only, off by default), whose body is the
+scrubbed message or tool I/O text and which the [canonical traces synthesized
+from this signal](harnesses/cursor.md#connector-mapping) decline at parse;
+tool calls appear only as metric datapoints without correlation IDs. See the
 [Cursor OpenTelemetry Export wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire).
 
 Relevant primary sources:
