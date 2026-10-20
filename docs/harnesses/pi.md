@@ -92,12 +92,12 @@ only in one serialized object, provider only inside the model id).
 | `usage.input`, `usage.output`, `usage.total_tokens`, `usage.cache_read`, `usage.cache_write` | the same five canonical usage keys | mapped (flat attributes, 0.1.9; each field falls back to its flat key when the `usage` object omits it, and an unparsable object leaves the flat keys in charge) |
 | `stopReason` | `gen_ai.response.finish_reasons` | mapped (single-element slice, when non-empty) |
 | `responseId` | `gen_ai.response.id` | mapped (when non-empty) |
+| `langfuse.observation.completion_start_time` | `gen_ai.response.time_to_first_chunk` | mapped (0.1.28; ISO-8601 timestamp of the first streamed token minus the span start, in seconds as a double; absent when the extension observed no first token, when the value does not parse as RFC 3339, or when it precedes the span start) |
 | `usage` → `cost`, `usage` → `cacheWrite1h`, `usage.cost.total` | — | dropped (no canonical counterpart; cost detail stays in the raw pipeline) |
 | `reasoning`, `cacheWrite1h` (standalone attributes) | — | dropped (0.1.28 duplicates the same numbers inside the `usage` object, which is the source the edge reads) |
 | `llmGenerationId` | — | dropped |
 | `sessionId` | — | dropped (the turn root carries the conversation id — but only when the `chat-turn` ships in the same batch; see below) |
 | `status`, `api`, `source`, `costSource` | — | dropped |
-| `langfuse.observation.completion_start_time` | — | dropped (0.1.28; ISO timestamp of the first streamed token, absent when the extension observed none; the edge derives no `gen_ai.response.time_to_first_chunk` from it — span start to this timestamp would be the TTFT) |
 
 Provider values may carry harness/route labels (for example a router or
 gateway tag); the edge passes an explicit `provider` through verbatim rather
@@ -113,9 +113,9 @@ than normalizing it, and derives one from `model` only in the exact
 | `promptNumber` | — | dropped (0.1.28 prompt counter; no canonical counterpart) |
 | `durationMs` | — | dropped (whole-turn duration, not a TTFT source) |
 
-`durationMs` is a whole-turn duration, not a first-chunk latency; the only
-TTFT source is the generation span's `completion_start_time` (dropped, see
-the llm-generation table).
+`durationMs` is a whole-turn duration, not a first-chunk latency; the TTFT
+comes from the generation span's `completion_start_time` (mapped, see the
+llm-generation table).
 
 ##### tool span → execute_tool
 

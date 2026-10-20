@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/consumer"
@@ -650,6 +651,84 @@ func TestPiTraceNormalizerMapsThinkingLevel(t *testing.T) {
 	}
 }
 
+// TestPiTraceNormalizerDerivesTimeToFirstChunk pins the TTFT derivation: the
+// 0.1.28 wire stamps langfuse.observation.completion_start_time with the first
+// streamed token, so the canonical time to first chunk is that timestamp minus
+// the span start. A timestamp the edge cannot turn into a non-negative
+// duration maps nothing.
+func TestPiTraceNormalizerDerivesTimeToFirstChunk(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		start      string
+		completion any // nil: the wire omits the key; other types land as that attribute type
+		want       float64
+		mapped     bool
+	}{
+		{
+			name:       "present",
+			start:      "2026-10-19T23:43:19.151Z",
+			completion: "2026-10-19T23:43:19.794Z",
+			want:       0.643,
+			mapped:     true,
+		},
+		{
+			name:  "absent",
+			start: "2026-10-19T23:43:19.151Z",
+		},
+		{
+			name:       "unparseable",
+			start:      "2026-10-19T23:43:19.151Z",
+			completion: "not-a-timestamp",
+		},
+		{
+			name:       "not a string",
+			start:      "2026-10-19T23:43:19.151Z",
+			completion: 1792453399.794,
+		},
+		{
+			name:       "before span start",
+			start:      "2026-10-19T23:43:19.794Z",
+			completion: "2026-10-19T23:43:19.151Z",
+		},
+		{
+			name:       "level with span start",
+			start:      "2026-10-19T23:43:19.794Z",
+			completion: "2026-10-19T23:43:19.794Z",
+			want:       0,
+			mapped:     true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+			scope.Scope().SetName("@amaster.ai/pi-telemetry")
+			gen := scope.Spans().AppendEmpty()
+			gen.SetName("llm-generation [main] [request]")
+			gen.Attributes().PutStr("model", "glm-5.3")
+			start, err := time.Parse(time.RFC3339, tc.start)
+			require.NoError(t, err)
+			gen.SetStartTimestamp(pcommon.NewTimestampFromTime(start))
+			switch completion := tc.completion.(type) {
+			case nil:
+			case string:
+				gen.Attributes().PutStr("langfuse.observation.completion_start_time", completion)
+			case float64:
+				gen.Attributes().PutDouble("langfuse.observation.completion_start_time", completion)
+			}
+
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			value, ok := findSpan(t, reassemble(sink), "chat glm-5.3").Attributes().Get("gen_ai.response.time_to_first_chunk")
+			require.Equal(t, tc.mapped, ok, "canonical key presence")
+			if !tc.mapped {
+				return
+			}
+			require.Equal(t, pcommon.ValueTypeDouble, value.Type(), "time to first chunk is seconds as a double")
+			require.InDelta(t, tc.want, value.Double(), 1e-9)
+		})
+	}
+}
+
 // TestPiTraceNormalizerMapsUsageBlobAndFallsBackToFlatKeys covers the two
 // usage wires together: the serialized object wins per field, the flat keys
 // cover fields the object omits, and a malformed object leaves the flat keys
@@ -844,6 +923,14 @@ func TestPiTraceNormalizerAgainstCaptureV0128(t *testing.T) {
 	require.Equal(t, "toolUse", attrStrSliceElem(t, chats[0], "gen_ai.response.finish_reasons"))
 	require.Equal(t, "stop", attrStrSliceElem(t, chats[1], "gen_ai.response.finish_reasons"))
 	require.Equal(t, "msg_011CgCUymZEdEn1F9FhtDGEW", attrString(t, chats[0], "gen_ai.response.id"))
+
+	// Both generations carry completion_start_time, so both report a TTFT:
+	// 23:43:19.794 minus the first span start, 23:43:20.550 minus the second.
+	for i, want := range []float64{0.643, 0.650} {
+		value, ok := chats[i].Attributes().Get("gen_ai.response.time_to_first_chunk")
+		require.True(t, ok, "chat %d derives a time to first chunk", i)
+		require.InDelta(t, want, value.Double(), 1e-9)
+	}
 	require.Equal(t, "msg_011CgCUyq5p9wHm8A4AMEZuK", attrString(t, chats[1], "gen_ai.response.id"))
 
 	tool := findSpan(t, all, "execute_tool bash")
