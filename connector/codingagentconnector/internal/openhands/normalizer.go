@@ -377,6 +377,19 @@ func normalizeChat(wire, span ptrace.Span) {
 		name += " " + model
 	}
 	span.SetName(name)
+	// OpenHands reports the reasoning effort the request asked for as
+	// gen_ai.request.reasoning_effort; the canonical vocabulary names it
+	// gen_ai.request.reasoning.level. The value is vendor-agnostic already,
+	// so it copies verbatim.
+	if effort := firstString(wireAttrs, "gen_ai.request.reasoning_effort"); effort != "" {
+		attrs.PutStr("gen_ai.request.reasoning.level", effort)
+	}
+	if id := firstString(wireAttrs, "gen_ai.response.id"); id != "" {
+		attrs.PutStr("gen_ai.response.id", id)
+	}
+	if model := firstString(wireAttrs, "gen_ai.response.model"); model != "" {
+		attrs.PutStr("gen_ai.response.model", model)
+	}
 	for _, pair := range usageKeys {
 		if v, ok := wire.Attributes().Get(pair[0]); ok && v.Type() == pcommon.ValueTypeInt {
 			attrs.PutInt(pair[1], v.Int())

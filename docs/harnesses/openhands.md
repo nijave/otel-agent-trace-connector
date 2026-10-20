@@ -18,8 +18,8 @@ and the policy behind it.
 | Logs | none | not applicable |
 | Metrics | none exported (in-process only) | not applicable |
 
-Last verified: Traces 2026-08-27, Logs 2026-08-29, Metrics 2026-08-21 (see
-Sources).
+Last verified: Traces 2026-10-19 (OpenHands SDK 1.56.0), Logs 2026-08-29,
+Metrics 2026-08-21 (see Sources).
 
 ## Traces
 
@@ -58,13 +58,18 @@ raw key that would map there).
 | Raw key | Canonical key | Status |
 |---|---|---|
 | `gen_ai.request.model` | `gen_ai.request.model` | mapped (also names the span; absent — and the span named bare `chat` — when the wire span carries no model) |
+| `gen_ai.request.reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (verbatim; absent when the wire span carries no reasoning effort, as the `llm.<model>` wrapper spans do) |
 | `gen_ai.system` | `gen_ai.provider.name` | mapped (absent when the wire omits `gen_ai.system`, as LiteLLM responses-style spans do) |
+| `gen_ai.response.id` | `gen_ai.response.id` | mapped (absent when the wire span carries no provider response id, as the `llm.<model>` wrapper spans do) |
+| `gen_ai.response.model` | `gen_ai.response.model` | mapped (absent when the wire span carries no response model, as the `llm.<model>` wrapper spans do) |
 | `gen_ai.usage.input_tokens` | `gen_ai.usage.input_tokens` | mapped (absent for streamed completions, which carry no usage upstream) |
 | `gen_ai.usage.output_tokens` | `gen_ai.usage.output_tokens` | mapped (absent for streamed completions, which carry no usage upstream) |
 | `llm.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (absent when the wire omits it; responses-style spans report only input/output) |
 | `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the request did no prompt caching) |
 | `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_write.input_tokens` | mapped (absent when the request did no prompt caching) |
-| `gen_ai.input.messages`, `lmnr.span.input` | — | dropped (prompt/response content never leaves the edge) |
+| `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, `lmnr.span.input`, `lmnr.span.output` | — | dropped (prompt, response, and tool-definition content never leaves the edge) |
+| `lmnr.span.*` bookkeeping (`path`, `parent_path`, `ids_path`, `parent_ids_path`, `type`, `sdk_version`, `language_version`, `instrumentation_source`, `instrumentation_scope.name`, `instrumentation_scope.version`) | — | dropped (Laminar span bookkeeping; only `lmnr.span.type` is read, to classify the span) |
+| `gen_ai.usage.cost` | — | dropped (LiteLLM's per-request dollar cost on the `llm.<model>` wrapper spans; the canonical vocabulary has no cost key) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
 
 ##### TOOL span → execute_tool
@@ -72,6 +77,7 @@ raw key that would map there).
 | Raw key | Canonical key | Status |
 |---|---|---|
 | span name | `gen_ai.tool.name` (also names the span) | mapped |
+| `lmnr.association.properties.metadata.tool_call_id` | — | dropped (drives the internal call/result dedupe only; when the wire omits it both records are emitted) |
 | `gen_ai.tool.description` | — | dropped |
 
 ##### conversation span → invoke_agent root
@@ -114,7 +120,7 @@ they appear on every emitted span except where noted:
 |---|---|
 | `gen_ai.response.time_to_first_chunk` | not provided (the wire carries no durations) |
 | `gen_ai.response.finish_reasons` | not provided |
-| `gen_ai.response.id` / `gen_ai.response.model` | not provided |
+| `gen_ai.tool.call.id` | not provided (the wire's tool-call id is `lmnr.association.properties.metadata.tool_call_id`, which only drives the internal call/result dedupe) |
 | `gen_ai.usage.reasoning.output_tokens` | not provided |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
 | `server.address` / `server.port` | not provided |

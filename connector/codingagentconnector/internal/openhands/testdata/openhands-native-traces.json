@@ -3,159 +3,253 @@
     {
       "resource": {
         "attributes": [
-          { "key": "service.name", "value": { "stringValue": "agent-server" } }
+          { "key": "service.name", "value": { "stringValue": "-" } },
+          { "key": "e2e.run.id", "value": { "stringValue": "openhands-otel-1792453608-3787095" } }
         ]
       },
       "scopeSpans": [
         {
-          "scope": { "name": "lmnr.tracer", "version": "0.7.56" },
+          "scope": {
+            "name": "lmnr.tracer"
+          },
           "spans": [
             {
-              "traceId": "11111111111111111111111111111111",
-              "spanId": "aaaaaaaaaaaaaaaa",
-              "name": "conversation",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440800000000000",
-              "endTimeUnixNano": "1787440805000000000",
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "5b2e50c299576f0c",
+              "parentSpanId": "85cab3b75f28ac43",
+              "flags": 256,
+              "name": "conversation.send_message",
+              "kind": 1,
+              "startTimeUnixNano": "1792453617002077376",
+              "endTimeUnixNano": "1792453617101648344",
               "attributes": [
                 { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
-                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "0f0e0d0c-1111-2222-3333-444455556666" } },
-                { "key": "lmnr.association.properties.user_id", "value": { "stringValue": "42" } },
-                { "key": "conversation.tags.team", "value": { "stringValue": "core" } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.send_message" } ] } } },
                 { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.span.input", "value": { "stringValue": "{\"message\":\"run the command\"}" } }
+              ],
+              "status": {}
             },
             {
-              "traceId": "11111111111111111111111111111111",
-              "spanId": "b100000000000000",
-              "parentSpanId": "aaaaaaaaaaaaaaaa",
-              "name": "conversation.run",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440800000000000",
-              "endTimeUnixNano": "1787440804000000000",
-              "attributes": [
-                { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
-                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
-            },
-            {
-              "traceId": "11111111111111111111111111111111",
-              "spanId": "b200000000000000",
-              "parentSpanId": "b100000000000000",
-              "name": "agent.step",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440801000000000",
-              "endTimeUnixNano": "1787440804000000000",
-              "attributes": [
-                { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
-                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "run" } ] } } },
-                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
-            },
-            {
-              "traceId": "11111111111111111111111111111111",
-              "spanId": "c100000000000000",
-              "parentSpanId": "b200000000000000",
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "56e9edbccb18ce40",
+              "parentSpanId": "5f9d5ec75662c782",
+              "flags": 256,
               "name": "litellm.completion",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440801000000000",
-              "endTimeUnixNano": "1787440802000000000",
+              "kind": 1,
+              "startTimeUnixNano": "1792453617197916035",
+              "endTimeUnixNano": "1792453618285059816",
               "attributes": [
                 { "key": "lmnr.span.type", "value": { "stringValue": "LLM" } },
-                { "key": "gen_ai.system", "value": { "stringValue": "openai" } },
-                { "key": "gen_ai.request.model", "value": { "stringValue": "anthropic/claude-sonnet-4-5" } },
-                { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "100" } },
-                { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "200" } },
-                { "key": "gen_ai.usage.cache_read_input_tokens", "value": { "intValue": "50" } },
-                { "key": "gen_ai.usage.cache_creation_input_tokens", "value": { "intValue": "10" } },
-                { "key": "llm.usage.total_tokens", "value": { "intValue": "360" } },
-                {
-                  "key": "gen_ai.input.messages",
-                  "value": {
-                    "arrayValue": {
-                      "values": [
-                        {
-                          "kvlistValue": {
-                            "values": [
-                              { "key": "role", "value": { "stringValue": "user" } },
-                              { "key": "content", "value": { "stringValue": "secret prompt" } }
-                            ]
-                          }
-                        }
-                      ]
-                    }
-                  }
-                },
-                { "key": "lmnr.span.input", "value": { "stringValue": "should not propagate" } },
+                { "key": "lmnr.span.parent_path", "value": { "arrayValue": {} } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
                 { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.span.instrumentation_scope.name", "value": { "stringValue": "litellm" } },
+                { "key": "lmnr.span.instrumentation_scope.version", "value": { "stringValue": "1.105.1" } },
+                { "key": "gen_ai.input.messages", "value": { "stringValue": "[{\"content\":\"run the command\",\"role\":\"user\"}]" } },
+                { "key": "gen_ai.tool.definitions", "value": { "stringValue": "[{\"type\":\"function\",\"function\":{\"name\":\"terminal\"}}]" } },
+                { "key": "gen_ai.request.model", "value": { "stringValue": "z-ai/glm-5.3-flash" } },
+                { "key": "gen_ai.system", "value": { "stringValue": "z-ai" } },
+                { "key": "gen_ai.request.reasoning_effort", "value": { "stringValue": "high" } },
+                { "key": "gen_ai.response.id", "value": { "stringValue": "gen-1792453617-SaJS3Y73teT3Bgz47FcY" } },
+                { "key": "gen_ai.response.model", "value": { "stringValue": "z-ai/glm-5.3-flash" } },
+                { "key": "gen_ai.output.messages", "value": { "stringValue": "[{\"content\":null,\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"name\":\"terminal\"}}]}]" } },
+                { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "4779" } },
+                { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "32" } },
+                { "key": "llm.usage.total_tokens", "value": { "intValue": "4811" } },
+                { "key": "gen_ai.usage.cache_read_input_tokens", "value": { "intValue": "0" } },
+                { "key": "gen_ai.usage.cache_creation_input_tokens", "value": { "intValue": "0" } }
+              ],
+              "status": {}
             },
             {
-              "traceId": "11111111111111111111111111111111",
-              "spanId": "c200000000000000",
-              "parentSpanId": "b200000000000000",
-              "name": "bash",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440802000000000",
-              "endTimeUnixNano": "1787440803000000000",
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "5f9d5ec75662c782",
+              "parentSpanId": "a230ed37becb1905",
+              "flags": 256,
+              "name": "llm.openrouter/z-ai/glm-5.3-flash",
+              "kind": 1,
+              "startTimeUnixNano": "1792453617197539709",
+              "endTimeUnixNano": "1792453618285286274",
+              "attributes": [
+                { "key": "lmnr.span.type", "value": { "stringValue": "LLM" } },
+                { "key": "lmnr.span.parent_path", "value": { "arrayValue": {} } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
+                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "gen_ai.usage.cost", "value": { "doubleValue": 0.00073285 } },
+                { "key": "gen_ai.usage.cache_read_input_tokens", "value": { "intValue": "0" } },
+                { "key": "gen_ai.usage.cache_creation_input_tokens", "value": { "intValue": "0" } }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "4645382162333aef",
+              "parentSpanId": "a230ed37becb1905",
+              "flags": 256,
+              "name": "TerminalAction",
+              "kind": 1,
+              "startTimeUnixNano": "1792453618287510962",
+              "endTimeUnixNano": "1792453618658720524",
               "attributes": [
                 { "key": "lmnr.span.type", "value": { "stringValue": "TOOL" } },
-                { "key": "lmnr.association.properties.metadata.tool_call_id", "value": { "stringValue": "call-1" } },
-                { "key": "gen_ai.tool.description", "value": { "stringValue": "runs shell" } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
                 { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.association.properties.metadata.tool_call_id", "value": { "stringValue": "call_85146d522d26472d9873b609" } },
+                { "key": "lmnr.span.input", "value": { "stringValue": "{\"action\":{\"command\":\"printf openhands-otel-e2e\"}}" } },
+                { "key": "lmnr.span.output", "value": { "stringValue": "{\"content\":\"openhands-otel-e2e\",\"is_error\":false}" } }
+              ],
+              "status": {}
             },
             {
-              "traceId": "11111111111111111111111111111111",
-              "spanId": "c300000000000000",
-              "name": "bash",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440803000000000",
-              "endTimeUnixNano": "1787440803000000000",
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "a230ed37becb1905",
+              "parentSpanId": "0c1de785ec0825b1",
+              "flags": 256,
+              "name": "agent.step",
+              "kind": 1,
+              "startTimeUnixNano": "1792453617102989751",
+              "endTimeUnixNano": "1792453618659987761",
               "attributes": [
-                { "key": "lmnr.span.type", "value": { "stringValue": "TOOL" } },
-                { "key": "lmnr.association.properties.metadata.tool_call_id", "value": { "stringValue": "call-1" } },
+                { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
                 { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.span.input", "value": { "stringValue": "{\"on_token\":null}" } }
+              ],
+              "status": {}
             },
             {
-              "traceId": "22222222222222222222222222222222",
-              "spanId": "d100000000000000",
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "9830b02ab8392e36",
+              "parentSpanId": "92344836f61f16fe",
+              "flags": 256,
+              "name": "litellm.completion",
+              "kind": 1,
+              "startTimeUnixNano": "1792453618663367518",
+              "endTimeUnixNano": "1792453619043044256",
+              "attributes": [
+                { "key": "lmnr.span.type", "value": { "stringValue": "LLM" } },
+                { "key": "lmnr.span.parent_path", "value": { "arrayValue": {} } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
+                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.span.instrumentation_scope.name", "value": { "stringValue": "litellm" } },
+                { "key": "lmnr.span.instrumentation_scope.version", "value": { "stringValue": "1.105.1" } },
+                { "key": "gen_ai.input.messages", "value": { "stringValue": "[{\"content\":\"run the command\",\"role\":\"user\"}]" } },
+                { "key": "gen_ai.tool.definitions", "value": { "stringValue": "[{\"type\":\"function\",\"function\":{\"name\":\"terminal\"}}]" } },
+                { "key": "gen_ai.request.model", "value": { "stringValue": "z-ai/glm-5.3-flash" } },
+                { "key": "gen_ai.system", "value": { "stringValue": "z-ai" } },
+                { "key": "gen_ai.request.reasoning_effort", "value": { "stringValue": "high" } },
+                { "key": "gen_ai.response.id", "value": { "stringValue": "gen-1792453618-pBHsC1kwHLmTPbuljGnY" } },
+                { "key": "gen_ai.response.model", "value": { "stringValue": "z-ai/glm-5.3-flash" } },
+                { "key": "gen_ai.output.messages", "value": { "stringValue": "[{\"content\":\"done.\",\"role\":\"assistant\"}]" } },
+                { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "4861" } },
+                { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "4" } },
+                { "key": "llm.usage.total_tokens", "value": { "intValue": "4865" } },
+                { "key": "gen_ai.usage.cache_read_input_tokens", "value": { "intValue": "4608" } },
+                { "key": "gen_ai.usage.cache_creation_input_tokens", "value": { "intValue": "0" } }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "92344836f61f16fe",
+              "parentSpanId": "9c2bd60badfe0b59",
+              "flags": 256,
+              "name": "llm.openrouter/z-ai/glm-5.3-flash",
+              "kind": 1,
+              "startTimeUnixNano": "1792453618663092760",
+              "endTimeUnixNano": "1792453619043223054",
+              "attributes": [
+                { "key": "lmnr.span.type", "value": { "stringValue": "LLM" } },
+                { "key": "lmnr.span.parent_path", "value": { "arrayValue": {} } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
+                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "gen_ai.usage.cost", "value": { "doubleValue": 0.00017819 } },
+                { "key": "gen_ai.usage.cache_read_input_tokens", "value": { "intValue": "4608" } },
+                { "key": "gen_ai.usage.cache_creation_input_tokens", "value": { "intValue": "0" } }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "9c2bd60badfe0b59",
+              "parentSpanId": "0c1de785ec0825b1",
+              "flags": 256,
+              "name": "agent.step",
+              "kind": 1,
+              "startTimeUnixNano": "1792453618660613035",
+              "endTimeUnixNano": "1792453619044760319",
+              "attributes": [
+                { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
+                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.span.input", "value": { "stringValue": "{\"on_token\":null}" } }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "0c1de785ec0825b1",
+              "parentSpanId": "85cab3b75f28ac43",
+              "flags": 256,
+              "name": "conversation.run",
+              "kind": 1,
+              "startTimeUnixNano": "1792453617102276718",
+              "endTimeUnixNano": "1792453619045015236",
+              "attributes": [
+                { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" }, { "stringValue": "conversation.run" } ] } } },
+                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.span.input", "value": { "stringValue": "{}" } }
+              ],
+              "status": {}
+            },
+            {
+              "traceId": "49962d8bd4e4e52cbf8c57f07068725c",
+              "spanId": "85cab3b75f28ac43",
+              "flags": 256,
               "name": "conversation",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440802000000000",
-              "endTimeUnixNano": "1787440805000000000",
+              "kind": 1,
+              "startTimeUnixNano": "1792453617001475012",
+              "endTimeUnixNano": "1792453619045226254",
               "attributes": [
-                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "0f0e0d0c-1111-2222-3333-444455556666" } },
-                { "key": "lmnr.association.properties.metadata.is_delegate", "value": { "stringValue": "true" } },
-                { "key": "lmnr.association.properties.metadata.task_id", "value": { "stringValue": "task-9" } },
-                { "key": "lmnr.association.properties.metadata.subagent_type", "value": { "stringValue": "bash_delegate" } },
-                { "key": "lmnr.association.properties.metadata.parent_session_id", "value": { "stringValue": "0f0e0d0c-1111-2222-3333-444455556666" } },
-                { "key": "lmnr.association.properties.tags", "value": { "arrayValue": { "values": [ { "stringValue": "delegate" } ] } } },
+                { "key": "lmnr.span.type", "value": { "stringValue": "DEFAULT" } },
+                { "key": "lmnr.span.parent_path", "value": { "arrayValue": {} } },
+                { "key": "lmnr.span.path", "value": { "arrayValue": { "values": [ { "stringValue": "conversation" } ] } } },
                 { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
-            },
-            {
-              "traceId": "22222222222222222222222222222222",
-              "spanId": "d200000000000000",
-              "name": "litellm.responses",
-              "kind": "SPAN_KIND_INTERNAL",
-              "startTimeUnixNano": "1787440803000000000",
-              "endTimeUnixNano": "1787440804000000000",
-              "attributes": [
-                { "key": "lmnr.span.type", "value": { "stringValue": "LLM" } },
-                { "key": "gen_ai.usage.input_tokens", "value": { "intValue": "7" } },
-                { "key": "gen_ai.usage.output_tokens", "value": { "intValue": "9" } },
-                { "key": "lmnr.span.instrumentation_source", "value": { "stringValue": "python" } },
-                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.56" } }
-              ]
+                { "key": "lmnr.span.sdk_version", "value": { "stringValue": "0.7.67" } },
+                { "key": "lmnr.span.language_version", "value": { "stringValue": "python@3.12" } },
+                { "key": "lmnr.association.properties.session_id", "value": { "stringValue": "6cc57770-5d5b-4fc2-8785-7089a5a3fce1" } },
+                { "key": "lmnr.association.properties.user_id", "value": { "stringValue": "42" } }
+              ],
+              "status": {}
             }
           ]
         }

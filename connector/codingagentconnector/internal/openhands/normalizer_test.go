@@ -357,6 +357,77 @@ func TestLLMAndToolChildrenReparentAndRename(t *testing.T) {
 	require.Len(t, allSpansOf(out), 3)
 }
 
+// TestChatMapsReasoningEffortAndResponseIdentity pins the provider-response
+// keys the LiteLLM wire carries on its completion spans: each copies verbatim
+// into its canonical counterpart, and each stays absent when the wire omits
+// the key or sends an empty string. The span name keeps coming from
+// gen_ai.request.model alone.
+func TestChatMapsReasoningEffortAndResponseIdentity(t *testing.T) {
+	cases := []struct {
+		name         string
+		rawKey       string
+		canonicalKey string
+		value        string
+	}{
+		{
+			name:         "reasoning effort",
+			rawKey:       "gen_ai.request.reasoning_effort",
+			canonicalKey: "gen_ai.request.reasoning.level",
+			value:        "high",
+		},
+		{
+			name:         "response id",
+			rawKey:       "gen_ai.response.id",
+			canonicalKey: "gen_ai.response.id",
+			value:        "gen-1792453617-SaJS3Y73teT3Bgz47FcY",
+		},
+		{
+			name:         "response model",
+			rawKey:       "gen_ai.response.model",
+			canonicalKey: "gen_ai.response.model",
+			value:        "z-ai/glm-5.3-flash",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// chat normalizes one completion span carrying rawKey at rawValue
+			// (omitted entirely when rawKey is empty) and returns the emitted
+			// chat span, whose name proves the model still comes from
+			// gen_ai.request.model.
+			chat := func(rawKey, rawValue string) ptrace.Span {
+				t.Helper()
+				attrs := map[string]any{"gen_ai.request.model": "z-ai/glm-5.3-flash"}
+				if rawKey != "" {
+					attrs[rawKey] = rawValue
+				}
+				out := normalizeOne(t, makeTraces(
+					makeSpan(traceA, conversationSpec()),
+					makeSpan(traceA, spanSpec{
+						name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee",
+						spanType: "LLM", attrs: attrs,
+					}),
+				))
+				return findByName(t, out, "chat z-ai/glm-5.3-flash")[0]
+			}
+
+			present := chat(tc.rawKey, tc.value)
+			require.Equal(t, tc.value, attrString(present, tc.canonicalKey))
+			if tc.rawKey != tc.canonicalKey {
+				_, survives := present.Attributes().Get(tc.rawKey)
+				require.False(t, survives, "raw %s must not survive", tc.rawKey)
+			}
+
+			// An omitted key maps to nothing.
+			_, ok := chat("", "").Attributes().Get(tc.canonicalKey)
+			require.False(t, ok, "canonical %s must be absent when the wire omits %s", tc.canonicalKey, tc.rawKey)
+
+			// An empty string is treated as absent, matching firstString.
+			_, ok = chat(tc.rawKey, "").Attributes().Get(tc.canonicalKey)
+			require.False(t, ok, "canonical %s must be absent for an empty %s", tc.canonicalKey, tc.rawKey)
+		})
+	}
+}
+
 func TestStreamedCompletionKeepsBareChatWithoutUsage(t *testing.T) {
 	traces := makeTraces(
 		makeSpan(traceA, conversationSpec()),
