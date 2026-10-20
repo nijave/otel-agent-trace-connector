@@ -52,7 +52,9 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           # Tag exactly as the git tag reads (v0.1.0), so a deployment pinning
           # an image tag and a checkout pinning a git tag use the same string.
-          tags: type=semver,pattern=v{{version}}
+          # {{raw}}, not v{{version}}: metadata-action ignores the pattern for
+          # pre-releases and emits bare {{version}} (0.7.0-beta1, no v).
+          tags: type=semver,pattern={{raw}}
       # linux/amd64 only: that is what the one consuming cluster runs. Add
       # platforms when something actually needs them.
       - uses: docker/build-push-action@v7
