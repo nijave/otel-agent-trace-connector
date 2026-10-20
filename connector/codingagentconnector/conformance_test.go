@@ -365,6 +365,11 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "gen_ai.usage.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "llm.usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
+				// The LLM wrapper span duplicates the inner litellm span's cache
+				// counters and the edge folds it away, so sums compare the
+				// authoritative inner span only.
+				{RawKey: "gen_ai.usage.cache_read_input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum, RawSpanName: "litellm.completion"},
+				{RawKey: "gen_ai.usage.cache_creation_input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum, RawSpanName: "litellm.completion"},
 				{RawKey: "gen_ai.request.reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
 				{RawKey: "gen_ai.response.id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
 				{RawKey: "gen_ai.response.model", CanonicalKey: "gen_ai.response.model", Kind: canonical.Presence},

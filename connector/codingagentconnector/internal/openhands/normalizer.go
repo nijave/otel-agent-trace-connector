@@ -275,6 +275,7 @@ func emitGroup(dst ptrace.SpanSlice, g *traceGroup, captureIdentity bool) {
 		ii, jj := si.SpanID(), sj.SpanID()
 		return string(ii[:]) < string(jj[:])
 	})
+	children, absorbed := foldLLMWrappers(children)
 	// Tool calls arrive once as a call and again as its result sharing a
 	// tool_call_id. Deduping after the deterministic sort keeps the
 	// earliest record regardless of wire arrival order.
@@ -295,8 +296,75 @@ func emitGroup(dst ptrace.SpanSlice, g *traceGroup, captureIdentity bool) {
 		switch child.rol {
 		case roleChat:
 			normalizeChat(child.span, span)
+			if wrapper, ok := absorbed[child.span.SpanID()]; ok {
+				foldUsage(wrapper, span)
+			}
 		case roleTool:
 			normalizeTool(child.span, span)
+		}
+	}
+}
+
+// foldLLMWrappers drops the SDK's `llm.<model>` wrapper spans and returns the
+// remaining children plus, per surviving chat span, the wrapper whose usage
+// falls back onto it. The SDK opens a wrapper around every LLM call
+// (telemetry.py llm_call_span, Laminar span type LLM) and lmnr's LiteLLM
+// instrumentation nests the call span inside it, so the wire carries one call
+// twice with the cache counters written on both; only the inner span is the
+// call. Dropping the wrapper reparents its child to the root, because every
+// kept child is emitted under the root anyway.
+//
+// A chat span with no chat child stays a chat span of its own: a provider path
+// lmnr does not instrument, or a batch that split the pair, leaves a real call
+// that dropping would delete. A chat span parenting several chat spans is left
+// alone as well — nothing identifies which of them owns its counters, and
+// copying them onto more than one would double count.
+func foldLLMWrappers(children []kept) ([]kept, map[pcommon.SpanID]ptrace.Span) {
+	chatByID := map[pcommon.SpanID]ptrace.Span{}
+	chatByParent := map[pcommon.SpanID][]ptrace.Span{}
+	for _, child := range children {
+		if child.rol != roleChat {
+			continue
+		}
+		parent := child.span.ParentSpanID()
+		chatByID[child.span.SpanID()] = child.span
+		chatByParent[parent] = append(chatByParent[parent], child.span)
+	}
+	wrappers := map[pcommon.SpanID]bool{}
+	absorbed := map[pcommon.SpanID]ptrace.Span{}
+	for parentID, kids := range chatByParent {
+		wrapper, isChat := chatByID[parentID]
+		if !isChat || len(kids) != 1 {
+			continue
+		}
+		wrappers[parentID] = true
+		absorbed[kids[0].SpanID()] = wrapper
+	}
+	if len(wrappers) == 0 {
+		return children, absorbed
+	}
+	folded := make([]kept, 0, len(children))
+	for _, child := range children {
+		if child.rol == roleChat && wrappers[child.span.SpanID()] {
+			continue
+		}
+		folded = append(folded, child)
+	}
+	return folded, absorbed
+}
+
+// foldUsage carries the folded wrapper's usage counters onto the canonical chat
+// span, leaving every counter the inner span already reported intact: the inner
+// span is the per-call record, while the wrapper only fills the gaps the
+// provider did not report to lmnr (the cache counters).
+func foldUsage(wrapper, span ptrace.Span) {
+	attrs := span.Attributes()
+	for _, pair := range usageKeys {
+		if _, exists := attrs.Get(pair[1]); exists {
+			continue
+		}
+		if value, ok := wrapper.Attributes().Get(pair[0]); ok && value.Type() == pcommon.ValueTypeInt {
+			attrs.PutInt(pair[1], value.Int())
 		}
 	}
 }

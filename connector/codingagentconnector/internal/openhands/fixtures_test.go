@@ -42,6 +42,25 @@ func TestFixtureReplayMatchesCanonicalFixture(t *testing.T) {
 	require.JSONEq(t, string(expected), string(actual))
 }
 
+// TestFixtureReplayFoldsLLMWrappers pins the fold over the real capture: two
+// LLM calls in, two chat spans out (never four), and the cache counters land
+// once — the wrapper's copies must not survive, and must not vanish either.
+func TestFixtureReplayFoldsLLMWrappers(t *testing.T) {
+	out := replayFixture(t)
+	chats := chatSpans(out)
+	require.Len(t, chats, 2, "one chat span per LLM call in the fixture")
+	var read, write int64
+	for _, chat := range chats {
+		require.Equal(t, "chat z-ai/glm-5.3-flash", chat.Name(),
+			"the folded span keeps the inner span's model-derived name")
+		read += intValue(t, chat, "gen_ai.usage.cache_read.input_tokens")
+		write += intValue(t, chat, "gen_ai.usage.cache_write.input_tokens")
+	}
+	require.Equal(t, int64(4608), read,
+		"one call's 4608 cached tokens, not the wrapper's duplicate on top")
+	require.Equal(t, int64(0), write)
+}
+
 func TestFixtureReplayShuffleStable(t *testing.T) {
 	plain := replayFixture(t)
 
