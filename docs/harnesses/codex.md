@@ -1,8 +1,9 @@
 # Codex — OpenTelemetry signal reference
 
-Codex's wire carries structured OTLP **logs** (`codex.*` events with
-`conversation.id`); there is no native trace signal. The connector is a
-logs-to-traces edge: it deduplicates redelivered records, correlates each
+Codex exports structured OTLP **logs** (`codex.*` events with
+`conversation.id`). With `otel.trace_exporter` configured it also exports
+native trace spans, but the connector does not consume them. The connector
+is a logs-to-traces edge: it deduplicates redelivered records, correlates each
 turn's events into a deterministic trace, and emits one `invoke_agent codex`
 root with `chat <model>` and `execute_tool <tool>` children plus the
 remaining raw events attached to the root as span events (names only). See
@@ -13,30 +14,41 @@ and the policy behind it.
 
 | Signal | Native support | Connector support |
 | --- | --- | --- |
-| Traces | none native (wire is logs only) | n/a (traces synthesized from the Logs edge) |
+| Traces | native, opt-in (`otel.trace_exporter`, default `none`) | none (no traces edge for Codex spans; the Logs edge synthesizes the canonical trace) |
 | Logs | native (`codex.*` structured events) | logs edge (this file's Connector mapping) |
 | Metrics | native (in-tree `codex-rs/otel` crate) | not applicable |
 
-Last verified: Logs 2026-10-19 (Codex 0.163.0 capture), Traces 2026-08-29,
-Metrics 2026-08-21 (see Sources).
+Last verified: 2026-10-19 for all three signals, against the Codex 0.163.0
+capture and the `rust-v0.163.0` source tag (see Sources).
 
 ## Traces
 
 ### Native support
 
-Not applicable — Codex has no native OTel traces signal. The wire carries
-only structured `codex.*` OTLP logs, never spans; every span in the
-canonical `invoke_agent codex` trace comes from the connector's synthesis
-over the logs signal (below), not from a trace Codex put on the wire itself.
-See [docs/otel-signals.md](../otel-signals.md#summary) (Codex row: "none
-native (wire is logs only)") and [docs/harnesses.md](../harnesses.md#summary)
-(Codex row: "structured logs").
+Native and opt-in. Codex 0.163.0 has a separate `otel.trace_exporter` key
+(`none` by default; `otlp-http` or `otlp-grpc` turn it on). With an OTLP
+trace exporter, Codex exports its internal `tracing` spans (for example the
+`codex.exec` root span of `codex exec`) except `h2`/`tokio`/`runtime` spans.
+It attaches trace-safe copies of some `codex.*` events (for example `codex.tool_result` and the
+usage-bearing `response.completed`) as span events. `otel.span_attributes`
+adds attributes to every exported span, and `codex exec` parents its root
+span from a `TRACEPARENT` environment variable. Sources (rust-v0.163.0,
+checked 2026-10-19): [`config/src/types.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/config/src/types.rs#L642-L650),
+[`otel/src/provider.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/otel/src/provider.rs#L341-L350),
+[`exec/src/lib.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/exec/src/lib.rs#L686-L697),
+[`otel/README.md`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/otel/README.md).
+
+The e2e config sets only the log `exporter`, so the pinned capture has no
+native spans. [docs/otel-signals.md](../otel-signals.md#summary) and
+[docs/harnesses.md](../harnesses.md#summary) still describe Codex as
+logs-only.
 
 ### Connector mapping
 
-Not applicable for the same reason: there is no native trace signal to
-normalize directly. See **Logs → Connector mapping** for the synthesis this
-connector performs instead.
+None. The connector has no traces edge for Codex's native spans, and the
+canonical `invoke_agent codex` trace does not use them. See
+**Logs → Connector mapping** for the synthesis this connector performs
+instead.
 
 ## Logs
 
@@ -59,7 +71,7 @@ Event-to-span mapping:
 | Raw log event | Canonical output |
 |---|---|
 | `codex.sse_event` (`event.kind=response.completed`, usage/ttft-bearing) | `chat <model>` span |
-| duplicate timing-only `response.completed` (no `ttft_ms`, no token counts) | dropped |
+| duplicate timing-only `response.completed` (no `ttft_ms`, no token counts), including a failed completion that carries only `error.message` | dropped |
 | `codex.user_prompt` | turn boundary / root source event (content stripped) |
 | `codex.tool_result` | `execute_tool <tool>` span |
 | `codex.api_request`, `codex.startup_phase`, … | root span events (name + timestamp only) |
@@ -74,35 +86,42 @@ names any wire condition under which the key is absent), **dropped**
 preservation pipeline branch), or **not provided** (the source never emits a
 raw key that would map there).
 
-Usage is provider-dependent: the connector copies only the counts the
-provider returned. A `response.completed` from a provider that reports no
-usage (e.g. a chat-completions stream without `stream_options.include_usage`)
-still builds its chat span, with no `gen_ai.usage.*` keys at all.
+Usage depends on the provider. Codex 0.163.0 logs the usage-bearing
+`response.completed` record only when the provider's `response.completed`
+carries a `usage` object. That record always has all six token counts, with 0
+for a detail field (cached, cache-write, reasoning) that the provider omits.
+When the provider sends no `usage`, Codex logs only the timing-only record,
+which the connector drops, so that model call gets no chat span. Codex 0.163.0
+speaks only the Responses wire API. Sources (rust-v0.163.0, checked
+2026-10-19): [`core/src/client.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/core/src/client.rs#L2572-L2580),
+[`codex-api/src/sse/responses.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/codex-api/src/sse/responses.rs#L119-L145),
+[`model-provider-info/src/lib.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/model-provider-info/src/lib.rs#L107-L111).
 
-Wire drift (audited 2026-10-19 against upstream HEAD): the pinned e2e capture
-now comes from Codex 0.163.0. That version sends `cache_write_token_count` on
-usage-bearing `response.completed` records (mapped above) and extra detail
-fields on `codex.tool_result` and `codex.tool_decision`; those detail fields
-appear as dropped rows in the matrix below. The builder copies only the keys
-in this matrix, so they stay out of canonical output.
+Wire drift (audited 2026-10-19 against the `rust-v0.163.0` tag): the pinned
+e2e capture now comes from Codex 0.163.0. That version sends
+`cache_write_token_count` on usage-bearing `response.completed` records
+(mapped below) and extra detail fields on `codex.tool_result` and
+`codex.tool_decision`; those detail fields appear as dropped rows in the
+matrix below. The builder copies only the keys in this matrix, so they stay
+out of canonical output.
 
 ##### codex.sse_event (response.completed) → chat
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `input_token_count` | `gen_ai.usage.input_tokens` | mapped (absent when the provider reports no usage) |
-| `output_token_count` | `gen_ai.usage.output_tokens` | mapped (absent when the provider reports no usage) |
-| `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the provider's usage carries no cached-token field) |
-| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; the pinned 0.163.0 capture reports it non-zero — 7924 then 105 across the two completions) |
-| `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (absent when the provider's usage carries no total; the connector never computes one) |
-| `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
-| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
+| `input_token_count` | `gen_ai.usage.input_tokens` | mapped |
+| `output_token_count` | `gen_ai.usage.output_tokens` | mapped |
+| `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (0, not absent, when the provider's usage has no `input_tokens_details`) |
+| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (0, not absent, when the provider's usage has no cache-write field; the pinned 0.163.0 capture reports it non-zero — 7924 then 105 across the two completions) |
+| `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (Codex logs the provider's `usage.total_tokens` under this name; the connector never computes a total) |
+| `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (0, not absent, when the provider's usage has no `output_tokens_details`; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
+| `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when Codex saw no `response.output_item.added` before the completion — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
-| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when the build sends no effort value — reasoning effort "none" sends nothing; the pinned 0.163.0 capture carries `low`) |
-| `service_tier` | `coding_agent.request.service_tier` | mapped (absent when the build sends no tier or the provider returns none; absent from the pinned 0.163.0 capture) |
+| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (the request's effort, not a provider value; absent when neither config nor the model's default sets one — Codex sends an effort of `none` as the string `none`; the pinned 0.163.0 capture carries `low`) |
+| `service_tier` | `coding_agent.request.service_tier` | mapped (the request's tier, not a provider value; absent when the request sets no service tier, as in the pinned 0.163.0 capture) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
-| `slug`, `originator`, `terminal.type`, `attempt`, `endpoint`, auth/http detail | — | dropped |
+| `slug`, `originator`, `terminal.type`, `auth_mode`, `error.message` | — | dropped |
 
 ##### codex.tool_result → execute_tool
 
@@ -117,7 +136,8 @@ in this matrix, so they stay out of canonical output.
 | `tool_namespace` | — | dropped (tool provenance detail, outside the usage/cost/performance scope) |
 | `tool_result_seq` | — | dropped (process-wide result counter, not a per-turn ordinal) |
 | `output_truncated` | — | dropped (qualifies tool output content that the connector strips at parse time) |
-| `agent_name` | — | dropped (subagent identity; upstream uses the field for two different meanings and values include per-run UUIDs; per-subagent `invoke_agent` spans would be the semconv-shaped path if this is ever wanted) |
+| `agent_name` | — | dropped (agent identity: `/root` for the main agent, as in the pinned capture; for a subagent, its agent path, its nickname, or its conversation UUID; per-subagent `invoke_agent` spans would be the semconv-shaped path if this is ever wanted) |
+| `product_sku` | — | dropped (absent from the pinned capture) |
 
 ##### invoke_agent codex root
 
@@ -126,7 +146,7 @@ in this matrix, so they stay out of canonical output.
 | `conversation.id` | `gen_ai.conversation.id` | mapped |
 | `model` | `gen_ai.request.model` | mapped (last observed value in the turn) |
 | `app.version` | `coding_agent.client.version` | mapped |
-| `user.account_id` | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent when the run authenticates with an API key — user identity is a ChatGPT-auth field) |
+| `user.account_id` | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent when the run authenticates with an API key, because only ChatGPT-style auth carries it. Upstream describes it as the workspace account ID, not a per-user ID) |
 | `user.email` | `coding_agent.user.email` | mapped (only when `capture_identity` is on; absent under API-key auth for the same reason) |
 | `terminal.type` | `coding_agent.terminal.type` | mapped (unconditionally; the flag does not control it) |
 | `provider_name` | — | dropped (operator-authored display label from config.toml, not a known provider identifier; `gen_ai.provider.name` stays `openai`, the wire protocol). Only the session's first turn logs it anyway |
@@ -185,10 +205,18 @@ they appear on every emitted span except where noted:
 ### Native support
 
 Native, in-tree `codex-rs/otel` crate — counters and histograms, verified
-from source (repo clone commit `4f39251`). Needs `analytics_enabled = true`
-plus an `[otel.metrics_exporter.otlp-http]` table in `~/.codex/config.toml`;
-the default exporter is `statsig`, not OTLP, so metrics stay off the wire
-until an operator sets both.
+from source at `rust-v0.163.0` (commit `83086188`, checked 2026-10-19). The
+default `otel.metrics_exporter` is `statsig`, which sends to OpenAI and
+follows `[analytics] enabled`. To send metrics to your own collector, set
+`otel.metrics_exporter` to an `otlp-http` or `otlp-grpc` exporter in
+`~/.codex/config.toml`. Since Codex 0.163.0 (openai/codex#52278), a custom
+OTLP metrics exporter works even with analytics turned off; set
+`otel.metrics_exporter = "none"` to turn it off. The published
+advanced-config docs still say disabling analytics also disables custom OTLP
+metrics exporters; the source is authoritative. Sources:
+[`core/src/otel_init.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/core/src/otel_init.rs#L68-L78),
+[`config/src/types.rs`](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/config/src/types.rs#L645-L647),
+[0.163.0 release notes](https://github.com/openai/codex/releases/tag/rust-v0.163.0).
 
 Key instruments (full catalog, including every histogram and its complete
 attribute set, lives in [docs/metrics.md](../metrics.md#codex)):
@@ -221,9 +249,14 @@ exported, pass through a metrics pipeline unmodified.
 
 ## Sources
 
-- Codex OTel crate: https://github.com/openai/codex (`codex-rs/otel/README.md`,
-  `codex-rs/otel/src/metrics/config.rs`, `codex-rs/core` call sites)
-- [docs/otel-signals.md](../otel-signals.md) — top-level per-signal matrix (refreshed 2026-08-29)
-- [docs/harnesses.md](../harnesses.md) — summary table corroborating no native Codex traces signal (refreshed 2026-08-20)
+- Codex source at tag `rust-v0.163.0` (commit `83086188`), checked 2026-10-19:
+  https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs (`otel/README.md`, `otel/src/provider.rs`,
+  `otel/src/events/session_telemetry.rs`, `otel/src/tool_result.rs`,
+  `config/src/types.rs`, `config/src/loader/mod.rs`, `core/src/otel_init.rs`,
+  `core/src/client.rs`)
+- Codex 0.163.0 release notes: https://github.com/openai/codex/releases/tag/rust-v0.163.0 (checked 2026-10-19)
+- Codex advanced configuration docs: https://developers.openai.com/codex/config-advanced (project-local `otel` ignored; checked 2026-10-19)
+- [docs/otel-signals.md](../otel-signals.md) — top-level per-signal matrix (refreshed 2026-08-29; its Codex traces row predates the native traces finding above)
+- [docs/harnesses.md](../harnesses.md) — summary table (refreshed 2026-08-20; its Codex row predates the native traces finding above)
 - [docs/metrics.md](../metrics.md) — full Codex instrument catalog (refreshed 2026-08-21, verified against upstream clone commit `4f39251`)
-- Wire capture behind the Logs attribute matrix above: Codex 0.163.0, audited 2026-10-19 against upstream HEAD
+- Wire capture behind the Logs attribute matrix above: Codex 0.163.0 (`codex exec`, API-key auth, Responses API), captured and audited 2026-10-19 against the `rust-v0.163.0` tag
