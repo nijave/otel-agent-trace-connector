@@ -52,7 +52,7 @@ go test -race ./...
 (cd connector/codingagentconnector && go test -race ./...)
 
 step "collector build and config validation"
-go run go.opentelemetry.io/collector/cmd/builder@v0.159.0 --config builder-config.yaml
+go run go.opentelemetry.io/collector/cmd/builder@v0.163.0 --config builder-config.yaml
 AWS_REGION=us-east-1 \
 OTEL_QUEUE_DIRECTORY=/tmp/otelcol-queue \
 OTEL_QUEUE_MAX_SIZE_BYTES=10485760 \
@@ -66,7 +66,7 @@ OTEL_S3_BUCKET=validation-only \
 CANONICAL_OUT=/tmp/otelcol-routing-validate.json \
   ./dist/otelcol-coding-agents validate --config e2e/routing/tier2.yaml
 docker run --rm -v "$PWD/e2e/routing/gateway.yaml:/gateway.yaml:ro" \
-  otel/opentelemetry-collector-contrib:0.159.0 validate --config /gateway.yaml
+  otel/opentelemetry-collector-contrib:0.163.1 validate --config /gateway.yaml
 
 step "compose configurations"
 export E2E_RUN_ID=ci-validation OPENAI_API_KEY=validation-only OPENCODE_API_KEY=validation-only COPILOT_PROVIDER_API_KEY=validation-only ANTHROPIC_AUTH_TOKEN=validation-only LLM_API_KEY=validation-only

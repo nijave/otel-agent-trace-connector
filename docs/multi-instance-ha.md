@@ -11,7 +11,7 @@ N instances for high availability, and which issues block that today, as
 analysis rather than an implementation plan.
 
 Facts about upstream components reflect `loadbalancingexporter` documentation
-and source at Collector v0.159.0, the version pinned in
+and source at Collector v0.163.0, the version pinned in
 `builder-config.yaml`.
 
 ## Current state
@@ -105,7 +105,7 @@ exporters:
         service: coding-agent-collector.telemetry.svc
 ```
 
-At v0.159.0 the `load_balancing` exporter supports logs at beta stability and
+At v0.163.0 the `load_balancing` exporter supports logs at beta stability and
 `routing_key: attributes` checks resource, scope, and log-record attributes,
 so both conversation attributes route correctly even though they never appear
 on the same record (missing attributes encode deterministically). Consistent
