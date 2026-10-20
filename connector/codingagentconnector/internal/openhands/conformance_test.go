@@ -23,6 +23,12 @@ func TestOpenHandsConformance(t *testing.T) {
 			{RawKey: "gen_ai.usage.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 			{RawKey: "gen_ai.usage.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 			{RawKey: "llm.usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
+			// The `llm.<model>` wrapper writes the cache counters the inner
+			// `litellm.completion` span also carries; the edge folds the wrapper
+			// away, so the inner span is the authoritative source and the
+			// trace-wide total would double count.
+			{RawKey: "gen_ai.usage.cache_read_input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum, RawSpanName: "litellm.completion"},
+			{RawKey: "gen_ai.usage.cache_creation_input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum, RawSpanName: "litellm.completion"},
 			{RawKey: "gen_ai.request.reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
 			{RawKey: "gen_ai.response.id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
 			{RawKey: "gen_ai.response.model", CanonicalKey: "gen_ai.response.model", Kind: canonical.Presence},

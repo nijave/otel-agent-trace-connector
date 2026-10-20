@@ -179,6 +179,17 @@ func attrString(span ptrace.Span, key string) string {
 	return value.Str()
 }
 
+// chatSpans returns every canonical chat span, whatever its span name.
+func chatSpans(traces ptrace.Traces) []ptrace.Span {
+	var out []ptrace.Span
+	for _, span := range allSpansOf(traces) {
+		if attrString(span, "gen_ai.operation.name") == "chat" {
+			out = append(out, span)
+		}
+	}
+	return out
+}
+
 func intValue(t *testing.T, span ptrace.Span, key string) int64 {
 	t.Helper()
 	value, ok := span.Attributes().Get(key)
@@ -355,6 +366,115 @@ func TestLLMAndToolChildrenReparentAndRename(t *testing.T) {
 
 	// Root + chat + one deduped execute_tool.
 	require.Len(t, allSpansOf(out), 3)
+}
+
+// TestLLMWrapperFoldsIntoInnerChatSpan pins one chat span per LLM call: the
+// SDK's `llm.<model>` wrapper and the `litellm.completion` span lmnr nests
+// inside it are the same call, so the wrapper must not become a second,
+// cache-only chat span whose counters a sum would count twice.
+func TestLLMWrapperFoldsIntoInnerChatSpan(t *testing.T) {
+	// upstream builds the pair the wire carries: a wrapper holding the cache
+	// counters the SDK always writes, around the inner span holding the call.
+	upstream := func(innerCache map[string]any) ptrace.Traces {
+		attrs := map[string]any{
+			"gen_ai.request.model":       "z-ai/glm-5.3-flash",
+			"gen_ai.usage.input_tokens":  int64(100),
+			"gen_ai.usage.output_tokens": int64(20),
+			"llm.usage.total_tokens":     int64(120),
+		}
+		for k, v := range innerCache {
+			attrs[k] = v
+		}
+		return makeTraces(
+			makeSpan(traceA, conversationSpec()),
+			makeSpan(traceA, spanSpec{
+				name: "llm.z-ai/glm-5.3-flash", spanID: "b000000000000001",
+				parentID: "dddddddddddddddd", spanType: "LLM",
+				attrs: map[string]any{
+					"gen_ai.usage.cache_read_input_tokens":     int64(4608),
+					"gen_ai.usage.cache_creation_input_tokens": int64(8),
+				},
+			}),
+			makeSpan(traceA, spanSpec{
+				name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee",
+				parentID: "b000000000000001", spanType: "LLM", attrs: attrs,
+			}),
+		)
+	}
+
+	t.Run("cache counters carry from the wrapper", func(t *testing.T) {
+		out := normalizeOne(t, upstream(nil))
+		chats := chatSpans(out)
+		require.Len(t, chats, 1, "one LLM call must emit exactly one chat span")
+		chat := chats[0]
+		require.Equal(t, "chat z-ai/glm-5.3-flash", chat.Name())
+		require.Equal(t, findByName(t, out, "invoke_agent openhands")[0].SpanID(), chat.ParentSpanID(),
+			"the folded wrapper's child reparents to the root")
+		require.Equal(t, int64(100), intValue(t, chat, "gen_ai.usage.input_tokens"))
+		require.Equal(t, int64(4608), intValue(t, chat, "gen_ai.usage.cache_read.input_tokens"))
+		require.Equal(t, int64(8), intValue(t, chat, "gen_ai.usage.cache_write.input_tokens"))
+		require.Len(t, allSpansOf(out), 2, "root plus one chat span; the wrapper is gone")
+	})
+
+	t.Run("counters the inner span reports win", func(t *testing.T) {
+		// A provider that reports nothing cached sends zeros on the inner span;
+		// the wrapper must not overwrite them with its own figures.
+		out := normalizeOne(t, upstream(map[string]any{
+			"gen_ai.usage.cache_read_input_tokens":     int64(0),
+			"gen_ai.usage.cache_creation_input_tokens": int64(0),
+		}))
+		chats := chatSpans(out)
+		require.Len(t, chats, 1)
+		require.Equal(t, int64(0), intValue(t, chats[0], "gen_ai.usage.cache_read.input_tokens"))
+		require.Equal(t, int64(0), intValue(t, chats[0], "gen_ai.usage.cache_write.input_tokens"))
+	})
+}
+
+// TestLLMWrapperWithoutInnerStaysChatSpan pins the safe half of the fold: a
+// wrapper with no inner LLM span in the batch (a provider path lmnr does not
+// instrument, or a batch that split the pair) is a real call, so it stays a
+// chat span carrying the counters it holds.
+func TestLLMWrapperWithoutInnerStaysChatSpan(t *testing.T) {
+	traces := makeTraces(
+		makeSpan(traceA, conversationSpec()),
+		makeSpan(traceA, spanSpec{
+			name: "llm.z-ai/glm-5.3-flash", spanID: "b000000000000001",
+			parentID: "dddddddddddddddd", spanType: "LLM",
+			attrs: map[string]any{
+				"gen_ai.usage.cache_read_input_tokens":     int64(4608),
+				"gen_ai.usage.cache_creation_input_tokens": int64(8),
+			},
+		}),
+	)
+	out := normalizeOne(t, traces)
+	chats := chatSpans(out)
+	require.Len(t, chats, 1, "a wrapper with no inner span is still a call")
+	require.Equal(t, int64(4608), intValue(t, chats[0], "gen_ai.usage.cache_read.input_tokens"))
+	require.Equal(t, int64(8), intValue(t, chats[0], "gen_ai.usage.cache_write.input_tokens"))
+}
+
+// TestLLMWrapperWithSeveralChatChildrenStays pins the ambiguity guard: with
+// more than one chat child nothing says which call owns the wrapper's
+// counters, so the wrapper stays and no counter is copied twice.
+func TestLLMWrapperWithSeveralChatChildrenStays(t *testing.T) {
+	traces := makeTraces(
+		makeSpan(traceA, conversationSpec()),
+		makeSpan(traceA, spanSpec{
+			name: "llm.z-ai/glm-5.3-flash", spanID: "b000000000000001",
+			parentID: "dddddddddddddddd", spanType: "LLM",
+			attrs: map[string]any{"gen_ai.usage.cache_read_input_tokens": int64(4608)},
+		}),
+		makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee",
+			parentID: "b000000000000001", spanType: "LLM",
+		}),
+		makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "eeeeeeeeeeeeeef0",
+			parentID: "b000000000000001", spanType: "LLM",
+		}),
+	)
+	out := normalizeOne(t, traces)
+	require.Len(t, chatSpans(out), 3)
 }
 
 // TestChatMapsReasoningEffortAndResponseIdentity pins the provider-response

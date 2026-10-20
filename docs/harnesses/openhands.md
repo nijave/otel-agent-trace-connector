@@ -71,15 +71,22 @@ raw key that would map there).
 
 ##### LLM span → chat
 
-**Two chat spans per LLM call.** The SDK opens its own `llm.<model>` span
+**One chat span per LLM call.** The SDK opens its own `llm.<model>` span
 (Laminar span type `LLM`) around each call, and lmnr's LiteLLM
 instrumentation nests a `litellm.completion` (or `litellm.responses`) span
-under it. The connector rewrites both as `chat` children: the wrapper becomes
-a bare `chat` span with only the cache-token counts, and the inner span
-becomes `chat <model>` with the full request, response, and usage keys. The
-two spans carry the same cache-token values, so summing
-`gen_ai.usage.cache_read.input_tokens` or `cache_write.input_tokens` across
-all chat spans counts each call twice. Sources:
+under it, so the wire carries one call twice. The connector emits only the
+inner span, as `chat <model>` with the full request, response, and usage keys,
+and folds the wrapper away: the wrapper drops from canonical output (its child
+reparents to the `invoke_agent` root, as every kept child does) and its
+cache-token counts copy onto the inner chat span only for a counter that span
+does not report itself. Summing `gen_ai.usage.cache_read.input_tokens` or
+`cache_write.input_tokens` across chat spans therefore counts each call once.
+A wrapper stays a chat span of its own — a bare `chat` carrying only its cache
+counts — in two cases: it has no single inner LLM span in the batch (a
+provider path lmnr does not instrument, or a batch that split the pair), where
+dropping it would delete a real call, or it parents several chat spans, where
+nothing identifies which call owns the counters (absent from the 2026-10-19
+capture). Sources:
 [`llm_call_span`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/observability/laminar.py#L515-L540),
 [`Telemetry._open_span` / `_annotate_span`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/llm/utils/telemetry.py#L304-L345)
 (v1.56.0, checked 2026-10-19), and the 2026-10-19 live capture (SDK 1.56.0,
@@ -87,20 +94,20 @@ all chat spans counts each call twice. Sources:
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `gen_ai.request.model` | `gen_ai.request.model` | mapped (also names the span; absent — and the span named bare `chat` — when the wire span carries no model, as the `llm.<model>` wrapper spans do) |
-| `gen_ai.request.reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (verbatim; absent when the request sets no reasoning effort, and on the `llm.<model>` wrapper spans) |
-| `gen_ai.system` | `gen_ai.provider.name` | mapped (absent on the `llm.<model>` wrapper spans; lmnr 0.7.67 writes it on every `litellm.completion` and `litellm.responses` span) |
-| `gen_ai.response.id` | `gen_ai.response.id` | mapped (absent when the wire span carries no provider response id, as the `llm.<model>` wrapper spans do) |
-| `gen_ai.response.model` | `gen_ai.response.model` | mapped (absent when the wire span carries no response model, as the `llm.<model>` wrapper spans do) |
-| `gen_ai.usage.input_tokens` | `gen_ai.usage.input_tokens` | mapped (absent on the `llm.<model>` wrapper spans, on streamed completions whose chunks carry no usage, and on responses-API calls whose response has no usage) |
+| `gen_ai.request.model` | `gen_ai.request.model` | mapped (also names the span; absent — and the span named bare `chat` — when the wire span carries no model, which is every `llm.<model>` wrapper, and one reaches output only when it has no single inner LLM span to fold into) |
+| `gen_ai.request.reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (verbatim; absent when the request sets no reasoning effort, and on a kept `llm.<model>` wrapper) |
+| `gen_ai.system` | `gen_ai.provider.name` | mapped (absent on a kept `llm.<model>` wrapper; lmnr 0.7.67 writes it on every `litellm.completion` and `litellm.responses` span) |
+| `gen_ai.response.id` | `gen_ai.response.id` | mapped (absent when the wire span carries no provider response id, as a kept `llm.<model>` wrapper does) |
+| `gen_ai.response.model` | `gen_ai.response.model` | mapped (absent when the wire span carries no response model, as a kept `llm.<model>` wrapper does) |
+| `gen_ai.usage.input_tokens` | `gen_ai.usage.input_tokens` | mapped (absent on a kept `llm.<model>` wrapper, on streamed completions whose chunks carry no usage, and on responses-API calls whose response has no usage) |
 | `gen_ai.usage.output_tokens` | `gen_ai.usage.output_tokens` | mapped (absent under the same conditions as `input_tokens`) |
 | `llm.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (absent under the same conditions as `input_tokens`) |
-| `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (the `llm.<model>` wrapper writes it, `0` when nothing hit the cache, whenever the SDK has usage; the inner LiteLLM span lacks it unless the provider reports prompt-token details) |
-| `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_write.input_tokens` | mapped (wrapper as for `cache_read`; the inner span lacks it unless the provider reports prompt-token details, and `litellm.responses` spans never carry it) |
+| `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (the inner span's value when it reports one; otherwise the folded `llm.<model>` wrapper's, which the SDK writes with the usage and sets to `0` when nothing hit the cache — so the folded chat span reports a count once, never twice) |
+| `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_write.input_tokens` | mapped (same fold as `cache_read`; the inner span lacks it unless the provider reports prompt-token details, and `litellm.responses` spans never carry it) |
 | `gen_ai.request.max_tokens` | — | dropped (connector gap: lmnr writes it when the request sets `max_tokens` or `max_completion_tokens`, which the SDK does when it knows the model's output limit; absent from the 2026-10-19 capture) |
 | `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, `lmnr.span.input`, `lmnr.span.output` | — | dropped (prompt, response, and tool-definition content never leaves the edge) |
 | `lmnr.span.*` bookkeeping (`path`, `parent_path`, `ids_path`, `parent_ids_path`, `type`, `sdk_version`, `language_version`, `instrumentation_source`, `instrumentation_scope.name`, `instrumentation_scope.version`) | — | dropped (Laminar span bookkeeping; the edge reads only `lmnr.span.type`, to classify the span) |
-| `gen_ai.usage.cost` | — | dropped (the SDK's per-request dollar cost on the `llm.<model>` wrapper spans; the canonical vocabulary has no cost key) |
+| `gen_ai.usage.cost` | — | dropped (the SDK's per-request dollar cost rides the folded `llm.<model>` wrapper spans, and the canonical vocabulary has no cost key) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
 
 lmnr attribute sources:

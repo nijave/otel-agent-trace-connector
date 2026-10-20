@@ -696,6 +696,10 @@ span becomes the `invoke_agent openhands` root. Every other span in the
 group drops from canonical output, but still widens the root's time
 envelope for its trace ID. Kept children reparent under the root; a tool
 call and its result share a `tool_call_id` and dedupe to one span. The
+SDK's `llm.<model>` wrapper span around each call also drops, because lmnr
+nests the actual `litellm.completion` span inside it and the wire would
+otherwise carry one call twice; a wrapper with no single inner LLM span in
+the batch stays a `chat` span of its own. The
 root maps `gen_ai.conversation.id` from
 `lmnr.association.properties.session_id`; `user_id` and conversation tags
 are vendor detail outside the vocabulary and stay in the raw pipeline.
@@ -713,7 +717,9 @@ consumers reconstruct delegation through the shared conversation id.
 
 Chat spans remap the LiteLLM accounting keys onto `gen_ai.usage.*` —
 input, output, total, and cache read/creation input tokens — each key only
-when the wire carries it. Streamed completions carry no token usage
+when the wire carries it; the cache counters the SDK writes on the folded
+wrapper fill in only when the inner span lacks them, so no call's cache
+tokens land twice. Streamed completions carry no token usage
 upstream, so a chat span may carry no usage at all. The wire reports no
 cost and no reasoning-token counts on spans.
 
