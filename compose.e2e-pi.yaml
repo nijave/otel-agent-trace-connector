@@ -1,4 +1,4 @@
-# Pi coding agent (z.ai) e2e stack. The shared collector comes from
+# Pi coding agent (OpenCode Go) e2e stack. The shared collector comes from
 # compose.e2e-base.yaml; only the Pi agent is defined here, so this stack never
 # requires other stacks' credentials. The agent's telemetry endpoint and the
 # @amaster.ai/pi-telemetry extension are baked into the image
@@ -13,12 +13,12 @@ services:
       args:
         - PI_CODING_AGENT_VERSION
     environment:
-      # Pi reaches z.ai's Anthropic-compatible endpoint through the baked
-      # models.json provider; scripts/e2e-pi.sh checks this credential before
-      # Compose runs.
-      ANTHROPIC_AUTH_TOKEN: "${ANTHROPIC_AUTH_TOKEN:-}"
+      # Pi reaches OpenCode Go through its built-in opencode-go provider, which
+      # reads the key from OPENCODE_API_KEY and sends Go's session header;
+      # scripts/e2e-pi.sh checks this credential before Compose runs.
+      OPENCODE_API_KEY: "${OPENCODE_API_KEY:-}"
       E2E_AGENT_TIMEOUT: "${E2E_AGENT_TIMEOUT:-10m}"
-      E2E_PI_MODEL: "${E2E_PI_MODEL:-zai/glm-4.7}"
+      E2E_PI_MODEL: "${E2E_PI_MODEL:-opencode-go/claude-haiku-5-5}"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-pi.sh}"
     depends_on:
       collector:

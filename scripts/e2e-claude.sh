@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The container receives one credential: the z.ai API key, passed to Claude Code
-# as ANTHROPIC_AUTH_TOKEN against z.ai's Anthropic-compatible endpoint.
-if [[ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
-  echo "ANTHROPIC_AUTH_TOKEN (your z.ai API key) is required; this test runs a real paid model." >&2
+# The container receives one credential: the OpenCode Go key, passed to Claude
+# Code as ANTHROPIC_API_KEY against OpenCode Go's Anthropic-compatible endpoint
+# (sent as x-api-key; a bearer token is rejected).
+if [[ -z "${OPENCODE_API_KEY:-}" ]]; then
+  echo "OPENCODE_API_KEY (your OpenCode Go API key) is required; this test runs a real paid model." >&2
   exit 2
 fi
 
@@ -16,7 +17,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 . "${script_dir}/lib-e2e.sh"
 
 compose_files=(-f compose.e2e-claude.yaml)
-# The Claude stack only needs the shared collector; Claude Code talks to z.ai's
-# Anthropic-compatible endpoint directly, so no proxy is required.
+# The Claude stack only needs the shared collector; Claude Code talks to OpenCode
+# Go's Anthropic-compatible endpoint directly, so no proxy is required.
 support_services=(collector)
 e2e_run claude

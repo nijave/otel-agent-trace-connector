@@ -69,36 +69,43 @@ docker run --rm -v "$PWD/e2e/routing/gateway.yaml:/gateway.yaml:ro" \
   otel/opentelemetry-collector-contrib:0.163.1 validate --config /gateway.yaml
 
 step "compose configurations"
-export E2E_RUN_ID=ci-validation OPENAI_API_KEY=validation-only OPENCODE_API_KEY=validation-only COPILOT_PROVIDER_API_KEY=validation-only ANTHROPIC_AUTH_TOKEN=validation-only LLM_API_KEY=validation-only
+export E2E_RUN_ID=ci-validation OPENCODE_API_KEY=validation-only OPENROUTER_API_KEY=validation-only
 # Every stack file must parse; the per-stack assertions below encode each
-# stack's credential contract.
+# stack's credential contract: each agent container receives exactly one
+# credential (its in-container name), equal to the validation value, and none of
+# the other stacks' in-container names.
 for f in compose.e2e-*.yaml; do
   docker compose -f "$f" config --quiet
 done
-# The real key reaches responses-proxy only; the Codex agent gets a placeholder,
-# because config.toml's env_key just needs a value the proxy will ignore.
+# The Codex agent holds the real OpenCode Go key: config.toml names it as env_key
+# and Codex sends it as the bearer token to OpenCode Go.
 docker compose -f compose.e2e-codex.yaml config --format json \
-  | jq -e '.services["responses-proxy"].environment.OPENAI_API_KEY == "validation-only"
-           and .services.agent.environment.OPENAI_API_KEY != "validation-only"'
-# ANTHROPIC_API_KEY must stay absent so it cannot shadow ANTHROPIC_AUTH_TOKEN.
+  | jq -e '.services.agent.environment.OPENCODE_API_KEY == "validation-only"
+           and (.services.agent.environment | has("OPENROUTER_API_KEY") | not)'
+# Claude Code authenticates with x-api-key (ANTHROPIC_API_KEY); ANTHROPIC_AUTH_TOKEN
+# must stay absent because Go rejects a bearer token on /messages.
 docker compose -f compose.e2e-claude.yaml config --format json \
-  | jq -e '.services.agent.environment.ANTHROPIC_BASE_URL == "https://api.z.ai/api/anthropic" and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
-# Each of the remaining stacks receives exactly one credential: the z.ai key as
-# OPENAI_API_KEY. No Anthropic credential may leak in.
+  | jq -e '.services.agent.environment.ANTHROPIC_API_KEY == "validation-only"
+           and .services.agent.environment.ANTHROPIC_BASE_URL == "https://opencode.ai/zen/go"
+           and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
+# The OpenAI-adhoc and Strands stacks each receive the OpenRouter key as
+# OPENAI_API_KEY. No other stack's credential may leak in.
 for stack in openai strands; do
   docker compose -f "compose.e2e-$stack.yaml" config --format json \
     | jq -e '.services.agent.environment.OPENAI_API_KEY == "validation-only"
-             and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
+             and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
+             and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)
+             and (.services.agent.environment | has("LLM_API_KEY") | not)'
 done
 # The OpenCode e2e stack receives exactly one credential: an OpenCode Go key
-# as OPENCODE_API_KEY. No Anthropic or z.ai credential may leak in.
+# as OPENCODE_API_KEY. No other stack's credential may leak in.
 docker compose -f compose.e2e-opencode.yaml config --format json \
   | jq -e '.services.agent.environment.OPENCODE_API_KEY == "validation-only"
            and (.services.agent.environment | has("OPENAI_API_KEY") | not)
-           and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)'
-# The Copilot e2e stack receives exactly one credential: the BYOK provider key
+           and (.services.agent.environment | has("OPENROUTER_API_KEY") | not)'
+# The Copilot e2e stack receives exactly one credential: the OpenRouter key
 # as COPILOT_PROVIDER_API_KEY, alongside the provider/model/OTEL configuration.
-# No OpenAI or Anthropic credential may leak in.
+# No other stack's credential may leak in.
 docker compose -f compose.e2e-copilot.yaml config --format json \
   | jq -e '.services.agent.environment.COPILOT_PROVIDER_API_KEY == "validation-only"
            and (.services.agent.environment
@@ -108,40 +115,36 @@ docker compose -f compose.e2e-copilot.yaml config --format json \
                        "OTEL_EXPORTER_OTLP_PROTOCOL")]
                 | all)
            and (.services.agent.environment | has("OPENAI_API_KEY") | not)
-           and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)
-           and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)'
-# The Pi e2e stack receives exactly one credential: the z.ai key as ANTHROPIC_AUTH_TOKEN; no other stack's credential may leak in.
+           and (.services.agent.environment | has("OPENCODE_API_KEY") | not)'
+# The Pi e2e stack receives exactly one credential: the OpenCode Go key as
+# OPENCODE_API_KEY, read by pi's built-in opencode-go provider. No other
+# stack's credential may leak in.
 docker compose -f compose.e2e-pi.yaml config --format json \
-  | jq -e '.services.agent.environment.ANTHROPIC_AUTH_TOKEN == "validation-only"
+  | jq -e '.services.agent.environment.OPENCODE_API_KEY == "validation-only"
            and (.services.agent.environment | has("OPENAI_API_KEY") | not)
-           and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)
-           and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
-           and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)'
-# The OpenHands e2e stack receives exactly one credential: the litellm key as
+           and (.services.agent.environment | has("OPENROUTER_API_KEY") | not)
+           and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)
+           and (.services.agent.environment | has("LLM_API_KEY") | not)'
+# The OpenHands e2e stack receives exactly one credential: the OpenRouter key as
 # LLM_API_KEY. No other stack's credential may leak in.
 docker compose -f compose.e2e-openhands.yaml config --format json \
   | jq -e '.services.agent.environment.LLM_API_KEY == "validation-only"
            and (.services.agent.environment | has("OPENAI_API_KEY") | not)
-           and (.services.agent.environment | has("ANTHROPIC_AUTH_TOKEN") | not)
-           and (.services.agent.environment | has("ANTHROPIC_API_KEY") | not)
            and (.services.agent.environment | has("OPENCODE_API_KEY") | not)
            and (.services.agent.environment | has("COPILOT_PROVIDER_API_KEY") | not)'
 # The routing e2e stack replays a committed fixture; it receives no
 # credential at all. Every stack key must stay absent.
 docker compose -f compose.e2e-routing.yaml config --format json \
   | jq -e '.services.agent.environment
-           | (has("OPENAI_API_KEY") or has("ANTHROPIC_AUTH_TOKEN")
-              or has("ANTHROPIC_API_KEY") or has("OPENCODE_API_KEY")
-              or has("COPILOT_PROVIDER_API_KEY") or has("LLM_API_KEY"))
+           | (has("OPENAI_API_KEY") or has("OPENCODE_API_KEY")
+              or has("OPENROUTER_API_KEY") or has("COPILOT_PROVIDER_API_KEY")
+              or has("LLM_API_KEY"))
            | not'
 
 step "container images"
 docker build --tag otelcol-coding-agents:check .
 # Every e2e directory with a Dockerfile gets built, so a new stack is covered
-# automatically. The Codex stack cannot run without the responses-proxy image,
-# and that image is the only one built from a git ref rather than an immutable
-# registry artifact, so a vanished fork branch or a broken dependency must fail
-# here rather than during someone's paid e2e run.
+# automatically.
 for d in e2e/*/; do
   if [ -f "${d}Dockerfile" ]; then
     docker build --tag "$(basename "$d")-e2e:check" "$d"

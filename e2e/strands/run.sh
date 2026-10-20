@@ -2,7 +2,7 @@
 set -eu
 
 if [ -z "${OPENAI_API_KEY:-}" ]; then
-  echo "OPENAI_API_KEY (your z.ai API key) is required; this test runs a real paid model." >&2
+  echo "OPENAI_API_KEY (your OpenRouter API key) is required; this test runs a real paid model." >&2
   exit 2
 fi
 

@@ -6,7 +6,9 @@ if [ -z "${OPENCODE_API_KEY:-}" ]; then
   exit 2
 fi
 
+# opencode's built-in opencode-go provider reads OPENCODE_API_KEY and sends the
+# session header OpenCode Go requires.
 git init -q .
 exec timeout --signal=TERM "${E2E_AGENT_TIMEOUT:-10m}" \
-  opencode run -m "oclaude/${E2E_OPENCODE_MODEL:-ox-alpha-free}" \
+  opencode run -m "opencode-go/${E2E_OPENCODE_MODEL:-glm-5.3-flash}" \
     "Use the bash tool exactly once to run 'printf opencode-otel-e2e'. Then reply with only: done."

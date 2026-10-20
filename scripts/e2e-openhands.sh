@@ -2,8 +2,8 @@
 # shellcheck disable=SC2034
 set -euo pipefail
 
-if [[ -z "${LLM_API_KEY:-}" ]]; then
-  echo "LLM_API_KEY is required; this test runs a real paid model." >&2
+if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+  echo "OPENROUTER_API_KEY is required; this test runs a real paid model." >&2
   exit 2
 fi
 

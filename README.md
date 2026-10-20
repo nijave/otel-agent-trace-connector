@@ -160,7 +160,6 @@ Repository layout:
 │   │   openhands/
 │   └── internal/pi/                 #   stateless @amaster.ai/pi-telemetry normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
-│   └── responses-proxy/             #   Responses->Chat shim, e2e-only (see e2e/README.md)
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
 ├── builder-config.yaml              # pinned OCB distribution
 ├── compose.e2e-base.yaml            # shared collector included by every e2e stack
@@ -366,7 +365,8 @@ elsewhere should mount their own config over it.
 - [Cursor OpenTelemetry wire reference](https://cursor.com/docs/enterprise/opentelemetry-export/wire)
 - [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage)
 - [Claude Code third-party endpoints](https://code.claude.com/docs/en/llm-gateway)
-- [z.ai coding-agent setup](https://docs.z.ai/devpack/tool/claude)
+- [OpenCode Go models and providers](https://opencode.ai/docs/providers)
+- [OpenRouter API reference](https://openrouter.ai/docs/api-reference)
 - [AWS S3 exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/awss3exporter)
 - [File storage extension](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/storage/filestorage)
 - [opentelemetry-instrumentation-openai-v2](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation-genai/opentelemetry-instrumentation-openai-v2)
