@@ -57,7 +57,7 @@ export OPENAI_API_KEY=...   # your z.ai key
 Optional overrides:
 
 ```bash
-CODEX_VERSION=0.149.0 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
+CODEX_VERSION=0.163.0 E2E_CODEX_MODEL=glm-4.7 E2E_AGENT_TIMEOUT=10m ./scripts/e2e.sh
 ```
 
 The E2E defaults to `glm-4.7`, the model the pinned connector regression
@@ -211,7 +211,7 @@ export OPENCODE_API_KEY=...   # your OpenCode Go API key
 Optional overrides:
 
 ```bash
-OPENCODE_VERSION=1.18.21 E2E_OPENCODE_MODEL=ox-alpha-free E2E_AGENT_TIMEOUT=10m ./scripts/e2e-opencode.sh
+OPENCODE_VERSION=1.19.3 E2E_OPENCODE_MODEL=ox-alpha-free E2E_AGENT_TIMEOUT=10m ./scripts/e2e-opencode.sh
 ```
 
 `E2E_OPENCODE_MODEL` must name a model that exists in the `models` map of
@@ -241,7 +241,7 @@ After slicing, rerun `go test ./internal/opencode/` from
 ## Live Pi agent (paid)
 
 The Pi stack runs the [Pi coding agent](https://pi.dev) with the
-`@amaster.ai/pi-telemetry` extension (pinned via image args), which exports
+`@amaster.ai/pi-telemetry@0.1.28` extension (pinned in `e2e/pi/settings.json`), which exports
 OTLP/HTTP traces to the shared collector. The image bakes the telemetry
 settings and a `models.json` provider pointing at z.ai's
 Anthropic-compatible endpoint; `ANTHROPIC_AUTH_TOKEN` is the only credential.
@@ -343,7 +343,7 @@ export LLM_API_KEY=...   # key for the provider behind LLM_MODEL
 Optional overrides:
 
 ```bash
-OPENHANDS_SDK_VERSION=1.43.1 E2E_AGENT_TIMEOUT=10m ./scripts/e2e-openhands.sh
+OPENHANDS_SDK_VERSION=1.56.0 E2E_AGENT_TIMEOUT=10m ./scripts/e2e-openhands.sh
 ```
 
 Override the model with `LLM_MODEL`; `LLM_API_KEY` must stay valid for the

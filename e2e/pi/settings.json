@@ -1,5 +1,5 @@
 {
-  "packages": ["npm:@amaster.ai/pi-telemetry"],
+  "packages": ["npm:@amaster.ai/pi-telemetry@0.1.28"],
   "pi-telemetry": {
     "serviceName": "pi",
     "otel": {
