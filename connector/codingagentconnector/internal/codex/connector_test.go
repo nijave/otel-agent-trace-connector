@@ -308,17 +308,20 @@ func TestEmittedScopeVersionUsesBuildInfo(t *testing.T) {
 	require.Equal(t, "1.2.3", scope.Version())
 }
 
-// TestConnectorAgainstRealCodexCapture pins the connector to real Codex 0.150.1
-// telemetry captured by the e2e harness (GLM-4.7 via the responses-proxy). It
-// guards against Codex log-schema drift and, specifically, the timing-only
-// duplicate response.completed that must not become a usage-less chat span. The
-// same shape is emitted by real OpenAI Codex, so this also covers that path.
+// TestConnectorAgainstRealCodexCapture pins the connector to real Codex 0.163.0
+// telemetry captured by the e2e harness (gpt-5.6-luna via OpenCode Go's
+// Responses API, API-key auth). It guards against Codex log-schema drift and,
+// specifically, the timing-only duplicate response.completed that must not
+// become a usage-less chat span. The same shape is emitted by real OpenAI Codex,
+// so this also covers that path. API-key runs carry no user identity, so the
+// fixture synthesizes user.account_id/user.email (and a host.name) to keep the
+// capture_identity mappings covered.
 func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	data, err := os.ReadFile("testdata/codex-native-logs.json")
 	require.NoError(t, err)
 
 	cfg := NewDefaultConfig()
-	// The capture is fed as four separate batches, and the turn looks finalizable
+	// The capture is fed as three separate batches, and the turn looks finalizable
 	// before the last one arrives. The window has to outlast the gaps between
 	// those calls or a scheduling stall on a loaded runner splits the capture
 	// into two turns, so it is generous rather than as short as the other tests
@@ -351,9 +354,9 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	require.NotEmpty(t, attrString(t, root, "gen_ai.conversation.id"))
 	_, hasRootUsage := root.Attributes().Get("gen_ai.usage.input_tokens")
 	require.False(t, hasRootUsage, "usage lives on chat spans only")
-	// The capture was recorded through the responses-proxy; the operator-authored
-	// provider label is dropped and gen_ai.provider.name keeps describing the wire
-	// protocol.
+	// The capture carries an operator-authored provider label (the config.toml
+	// display name); it is dropped and gen_ai.provider.name keeps describing the
+	// wire protocol.
 	_, hasModelProvider := root.Attributes().Get("coding_agent.model_provider")
 	require.False(t, hasModelProvider)
 	require.Equal(t, "openai", attrString(t, root, "gen_ai.provider.name"))

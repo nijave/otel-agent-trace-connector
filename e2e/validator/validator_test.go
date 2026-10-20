@@ -631,7 +631,7 @@ func TestCopilotCanonicalFixtureValidates(t *testing.T) {
 
 func TestCodexCanonicalFixtureValidates(t *testing.T) {
 	path := filepath.Join("..", "..", "connector", "codingagentconnector", "internal", "codex", "testdata", "codex-canonical.otlp.json")
-	runID := "codex-otel-1787881086-648014"
+	runID := "codex-otel-1792453211-3679339"
 	require.NoError(t, validateCanonicalFile(path, runID, "codex"))
 
 	// The codex canonical fixture carries capture_identity output: assert the
@@ -747,7 +747,7 @@ func TestCodexCanonicalFixtureRejectsContent(t *testing.T) {
 	span := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	span.Attributes().PutStr("prompt", "leak")
 
-	err := validateCanonicalFile(writeInjected(t, traces), "codex-otel-1787881086-648014", "codex")
+	err := validateCanonicalFile(writeInjected(t, traces), "codex-otel-1792453211-3679339", "codex")
 	require.Error(t, err)
 	require.ErrorContains(t, err, `sensitive attribute "prompt"`)
 }

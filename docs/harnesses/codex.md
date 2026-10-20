@@ -17,7 +17,8 @@ and the policy behind it.
 | Logs | native (`codex.*` structured events) | logs edge (this file's Connector mapping) |
 | Metrics | native (in-tree `codex-rs/otel` crate) | not applicable |
 
-Last verified: 2026-08-29 per signal (Logs attribute matrix audited 2026-08-25; see Sources).
+Last verified: Logs 2026-10-19 (Codex 0.163.0 capture), Traces 2026-08-29,
+Metrics 2026-08-21 (see Sources).
 
 ## Traces
 
@@ -78,8 +79,8 @@ provider returned. A `response.completed` from a provider that reports no
 usage (e.g. a chat-completions stream without `stream_options.include_usage`)
 still builds its chat span, with no `gen_ai.usage.*` keys at all.
 
-Wire drift (audited 2026-08-25 against upstream HEAD): the pinned e2e capture
-now comes from Codex 0.150.1. That version sends `cache_write_token_count` on
+Wire drift (audited 2026-10-19 against upstream HEAD): the pinned e2e capture
+now comes from Codex 0.163.0. That version sends `cache_write_token_count` on
 usage-bearing `response.completed` records (mapped above) and extra detail
 fields on `codex.tool_result` and `codex.tool_decision`; those detail fields
 appear as dropped rows in the matrix below. The builder copies only the keys
@@ -92,13 +93,13 @@ in this matrix, so they stay out of canonical output.
 | `input_token_count` | `gen_ai.usage.input_tokens` | mapped (absent when the provider reports no usage) |
 | `output_token_count` | `gen_ai.usage.output_tokens` | mapped (absent when the provider reports no usage) |
 | `cached_token_count` | `gen_ai.usage.cache_read.input_tokens` | mapped (absent when the provider's usage carries no cached-token field) |
-| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; the pinned 0.150.1 capture reports 0) |
+| `cache_write_token_count` | `gen_ai.usage.cache_write.input_tokens` | mapped (absent when the provider's usage carries no cache-write field; the pinned 0.163.0 capture reports it non-zero — 7924 then 105 across the two completions) |
 | `tool_token_count` | `gen_ai.usage.total_tokens` | mapped (absent when the provider's usage carries no total; the connector never computes one) |
 | `reasoning_token_count` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider's usage carries no reasoning field; replaces the former vendor `coding_agent.usage.reasoning_tokens`) |
 | `ttft_ms` | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; absent when a usage-bearing completion carries no `ttft_ms` — either `ttft_ms` or a token count keeps a completion, and a record with neither drops as the timing-only duplicate) |
 | `model` | `gen_ai.request.model` | mapped (also names the span) |
-| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when the build sends no effort value — reasoning effort "none" sends nothing; the pinned 0.150.1 capture carries `low`) |
-| `service_tier` | `coding_agent.request.service_tier` | mapped (absent when the build sends no tier or the provider returns none; absent from the pinned 0.150.1 capture) |
+| `model_reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when the build sends no effort value — reasoning effort "none" sends nothing; the pinned 0.163.0 capture carries `low`) |
+| `service_tier` | `coding_agent.request.service_tier` | mapped (absent when the build sends no tier or the provider returns none; absent from the pinned 0.163.0 capture) |
 | `duration_ms` | — | dropped (used for span bounds only) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
 | `slug`, `originator`, `terminal.type`, `attempt`, `endpoint`, auth/http detail | — | dropped |
@@ -125,8 +126,8 @@ in this matrix, so they stay out of canonical output.
 | `conversation.id` | `gen_ai.conversation.id` | mapped |
 | `model` | `gen_ai.request.model` | mapped (last observed value in the turn) |
 | `app.version` | `coding_agent.client.version` | mapped |
-| `user.account_id` | `coding_agent.user.id` | mapped (only when `capture_identity` is on) |
-| `user.email` | `coding_agent.user.email` | mapped (only when `capture_identity` is on) |
+| `user.account_id` | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent when the run authenticates with an API key — user identity is a ChatGPT-auth field) |
+| `user.email` | `coding_agent.user.email` | mapped (only when `capture_identity` is on; absent under API-key auth for the same reason) |
 | `terminal.type` | `coding_agent.terminal.type` | mapped (unconditionally; the flag does not control it) |
 | `provider_name` | — | dropped (operator-authored display label from config.toml, not a known provider identifier; `gen_ai.provider.name` stays `openai`, the wire protocol). Only the session's first turn logs it anyway |
 | `coding_agent.turn.finish_reason` | — | dropped (was **connector-derived** — `completed`/`superseded`/`timeout`/`evicted`/`shutdown` finalization reasons, not a model stop reason; still exposed as the `otelcol_coding_agent_turns_emitted` metric's `finish_reason` label. Timeouts surface as root span Status Error) |
@@ -141,12 +142,18 @@ The turn resource's `host.name` survives `FilterResource` as a resource
 identity key only when `capture_identity` is on; with the flag off, the
 connector strips it along with the other identity keys above.
 
+Identity is auth-dependent: an API-key run (the pinned e2e capture) logs no
+`user.account_id`/`user.email` at all, so `coding_agent.user.id` and
+`coding_agent.user.email` are simply absent. The committed fixture synthesizes
+both keys (plus a synthetic `host.name`) so the `capture_identity` mappings
+stay covered by the fixture-replay test.
+
 ##### codex.tool_decision
 
 Dropped entirely, including the decision→result pairing: its only canonical
 outputs were `coding_agent.tool.decision` / `coding_agent.tool.decision_source`
 (both vendor keys outside the vocabulary), and once those went the join had no
-remaining purpose. Codex 0.150.1 also sends `tool_namespace` on this event; it
+remaining purpose. Codex 0.163.0 also sends `tool_namespace` on this event; it
 drops with the event.
 
 #### Connector-written attributes
@@ -219,4 +226,4 @@ exported, pass through a metrics pipeline unmodified.
 - [docs/otel-signals.md](../otel-signals.md) — top-level per-signal matrix (refreshed 2026-08-29)
 - [docs/harnesses.md](../harnesses.md) — summary table corroborating no native Codex traces signal (refreshed 2026-08-20)
 - [docs/metrics.md](../metrics.md) — full Codex instrument catalog (refreshed 2026-08-21, verified against upstream clone commit `4f39251`)
-- Wire capture behind the Logs attribute matrix above: Codex 0.150.1, audited 2026-08-25 against upstream HEAD
+- Wire capture behind the Logs attribute matrix above: Codex 0.163.0, audited 2026-10-19 against upstream HEAD
