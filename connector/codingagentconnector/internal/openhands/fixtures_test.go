@@ -61,6 +61,24 @@ func TestFixtureReplayFoldsLLMWrappers(t *testing.T) {
 	require.Equal(t, int64(0), write)
 }
 
+// TestFixtureReplayMapsRequestLimitAndToolCallID pins the two wire keys the
+// capture carries whose canonical counterparts the wire already names: the
+// request's output limit on every chat span, and the tool call identity the
+// edge also dedupes on.
+func TestFixtureReplayMapsRequestLimitAndToolCallID(t *testing.T) {
+	out := replayFixture(t)
+	chats := chatSpans(out)
+	require.Len(t, chats, 2)
+	for _, chat := range chats {
+		require.Equal(t, int64(16384), intValue(t, chat, "gen_ai.request.max_tokens"))
+	}
+	tools := findByName(t, out, "execute_tool TerminalAction")
+	require.Len(t, tools, 1)
+	// The capture's tool call appears once, as a call, with no separate
+	// result record; the id it carries still reaches output.
+	require.Equal(t, "call_85146d522d26472d9873b609", attrString(tools[0], "gen_ai.tool.call.id"))
+}
+
 func TestFixtureReplayShuffleStable(t *testing.T) {
 	plain := replayFixture(t)
 

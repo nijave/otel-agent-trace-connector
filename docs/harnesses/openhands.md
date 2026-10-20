@@ -104,7 +104,7 @@ capture). Sources:
 | `llm.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (absent under the same conditions as `input_tokens`) |
 | `gen_ai.usage.cache_read_input_tokens` | `gen_ai.usage.cache_read.input_tokens` | mapped (the inner span's value when it reports one; otherwise the folded `llm.<model>` wrapper's, which the SDK writes with the usage and sets to `0` when nothing hit the cache — so the folded chat span reports a count once, never twice) |
 | `gen_ai.usage.cache_creation_input_tokens` | `gen_ai.usage.cache_write.input_tokens` | mapped (same fold as `cache_read`; the inner span lacks it unless the provider reports prompt-token details, and `litellm.responses` spans never carry it) |
-| `gen_ai.request.max_tokens` | — | dropped (connector gap: lmnr writes it when the request sets `max_tokens` or `max_completion_tokens`, which the SDK does when it knows the model's output limit; absent from the 2026-10-19 capture) |
+| `gen_ai.request.max_tokens` | `gen_ai.request.max_tokens` | mapped (the request's output limit, which lmnr copies from `max_tokens`, `max_completion_tokens` (the chat path's key), or `max_output_tokens` (the responses path's); absent when the SDK resolves no limit, on a responses-API call in subscription mode, and on a kept `llm.<model>` wrapper, which carries no request keys. The fixture's value is synthetic — the 2026-10-19 capture carries no such key, because lmnr omits it when the SDK resolves no limit) |
 | `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, `lmnr.span.input`, `lmnr.span.output` | — | dropped (prompt, response, and tool-definition content never leaves the edge) |
 | `lmnr.span.*` bookkeeping (`path`, `parent_path`, `ids_path`, `parent_ids_path`, `type`, `sdk_version`, `language_version`, `instrumentation_source`, `instrumentation_scope.name`, `instrumentation_scope.version`) | — | dropped (Laminar span bookkeeping; the edge reads only `lmnr.span.type`, to classify the span) |
 | `gen_ai.usage.cost` | — | dropped (the SDK's per-request dollar cost rides the folded `llm.<model>` wrapper spans, and the canonical vocabulary has no cost key) |
@@ -116,14 +116,27 @@ lmnr attribute sources:
 [responses](https://github.com/lmnr-ai/lmnr-python/blob/0.7.67/src/lmnr/opentelemetry_lib/opentelemetry/instrumentation/litellm/wrappers/responses/__init__.py#L25-L122),
 and the SDK's
 [`select_chat_options`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/llm/options/chat_options.py#L20-L52)
-(checked 2026-10-19).
+(checked 2026-10-19). The output limit lmnr copies into
+`gen_ai.request.max_tokens` traces back to that `select_chat_options`
+default (`max_completion_tokens`, L31–L39) and to the responses path's
+[`select_responses_options`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/llm/options/responses_options.py#L28-L33)
+(`max_output_tokens`), both defaulted from
+[`effective_max_output_tokens`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/llm/llm.py#L2880-L2889)
+(v1.56.0, checked 2026-10-19); lmnr's `set_span_attribute` drops a `None`
+value, so a call whose limit resolves to none carries no such key
+([`shared/utils.py`](https://github.com/lmnr-ai/lmnr-python/blob/0.7.67/src/lmnr/opentelemetry_lib/opentelemetry/instrumentation/shared/utils.py#L33-L37)).
+
+The edge's dedupe source is the same metadata key: the SDK stamps
+`…metadata.tool_call_id` on the tool span it opens for a call
+([`record_tool_result`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/observability/laminar.py#L323-L338),
+v1.56.0, checked 2026-10-19).
 
 ##### TOOL span → execute_tool
 
 | Raw key | Canonical key | Status |
 |---|---|---|
 | span name | `gen_ai.tool.name` (also names the span) | mapped |
-| `lmnr.association.properties.metadata.tool_call_id` | — | dropped (connector gap: the edge never emits it as `gen_ai.tool.call.id`; it drives the internal call/result dedupe only, and when the wire omits it the edge emits both records) |
+| `lmnr.association.properties.metadata.tool_call_id` | `gen_ai.tool.call.id` | mapped (the same key drives the call/result dedupe, so a record that reaches output carries it; absent when the wire omits the metadata key, and then the edge has no id to dedupe on and emits the call and result records separately) |
 | `lmnr.span.input`, `lmnr.span.output` | — | dropped (tool arguments and results never leave the edge) |
 | `gen_ai.tool.description` | — | dropped (absent from the 2026-10-19 capture) |
 
@@ -144,11 +157,12 @@ and the SDK's
 
 **Delegate linkage note.** The delegate metadata no longer reaches output as
 attributes, but `…metadata.is_delegate = true` still *claims* groups for this
-edge, and `…metadata.tool_call_id` still drives the call/result dedupe
-internally. Severed sibling fragments stay reconcilable downstream via the
-preserved trace/conversation IDs; the linkage detail itself (task ID,
-subagent type, parent session, parent trace and span IDs) is recoverable
-only through a raw-preservation branch. The SDK writes these keys in
+edge, and `…metadata.tool_call_id` drives the call/result dedupe internally
+while also mapping to `gen_ai.tool.call.id` on the `execute_tool` child.
+Severed sibling fragments stay reconcilable downstream via the
+preserved trace/conversation IDs; the remaining
+linkage detail (task ID, subagent type, parent session, parent trace and
+span IDs) is recoverable only through a raw-preservation branch. The SDK writes these keys in
 [`_delegate_observability_metadata`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-tools/openhands/tools/task/manager.py#L347-L365)
 and
 [`detached_delegate_context`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/observability/laminar.py#L549-L593)

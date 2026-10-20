@@ -30,8 +30,10 @@ func TestOpenHandsConformance(t *testing.T) {
 			{RawKey: "gen_ai.usage.cache_read_input_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum, RawSpanName: "litellm.completion"},
 			{RawKey: "gen_ai.usage.cache_creation_input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum, RawSpanName: "litellm.completion"},
 			{RawKey: "gen_ai.request.reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+			{RawKey: "gen_ai.request.max_tokens", CanonicalKey: "gen_ai.request.max_tokens", Kind: canonical.Presence},
 			{RawKey: "gen_ai.response.id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
 			{RawKey: "gen_ai.response.model", CanonicalKey: "gen_ai.response.model", Kind: canonical.Presence},
+			{RawKey: "lmnr.association.properties.metadata.tool_call_id", CanonicalKey: "gen_ai.tool.call.id", Kind: canonical.Presence},
 		},
 	})
 }

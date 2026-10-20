@@ -363,9 +363,49 @@ func TestLLMAndToolChildrenReparentAndRename(t *testing.T) {
 	require.Equal(t, root.SpanID(), tools[0].ParentSpanID())
 	require.Equal(t, "execute_tool", attrString(tools[0], "gen_ai.operation.name"))
 	require.Equal(t, "bash", attrString(tools[0], "gen_ai.tool.name"))
+	require.Equal(t, "call-1", attrString(tools[0], "gen_ai.tool.call.id"))
 
 	// Root + chat + one deduped execute_tool.
 	require.Len(t, allSpansOf(out), 3)
+}
+
+// TestToolCallIDMapsOntoExecuteTool pins the tool call identity the wire
+// carries in Laminar association metadata. The edge already keys its
+// call/result dedupe on it; the canonical vocabulary also has a key for it, so
+// it reaches output instead of being consumed and thrown away.
+func TestToolCallIDMapsOntoExecuteTool(t *testing.T) {
+	toolSpan := func(spanID, callID string) ptrace.Span {
+		attrs := map[string]any{}
+		if callID != "" {
+			attrs[attrToolCallID] = callID
+		}
+		return makeSpan(traceA, spanSpec{
+			name: "bash", spanID: spanID, spanType: "TOOL", attrs: attrs,
+		})
+	}
+	normalize := func(wire ...ptrace.Span) ptrace.Traces {
+		t.Helper()
+		spans := append([]ptrace.Span{makeSpan(traceA, conversationSpec())}, wire...)
+		return normalizeOne(t, makeTraces(spans...))
+	}
+
+	tools := findByName(t, normalize(toolSpan("ffffffffffffff01", "call-1")), "execute_tool bash")
+	require.Len(t, tools, 1)
+	require.Equal(t, "call-1", attrString(tools[0], "gen_ai.tool.call.id"))
+	_, survives := tools[0].Attributes().Get(attrToolCallID)
+	require.False(t, survives, "the raw metadata key must not reach canonical output")
+
+	// Without the wire key there is neither a canonical id to map nor a key
+	// to dedupe on, so the records stay separate spans and carry no id.
+	stray := findByName(t, normalize(
+		toolSpan("ffffffffffffff01", ""),
+		toolSpan("ffffffffffffff02", ""),
+	), "execute_tool bash")
+	require.Len(t, stray, 2)
+	for _, span := range stray {
+		_, ok := span.Attributes().Get("gen_ai.tool.call.id")
+		require.False(t, ok, "canonical tool call id must be absent when the wire omits it")
+	}
 }
 
 // TestLLMWrapperFoldsIntoInnerChatSpan pins one chat span per LLM call: the
@@ -546,6 +586,37 @@ func TestChatMapsReasoningEffortAndResponseIdentity(t *testing.T) {
 			require.False(t, ok, "canonical %s must be absent for an empty %s", tc.canonicalKey, tc.rawKey)
 		})
 	}
+}
+
+// TestChatMapsRequestMaxTokens pins gen_ai.request.max_tokens: lmnr copies it
+// from whichever output-limit kwarg the SDK sent, and the canonical vocabulary
+// names the key identically, so the wired integer copies verbatim.
+func TestChatMapsRequestMaxTokens(t *testing.T) {
+	emit := func(wire ptrace.Span) ptrace.Span {
+		t.Helper()
+		out := normalizeOne(t, makeTraces(makeSpan(traceA, conversationSpec()), wire))
+		return chatSpans(out)[0]
+	}
+	completion := func(attrs map[string]any) ptrace.Span {
+		return makeSpan(traceA, spanSpec{
+			name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM", attrs: attrs,
+		})
+	}
+
+	require.Equal(t, int64(16384), intValue(t, emit(completion(map[string]any{
+		"gen_ai.request.max_tokens": int64(16384),
+	})), "gen_ai.request.max_tokens"))
+
+	// lmnr omits the key when the request sets no output limit at all.
+	_, ok := emit(completion(nil)).Attributes().Get("gen_ai.request.max_tokens")
+	require.False(t, ok, "canonical max_tokens must be absent when the wire omits it")
+
+	// Only an integer maps: the wire never sends a limit as a double, and the
+	// canonical key is an integer count.
+	double := completion(nil)
+	double.Attributes().PutDouble("gen_ai.request.max_tokens", 16.5)
+	_, ok = emit(double).Attributes().Get("gen_ai.request.max_tokens")
+	require.False(t, ok, "a non-integer max_tokens must not reach the canonical key")
 }
 
 func TestStreamedCompletionKeepsBareChatWithoutUsage(t *testing.T) {
