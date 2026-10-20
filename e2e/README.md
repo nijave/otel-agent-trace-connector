@@ -305,12 +305,15 @@ Pin the CLI version with `COPILOT_CLI_VERSION`.
 
 A successful run leaves raw OTLP JSON under `.e2e-output/raw-traces.json`, the
 same flow the OpenCode stack documents. Captured traces feed the committed
-connector fixtures: the GenAI edge's
-`internal/genai/testdata/copilot-native.otlp.json` originated from the
-documented schema, and real captures are how that fixture gets refreshed
-against actual CLI output. After updating it, rerun
+connector fixtures `internal/genai/testdata/copilot-cli-raw.otlp.json` and its
+regenerated `copilot-cli-canonical.otlp.json`. After updating them, rerun
 `go test ./internal/genai/` from `connector/codingagentconnector/` to confirm
 the fixture still replays green.
+
+The former doc-derived `copilot-native.otlp.json` is gone: a real capture
+supersedes it, and the mappings only it exercised (VS Code Copilot Chat's
+resource flavor, the `enduser.pseudo.id` identity gate, lifecycle span events)
+now live as focused unit tests in `internal/genai/normalizer_test.go`.
 
 ## Live OpenHands E2E
 

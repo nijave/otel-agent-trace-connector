@@ -19,7 +19,9 @@ shared vocabulary and the policy behind it.
 
 Connector support for all three emitters: traces edge (see
 [docs/otel-signals.md](../otel-signals.md)). Last verified: Traces
-2026-08-27, Logs 2026-08-29, Metrics 2026-08-21 (see Sources).
+2026-10-19 (Copilot CLI 1.0.100, strands-agents 1.61.1,
+opentelemetry-instrumentation-openai-v2 2.4b0), Logs 2026-08-29, Metrics
+2026-08-21 (see Sources).
 
 ## Traces
 
@@ -93,6 +95,12 @@ differences are:
 Scope `strands.telemetry.tracer`. Strands exports prompt/completion content
 as span events by default; this edge strips those events.
 
+Wire drift: from 1.61.1 the tracer stamps prompt-cache usage on `chat` and
+`invoke_agent` alike, in all four spellings (`cache_read.input_tokens`,
+`cache_read_input_tokens`, `cache_creation.input_tokens`,
+`cache_write_input_tokens`). The canonical spellings land as they are, the
+underscore and pre-rename variants remap onto them, and no duplicate survives.
+
 | Raw key | Span type | Canonical key | Status |
 |---|---|---|---|
 | `gen_ai.system` | all | `gen_ai.provider.name` | mapped (value e.g. `strands-agents`) |
@@ -100,8 +108,10 @@ as span events by default; this edge strips those events.
 | `gen_ai.usage.prompt_tokens` | chat, invoke_agent | `gen_ai.usage.input_tokens` | dropped (duplicate of the current key; dedupe maps it only when absent, then removes it) |
 | `gen_ai.usage.completion_tokens` | chat, invoke_agent | `gen_ai.usage.output_tokens` | dropped (same dedupe) |
 | `gen_ai.usage.total_tokens` | chat, invoke_agent | `gen_ai.usage.total_tokens` | kept (same exception condition) |
-| `gen_ai.usage.cache_read_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_read.input_tokens` | mapped (underscore variant; same exception condition) |
-| `gen_ai.usage.cache_write_input_tokens` | invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (underscore variant; invoke_agent only on the wire, so chat spans never carry the canonical key) |
+| `gen_ai.usage.cache_read.input_tokens` | chat, invoke_agent | same | kept (the pinned 1.61.1 wire sends it alongside the underscore variant and both agree; the canonical spelling wins and the duplicate drops) |
+| `gen_ai.usage.cache_read_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_read.input_tokens` | mapped (underscore variant; dedupe maps it only when the canonical spelling is absent, which is never the case in the pinned capture) |
+| `gen_ai.usage.cache_write_input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (underscore variant; Strands never sends the canonical spelling, so this variant is what populates the key) |
+| `gen_ai.usage.cache_creation.input_tokens` | chat, invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (pre-rename dotted spelling; remaps only when the canonical key is absent, then drops — the underscore write variant fills it first here) |
 | `gen_ai.server.time_to_first_token` | chat | `gen_ai.response.time_to_first_chunk` | mapped (integer ms → seconds, double; the legacy key drops after the copy; absent when the chat ends in an exception) |
 | `gen_ai.event.start_time` / `end_time` | all | same | kept |
 | `gen_ai.request.model` | chat, invoke_agent | `gen_ai.request.model` | kept |
@@ -123,23 +133,32 @@ keeps the bare wire name.
 Scope `github.copilot` (prefix match tolerates sub-scopes). Covers GitHub
 Copilot CLI and VS Code Chat extensions.
 
+Wire drift: the pinned capture is a Copilot CLI 1.0.100 BYOK run against an
+OpenAI-compatible provider. Against the 1.0.80 capture it stopped stamping
+`gen_ai.agent.id`, `gen_ai.agent.version`, `gen_ai.request.model`,
+`gen_ai.usage.cache_read.input_tokens` and
+`gen_ai.usage.reasoning.output_tokens` on the `invoke_agent` root, and it added
+`github.copilot.initiator` on `chat` plus `process.executable.name` and
+`process.exit.code` on `execute_tool`. All three additions fall outside the
+vocabulary, so they drop.
+
 | Raw key | Span type | Canonical key | Status |
 |---|---|---|---|
 | `gen_ai.provider.name` | all | `gen_ai.provider.name` | kept (per-span: Copilot omits both it and legacy `gen_ai.system` on tool/hook spans and some invoke_agent spans, which then emit no provider) |
 | `gen_ai.conversation.id` | all | `gen_ai.conversation.id` | kept (only where the producer stamps it; absent on execute_tool and execute_hook) |
-| `gen_ai.agent.name` | invoke_agent | `gen_ai.agent.name` | kept (the rename subject for `invoke_agent <agent>`; the BYOK CLI capture omits it, leaving the bare `invoke_agent` name) |
-| `gen_ai.request.model` | chat, invoke_agent | same | kept |
-| `gen_ai.request.stream` | chat | same | kept (chat only; absent entirely in the VS Code Chat capture) |
+| `gen_ai.agent.name` | invoke_agent | `gen_ai.agent.name` | kept (the rename subject for `invoke_agent <agent>`; absent when the producer omits it — the pinned 1.0.100 BYOK CLI capture does, leaving the bare `invoke_agent` name) |
+| `gen_ai.request.model` | chat, invoke_agent | same | kept (absent on `invoke_agent` when the producer omits it; the pinned 1.0.100 capture carries it on chat only) |
+| `gen_ai.request.stream` | chat | same | kept (chat only; VS Code Copilot Chat sends no such key) |
 | `gen_ai.response.finish_reasons` | chat, invoke_agent | same | kept |
 | `gen_ai.response.id` / `model` | chat | same | kept |
 | `gen_ai.response.time_to_first_chunk` | chat | `gen_ai.response.time_to_first_chunk` | kept (seconds, double) |
 | `gen_ai.usage.input_tokens` / `output_tokens` | chat, invoke_agent | same | kept |
-| `gen_ai.usage.cache_read.input_tokens` | chat, invoke_agent | same | kept (only on requests that hit prompt cache; a session's first turn carries none) |
+| `gen_ai.usage.cache_read.input_tokens` | chat, invoke_agent | same | kept (only on requests that hit prompt cache; absent on `invoke_agent` in the pinned 1.0.100 capture, whose root carries none) |
 | `gen_ai.usage.cache_creation.input_tokens` / `cache_write.input_tokens` | invoke_agent | `gen_ai.usage.cache_write.input_tokens` | mapped (the pre-rename `cache_creation` spelling remaps onto the current registry key; a raw `cache_write` spelling already matches canonical and passes through; absent when the wire reports no cache writes) |
-| `gen_ai.usage.reasoning.output_tokens` | chat, invoke_agent | same | kept (only when the model reports reasoning tokens for that turn) |
-| `gen_ai.agent.id` / `agent.version` | invoke_agent | same | kept (e.g. `github.copilot.default`) |
+| `gen_ai.usage.reasoning.output_tokens` | chat, invoke_agent | same | kept (only when the model reports reasoning tokens for that turn, and absent on `invoke_agent` when the producer does not aggregate them — the pinned 1.0.100 capture carries it on chat only) |
+| `gen_ai.agent.id` / `agent.version` | invoke_agent | same | kept (absent when the producer does not stamp them: the pinned 1.0.100 CLI capture omits both, 1.0.80 stamped `github.copilot.default`) |
 | `gen_ai.tool.call.id` / `gen_ai.tool.name` / `gen_ai.tool.type` | execute_tool | same | kept |
-| `server.address` / `server.port` | chat, invoke_agent | same | kept (absent entirely in the VS Code Chat capture) |
+| `server.address` / `server.port` | chat, invoke_agent | same | kept (VS Code Copilot Chat sends neither) |
 | `github.copilot.cost` | chat, invoke_agent | — | dropped |
 | `github.copilot.aiu` | invoke_agent | — | dropped |
 | `github.copilot.turn_id` / `interaction_id` | chat | — | dropped |
@@ -149,7 +168,8 @@ Copilot CLI and VS Code Chat extensions.
 | `github.copilot.context.custom_agent_names` / `mcp_server_names` / `skills` | invoke_agent | — | dropped |
 | `github.copilot.agent.type` | invoke_agent | — | dropped (`gen_ai.agent.id` carries the identity) |
 | `github.copilot.hook.decision` | execute_hook | — | dropped |
-| `github.copilot.initiator` | chat | — | dropped |
+| `github.copilot.initiator` | chat | — | dropped (names the turn's initiator — `user` or `agent`) |
+| `process.executable.name` / `process.exit.code` | execute_tool | — | dropped (process bookkeeping for the tool call, not tool identity) |
 | `copilot_chat.repo.remote_url` | invoke_agent | — | dropped (legacy namespace) |
 | `enduser.pseudo.id` | invoke_agent | `coding_agent.user.id` | mapped (only when `capture_identity` is on; absent on other span types) |
 | `github.copilot.user.message` / `session.usage_info` / `session.shutdown` | events | event names survive, attributes stripped | kept as bare events |
@@ -161,7 +181,7 @@ Across all four emitters there is no raw source for:
 | Canonical key | Emitter | Status |
 |---|---|---|
 | `gen_ai.usage.total_tokens` | openai_v2, util-genai, copilot | not provided (Strands provides it) |
-| `gen_ai.usage.cache_write.input_tokens` | openai_v2, util-genai | not provided (Strands provides the underscore variant; Copilot emits the pre-rename spelling natively on invoke_agent) |
+| `gen_ai.usage.cache_write.input_tokens` | openai_v2, util-genai | not provided (Strands provides the underscore variant; Copilot emitted the pre-rename spelling natively on invoke_agent in the 1.0.80 capture and none in 1.0.100) |
 | `gen_ai.usage.reasoning.output_tokens` | openai_v2, util-genai, strands | not provided (Copilot provides it) |
 | `gen_ai.response.time_to_first_chunk` | openai_v2, util-genai | not provided in traces (openai-v2 reports TTFT only as a metric); Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) |
 

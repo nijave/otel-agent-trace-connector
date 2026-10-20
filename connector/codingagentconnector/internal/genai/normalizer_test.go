@@ -485,36 +485,32 @@ func TestGenAINormalizerDropsVendorKeysAndKeepsReasoningTokens(t *testing.T) {
 		"the raw enduser.pseudo.id value must be copied onto the canonical key before it is dropped")
 }
 
-// TestGenAINormalizerCapturesIdentity pins coding_agent.user.id on the
-// invoke_agent root of the committed copilot-native fixture (it carries
-// enduser.pseudo.id="user-42"), gated behind captureIdentity.
+// TestGenAINormalizerCapturesIdentity pins the capture_identity gate on
+// coding_agent.user.id: the wire's enduser.pseudo.id is copied onto the
+// canonical key only when the flag is on. The refreshed Copilot capture
+// carries no enduser.pseudo.id (a BYOK CLI run stamps none), so the input here
+// is synthetic.
 func TestGenAINormalizerCapturesIdentity(t *testing.T) {
-	findInvokeAgentRoot := func(t *testing.T, traces ptrace.Traces) ptrace.Span {
-		t.Helper()
-		var root ptrace.Span
-		var found bool
-		eachFixtureSpan(t, traces, func(span ptrace.Span) {
-			if span.Name() == "invoke_agent copilot-cli" {
-				root = span
-				found = true
-			}
-		})
-		require.True(t, found, "invoke_agent copilot-cli root must be present")
-		return root
+	build := func() ptrace.Traces {
+		input := ptrace.NewTraces()
+		span := newGroup(input, "github.copilot", "invoke_agent copilot-cli")
+		span.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+		span.Attributes().PutStr("gen_ai.agent.name", "copilot-cli")
+		span.Attributes().PutStr("enduser.pseudo.id", "user-42")
+		return input
 	}
 
-	input := loadFixtureLines(t, filepath.Join("testdata", "copilot-native.otlp.json"))
-
 	onSink := &traceSink{}
-	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), build()))
 	require.Len(t, onSink.all(), 1)
-	onRoot := findInvokeAgentRoot(t, onSink.all()[0])
+	onRoot := onSink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, "invoke_agent copilot-cli", onRoot.Name())
 	require.Equal(t, "user-42", attrString(t, onRoot, "coding_agent.user.id"))
 
 	offSink := &traceSink{}
-	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), input))
+	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), build()))
 	require.Len(t, offSink.all(), 1)
-	offRoot := findInvokeAgentRoot(t, offSink.all()[0])
+	offRoot := offSink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
 	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
 	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
 }
@@ -802,70 +798,60 @@ func TestCapturedCanonicalFixturesHoldNoContent(t *testing.T) {
 	}
 }
 
-func TestGenAINormalizerProcessesCapturedCopilotFixture(t *testing.T) {
-	input := loadFixtureLines(t, filepath.Join("testdata", "copilot-native.otlp.json"))
-	require.NotZero(t, input.SpanCount())
+// TestGenAINormalizerClaimsCopilotChatFlavor pins the second Copilot surface:
+// VS Code Copilot Chat exports the same github.copilot scope under
+// service.name=copilot-chat, so the resource name becomes the client name. A
+// BYOK CLI capture cannot carry this flavor, so the group is synthetic; the CLI
+// capture in testdata covers everything else.
+func TestGenAINormalizerClaimsCopilotChatFlavor(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "copilot-chat")
+	rs.Resource().Attributes().PutStr("session.id", "vscode-window-7")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("github.copilot")
+
+	root := ss.Spans().AppendEmpty()
+	root.SetName("invoke_agent")
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.agent.name", "copilotcli")
+	root.Attributes().PutInt("gen_ai.usage.reasoning.output_tokens", 25)
+	root.Attributes().PutStr("github.copilot.git.repository", "https://github.com/acme/widgets")
+	root.Attributes().PutStr("copilot_chat.repo.remote_url", "https://github.com/acme/widgets")
+	root.Events().AppendEmpty().SetName("github.copilot.user.message")
+	root.Events().AppendEmpty().SetName("github.copilot.session.shutdown")
+
+	hook := ss.Spans().AppendEmpty()
+	hook.SetName("execute_hook PreToolUse")
+	hook.Attributes().PutStr("gen_ai.operation.name", "execute_hook")
+	hook.Attributes().PutStr("github.copilot.hook.decision", "pass")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
-	outputs := sink.all()
-	require.Len(t, outputs, 1, "both fixture batches share the claimed scope")
-	require.Equal(t, 2, outputs[0].ResourceSpans().Len(), "both flavors stay distinct resource groups")
+	require.Len(t, sink.all(), 1)
+	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 
-	names := map[string]ptrace.Span{}
-	eachFixtureSpan(t, outputs[0], func(span ptrace.Span) {
-		for _, key := range legacyContentAttributeKeys {
-			_, exists := span.Attributes().Get(key)
-			require.False(t, exists, "content attribute %q survived on %q", key, span.Name())
-		}
-		names[span.Name()] = span
-	})
-
-	cliRoot, ok := names["invoke_agent copilot-cli"]
-	require.True(t, ok, "CLI invoke_agent root renames by agent name")
-	require.Equal(t, "native", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source"))
-	require.Equal(t, "github.copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.source.scope"))
-	require.Equal(t, "github-copilot", fixtureAttrString(t, cliRoot.Attributes(), "coding_agent.client.name"))
-	require.Equal(t, "11111111-2222-3333-4444-555555555555", fixtureAttrString(t, cliRoot.Attributes(), "gen_ai.conversation.id"))
-	_, ok = cliRoot.Attributes().Get("github.copilot.cost")
-	require.False(t, ok, "vendor cost must not reach canonical output")
-	var shutdownSeen bool
-	for i := 0; i < cliRoot.Events().Len(); i++ {
-		if cliRoot.Events().At(i).Name() == "github.copilot.session.shutdown" {
-			shutdownSeen = true
-		}
-	}
-	require.True(t, shutdownSeen, "lifecycle span events survive")
-	require.Equal(t, int64(10), attrInt(t, cliRoot, "gen_ai.usage.cache_write.input_tokens"),
-		"the capture's pre-rename cache_creation spelling remaps onto the registry key")
-	_, hasLegacyCacheWrite := cliRoot.Attributes().Get("gen_ai.usage.cache_creation.input_tokens")
-	require.False(t, hasLegacyCacheWrite, "the pre-rename spelling must not reach canonical output")
-
-	chat, ok := names["chat gpt-5.2"]
-	require.True(t, ok)
-	_, hasTurnID := chat.Attributes().Get("github.copilot.turn_id")
-	require.False(t, hasTurnID, "vendor turn id must not reach canonical output")
-
-	tool, ok := names["execute_tool run_commands"]
-	require.True(t, ok)
-	require.Equal(t, "function", fixtureAttrString(t, tool.Attributes(), "gen_ai.tool.type"))
-
-	vsCodeRoot, ok := names["invoke_agent copilotcli"]
-	require.True(t, ok, "VS Code flavor renames by its own agent name")
-	reasoning, ok := vsCodeRoot.Attributes().Get("gen_ai.usage.reasoning.output_tokens")
-	require.True(t, ok, "the reasoning-token key passes through unmapped")
-	require.Equal(t, int64(25), reasoning.Int())
-	// Canonical output is an allowlist: repository URLs identify
-	// infrastructure rather than carry operational signal, so both the
-	// current and the legacy namespace keys fail closed.
-	_, hasRepoURL := vsCodeRoot.Attributes().Get("github.copilot.git.repository")
+	require.Equal(t, "invoke_agent copilotcli", spans.At(0).Name(),
+		"VS Code flavor renames by its own agent name")
+	require.Equal(t, "copilot-chat", attrString(t, spans.At(0), "coding_agent.client.name"))
+	require.Equal(t, int64(25), attrInt(t, spans.At(0), "gen_ai.usage.reasoning.output_tokens"),
+		"the reasoning-token key passes through unmapped")
+	// Canonical output is an allowlist: repository URLs identify infrastructure
+	// rather than carry operational signal, so both the current and the legacy
+	// namespace keys fail closed.
+	_, hasRepoURL := spans.At(0).Attributes().Get("github.copilot.git.repository")
 	require.False(t, hasRepoURL, "repository URL must not reach canonical output")
-	_, hasLegacyRepoURL := vsCodeRoot.Attributes().Get("copilot_chat.repo.remote_url")
+	_, hasLegacyRepoURL := spans.At(0).Attributes().Get("copilot_chat.repo.remote_url")
 	require.False(t, hasLegacyRepoURL, "legacy namespace must not ride along into canonical output")
+	// Lifecycle span events keep their names; only their attributes are stripped.
+	events := spans.At(0).Events()
+	require.Equal(t, 2, events.Len())
+	require.Equal(t, "github.copilot.user.message", events.At(0).Name())
+	require.Equal(t, "github.copilot.session.shutdown", events.At(1).Name())
 
-	hook, ok := names["execute_hook PreToolUse"]
-	require.True(t, ok, "unknown operations keep their wire names")
-	_, hasHookDecision := hook.Attributes().Get("github.copilot.hook.decision")
+	// Operations outside the rename table keep their wire names.
+	require.Equal(t, "execute_hook PreToolUse", spans.At(1).Name())
+	_, hasHookDecision := spans.At(1).Attributes().Get("github.copilot.hook.decision")
 	require.False(t, hasHookDecision, "vendor hook decision must not reach canonical output")
 }
 
