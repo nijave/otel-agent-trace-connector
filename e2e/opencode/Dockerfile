@@ -1,6 +1,6 @@
 FROM node:24-trixie-slim
 
-ARG OPENCODE_VERSION=1.18.21
+ARG OPENCODE_VERSION=1.19.3
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates git \

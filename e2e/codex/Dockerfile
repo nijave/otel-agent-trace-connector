@@ -1,6 +1,6 @@
 FROM node:24-trixie-slim
 
-ARG CODEX_VERSION=0.150.1
+ARG CODEX_VERSION=0.163.0
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates \

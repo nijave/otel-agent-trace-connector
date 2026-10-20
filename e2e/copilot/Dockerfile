@@ -1,6 +1,6 @@
 FROM node:24-bookworm-slim
 
-ARG COPILOT_CLI_VERSION=1.0.80
+ARG COPILOT_CLI_VERSION=1.0.100
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
         ca-certificates git \
