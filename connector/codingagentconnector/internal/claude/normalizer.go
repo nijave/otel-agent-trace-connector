@@ -99,6 +99,17 @@ func ContainsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 }
 
 func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, captureIdentity bool) {
+	// agent_id is the subagent's own id, so canonical output names it
+	// gen_ai.agent.id verbatim on any span type that carries it. user.email
+	// is PII, so it follows user.id behind captureIdentity.
+	if agentID := firstSpanString(span, "agent_id"); agentID != "" {
+		span.Attributes().PutStr("gen_ai.agent.id", agentID)
+	}
+	if captureIdentity {
+		if email := firstSpanString(span, "user.email"); email != "" {
+			span.Attributes().PutStr("coding_agent.user.email", email)
+		}
+	}
 	switch span.Name() {
 	case "claude_code.interaction":
 		span.SetName("invoke_agent claude_code")

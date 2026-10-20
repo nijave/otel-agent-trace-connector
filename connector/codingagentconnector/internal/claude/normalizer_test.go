@@ -425,34 +425,87 @@ func assertRequiredKeys(t *testing.T, span ptrace.Span) {
 	}
 }
 
-// TestClaudeCapturesIdentity pins the identity mapping onto the interaction
-// root: coding_agent.user.id is gated behind captureIdentity, but
+// TestClaudeCapturesIdentity pins the identity mapping: coding_agent.user.id
+// and coding_agent.user.email are gated behind captureIdentity, but
 // coding_agent.terminal.type is not (terminal type is not personal data).
+// user.id maps on the interaction root; user.email rides every span type.
 func TestClaudeCapturesIdentity(t *testing.T) {
 	buildInput := func() ptrace.Traces {
 		input := ptrace.NewTraces()
 		rs := input.ResourceSpans().AppendEmpty()
 		rs.Resource().Attributes().PutStr("service.name", "claude-code")
-		root := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		spans := rs.ScopeSpans().AppendEmpty().Spans()
+		root := spans.AppendEmpty()
 		root.SetName("claude_code.interaction")
 		root.Attributes().PutStr("user.id", "u-1")
+		root.Attributes().PutStr("user.email", "user@example.com")
 		root.Attributes().PutStr("terminal.type", "iterm")
+		tool := spans.AppendEmpty()
+		tool.SetName("claude_code.tool")
+		tool.Attributes().PutStr("user.email", "user@example.com")
+		// A span carrying no identity attributes: the guards must write nothing.
+		spans.AppendEmpty().SetName("claude_code.llm_request")
 		return input
 	}
 
 	onSink := &traceSink{}
 	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), buildInput()))
-	onRoot := findSpan(t, reassemble(onSink), "invoke_agent claude_code")
+	onAll := reassemble(onSink)
+	onRoot := findSpan(t, onAll, "invoke_agent claude_code")
 	require.Equal(t, "u-1", attrString(t, onRoot, "coding_agent.user.id"))
+	require.Equal(t, "user@example.com", attrString(t, onRoot, "coding_agent.user.email"))
 	require.Equal(t, "iterm", attrString(t, onRoot, "coding_agent.terminal.type"))
+	require.Equal(t, "user@example.com", attrString(t, findSpan(t, onAll, "execute_tool"), "coding_agent.user.email"),
+		"user.email is not root-only")
+	barest := findSpan(t, onAll, "chat")
+	_, hasBarestEmail := barest.Attributes().Get("coding_agent.user.email")
+	require.False(t, hasBarestEmail, "a span without user.email must carry no coding_agent.user.email")
 
 	offSink := &traceSink{}
 	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), buildInput()))
-	offRoot := findSpan(t, reassemble(offSink), "invoke_agent claude_code")
+	offAll := reassemble(offSink)
+	offRoot := findSpan(t, offAll, "invoke_agent claude_code")
 	_, hasUser := offRoot.Attributes().Get("coding_agent.user.id")
 	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
+	_, hasEmail := offRoot.Attributes().Get("coding_agent.user.email")
+	require.False(t, hasEmail, "coding_agent.user.email must be gated behind captureIdentity")
+	_, hasToolEmail := findSpan(t, offAll, "execute_tool").Attributes().Get("coding_agent.user.email")
+	require.False(t, hasToolEmail, "the email gate applies to every span type, not just the root")
 	require.Equal(t, "iterm", attrString(t, offRoot, "coding_agent.terminal.type"),
 		"terminal type is not gated behind captureIdentity")
+}
+
+// TestClaudeMapsAgentID pins agent_id onto gen_ai.agent.id on the span types
+// that carry it. The value is the subagent's own id, not personal data, so
+// captureIdentity does not gate it either way.
+func TestClaudeMapsAgentID(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	llm := spans.AppendEmpty()
+	llm.SetName("claude_code.llm_request")
+	llm.Attributes().PutStr("model", "claude-test")
+	llm.Attributes().PutStr("agent_id", "agent-7")
+	tool := spans.AppendEmpty()
+	tool.SetName("claude_code.tool")
+	tool.Attributes().PutStr("tool_name", "Bash")
+	tool.Attributes().PutStr("agent_id", "agent-7")
+	// Unrenamed sub-spans pass through the same guard.
+	execution := spans.AppendEmpty()
+	execution.SetName("claude_code.tool.execution")
+	execution.Attributes().PutStr("agent_id", "agent-7")
+	// The main agent's spans carry no agent_id: the guard writes no key.
+	spans.AppendEmpty().SetName("claude_code.interaction")
+
+	for _, captureIdentity := range []bool{true, false} {
+		sink := &traceSink{}
+		require.NoError(t, New(sink, captureIdentity).ConsumeTraces(context.Background(), input))
+		all := reassemble(sink)
+		require.Equal(t, "agent-7", attrString(t, findSpan(t, all, "chat claude-test"), "gen_ai.agent.id"))
+		require.Equal(t, "agent-7", attrString(t, findSpan(t, all, "execute_tool Bash"), "gen_ai.agent.id"))
+		require.Equal(t, "agent-7", attrString(t, findSpan(t, all, "claude_code.tool.execution"), "gen_ai.agent.id"))
+		_, hasAgent := findSpan(t, all, "invoke_agent claude_code").Attributes().Get("gen_ai.agent.id")
+		require.False(t, hasAgent, "a span without agent_id must carry no gen_ai.agent.id")
+	}
 }
 
 func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
