@@ -755,23 +755,53 @@ func TestOutputScopeCarriesWireVersion(t *testing.T) {
 	require.Equal(t, "0.7.56", scopes.At(0).Scope().Version())
 }
 
-func TestDelegateLinkageDropped(t *testing.T) {
-	// The delegate flag still claims the group, but linkage detail is
-	// outside the canonical vocabulary and must not reach output.
+// TestDelegateRootCarriesAgentKeys pins subagent attribution: a delegate
+// group's root names the subagent (gen_ai.agent.id ← subagent_type) and the
+// conversation that spawned it (coding_agent.agent.parent_id ←
+// parent_session_id); task ids and the severed parent trace/span ids still
+// drop, and a non-delegate root carries neither key.
+func TestDelegateRootCarriesAgentKeys(t *testing.T) {
 	attrs := baseAttrs()
 	attrs[attrIsDelegate] = "true"
 	attrs[attrMetadata+"task_id"] = "task-9"
 	attrs[attrMetadata+"subagent_type"] = "bash_delegate"
 	attrs[attrMetadata+"parent_session_id"] = "parent-conversation-uuid"
+	attrs[attrMetadata+"delegate.parent_trace_id"] = "0123"
 	delegated := makeTraces(makeSpan(traceB, spanSpec{
 		name: "conversation", spanID: "cccccccccccccccc", attrs: attrs,
 	}))
-	out := normalizeOne(t, delegated)
-	root := findByName(t, out, "invoke_agent openhands")[0]
+	root := findByName(t, normalizeOne(t, delegated), "invoke_agent openhands")[0]
+	require.Equal(t, "bash_delegate", attrString(root, "gen_ai.agent.id"))
+	require.Equal(t, "parent-conversation-uuid", attrString(root, "coding_agent.agent.parent_id"))
+	require.Equal(t, "openhands", attrString(root, "gen_ai.agent.name"), "the harness name is unchanged")
 	root.Attributes().Range(func(k string, _ pcommon.Value) bool {
-		require.NotContains(t, k, "coding_agent.openhands.delegate")
+		require.NotContains(t, k, "coding_agent.openhands")
+		require.NotContains(t, k, "lmnr.")
 		return true
 	})
+
+	plain := findByName(t, normalizeOne(t, makeTraces(makeSpan(traceA, conversationSpec()))), "invoke_agent openhands")[0]
+	_, ok := plain.Attributes().Get("gen_ai.agent.id")
+	require.False(t, ok, "a non-delegate conversation names no subagent")
+	_, ok = plain.Attributes().Get("coding_agent.agent.parent_id")
+	require.False(t, ok)
+}
+
+// TestDelegateFragmentInheritsAgentKeys pins that a delegate batch exported
+// without its conversation root still carries the keys on its synthetic root,
+// read from the kept children the way session_id is.
+func TestDelegateFragmentInheritsAgentKeys(t *testing.T) {
+	attrs := baseAttrs()
+	attrs[attrIsDelegate] = "true"
+	attrs[attrMetadata+"subagent_type"] = "bash_delegate"
+	attrs[attrMetadata+"parent_session_id"] = "parent-conversation-uuid"
+	attrs["gen_ai.request.model"] = "glm-5.3-flash"
+	fragment := makeTraces(makeSpan(traceB, spanSpec{
+		name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM", attrs: attrs,
+	}))
+	root := findByName(t, normalizeOne(t, fragment), "invoke_agent openhands")[0]
+	require.Equal(t, "bash_delegate", attrString(root, "gen_ai.agent.id"))
+	require.Equal(t, "parent-conversation-uuid", attrString(root, "coding_agent.agent.parent_id"))
 }
 
 func TestTagsAssociationPropertyDropped(t *testing.T) {
