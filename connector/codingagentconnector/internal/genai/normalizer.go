@@ -169,6 +169,7 @@ func normalizeSpan(span ptrace.Span, scopeName, serviceName, serviceVersion stri
 	remapUsageKeys(attrs)
 	restrictUsageKeys(attrs)
 	mapTTFT(attrs)
+	mapCopilotCost(attrs, operation)
 	attrs.PutStr("coding_agent.source", "native")
 	attrs.PutStr("coding_agent.source.scope", scopeName)
 	if serviceName != "" {
@@ -261,6 +262,18 @@ func mapTTFT(attrs pcommon.Map) {
 			continue
 		}
 		attrs.PutDouble(canonicalKey, float64(milliseconds)/1000)
+	}
+}
+
+// mapCopilotCost copies GitHub Copilot's per-request cost estimate onto
+// coding_agent.usage.cost on chat spans. The invoke_agent copy is a session
+// rollup and drops with the rest of the vendor namespace.
+func mapCopilotCost(attrs pcommon.Map, operation string) {
+	if operation != "chat" {
+		return
+	}
+	if cost, ok := attrs.Get("github.copilot.cost"); ok && cost.Type() == pcommon.ValueTypeDouble {
+		attrs.PutDouble("coding_agent.usage.cost", cost.Double())
 	}
 }
 

@@ -1032,3 +1032,42 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	_, hasVendor := attrs.Get("vendor.thing")
 	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
 }
+
+// TestGenAINormalizerMapsCopilotCostOnChat pins coding_agent.usage.cost for
+// Copilot: the vendor cost maps on chat spans (zero included), never on
+// invoke_agent, and the raw key never survives.
+func TestGenAINormalizerMapsCopilotCostOnChat(t *testing.T) {
+	input := ptrace.NewTraces()
+	chat := newGroup(input, "github.copilot", "chat")
+	chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+	chat.Attributes().PutDouble("github.copilot.cost", 0)
+	root := newGroup(input, "github.copilot", "invoke_agent")
+	root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+	root.Attributes().PutDouble("github.copilot.cost", 0.15)
+	bare := newGroup(input, "github.copilot", "chat")
+	bare.Attributes().PutStr("gen_ai.operation.name", "chat")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	// The edge keeps resource-group order, so output spans line up with the
+	// three newGroup calls above.
+	var out []ptrace.Span
+	for _, traces := range sink.all() {
+		for i := 0; i < traces.ResourceSpans().Len(); i++ {
+			out = append(out, traces.ResourceSpans().At(i).ScopeSpans().At(0).Spans().At(0))
+		}
+	}
+	require.Len(t, out, 3)
+	chatSpan, rootSpan, bareSpan := out[0], out[1], out[2]
+	require.Equal(t, "invoke_agent", rootSpan.Name())
+	cost, ok := chatSpan.Attributes().Get("coding_agent.usage.cost")
+	require.True(t, ok, "a zero cost is still a cost")
+	require.Equal(t, pcommon.ValueTypeDouble, cost.Type())
+	require.Equal(t, 0.0, cost.Double())
+	_, ok = chatSpan.Attributes().Get("github.copilot.cost")
+	require.False(t, ok)
+	_, ok = rootSpan.Attributes().Get("coding_agent.usage.cost")
+	require.False(t, ok, "cost is a chat-span key; the root's vendor copy drops")
+	_, ok = bareSpan.Attributes().Get("coding_agent.usage.cost")
+	require.False(t, ok, "no wire cost, no key")
+}
