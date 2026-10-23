@@ -276,6 +276,7 @@ they appear on every emitted span except where noted:
 | `gen_ai.tool.status` / `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `server.address` / `server.port` | not provided |
 | `exception.*` | not provided (errors surface as chat span Status Error) |
+| `coding_agent.agent.parent_id` | not provided (subagents get their own `cursor.conversation.id`; outside Grok Bot the wire has no parent rollup, and `cursor.grok_bot.root_turn.id` is a turn id, not an agent id) |
 
 ## Metrics
 

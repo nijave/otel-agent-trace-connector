@@ -172,6 +172,7 @@ drop without a denylist entry naming them.
 | `server.address` / `server.port` | not provided |
 | `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `exception.*` | not provided |
+| `coding_agent.agent.parent_id` | not provided |
 
 ## Logs
 
