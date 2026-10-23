@@ -25,3 +25,6 @@ wire_api = "responses"
 environment = "e2e"
 log_user_prompt = false
 exporter = { otlp-http = { endpoint = "http://collector:4318/v1/logs", protocol = "binary" } }
+# Native spans ride the shared traces/native pipeline so the Codex traces edge
+# is exercised beside the logs edge; the validator asserts both roots.
+trace_exporter = { otlp-http = { endpoint = "http://collector:4318/v1/traces", protocol = "binary" } }
