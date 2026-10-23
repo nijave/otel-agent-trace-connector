@@ -102,6 +102,7 @@ there, never here. Keys appear in declaration order:
 - `exception.escaped`
 - `exception.stacktrace`
 - `coding_agent.request.service_tier`
+- `coding_agent.usage.cost`
 - `coding_agent.source`
 - `coding_agent.source.scope`
 - `coding_agent.source.event`
@@ -123,6 +124,8 @@ other edges map their native cache-write counters onto it directly.
 `gen_ai.request.reasoning.level` records the reasoning effort the request asked for (Codex's `model_reasoning_effort`; it corresponds to OpenAI's `reasoning.effort` request parameter), copied verbatim from the wire when present.
 
 `coding_agent.request.service_tier` records the provider service tier a request ran in, copied verbatim from the wire when present. The connector namespace holds it rather than a provider namespace because providers beyond OpenAI have tier concepts and other harnesses pass tiers through; one key keeps cross-provider queries uniform.
+
+`coding_agent.usage.cost` records the per-request cost in US dollars as a double, copied verbatim from the wire onto chat spans when the harness reports one (Pi's serialized `usage.cost.total`, OpenHands' `gen_ai.usage.cost`, Copilot's `github.copilot.cost`) and absent otherwise. Every source is the harness's own estimate from its pricing table, not an invoice, so the key serves trend and comparison queries, not billing. It sits in the connector namespace because the GenAI registry defines no cost attribute.
 
 
 Beyond the enumerated keys, any key under the `exception.` prefix may appear:
@@ -159,7 +162,7 @@ from.
   - `gen_ai.event.start_time`, `gen_ai.event.end_time`: Strands emits them
     natively on every span and the GenAI edge keeps them verbatim.
 - **Connector namespace**: `coding_agent.request.service_tier`,
-  `coding_agent.source`, `coding_agent.source.scope`,
+  `coding_agent.usage.cost`, `coding_agent.source`, `coding_agent.source.scope`,
   `coding_agent.source.event`, `coding_agent.client.name`,
   `coding_agent.client.version`, `coding_agent.user.id`,
   `coding_agent.user.email`, `coding_agent.team.id`, and
