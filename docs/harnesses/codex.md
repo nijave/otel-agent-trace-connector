@@ -207,6 +207,7 @@ they appear on every emitted span except where noted:
 | `gen_ai.tool.call.id` / `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
 | `server.address` / `server.port` | not provided (proxied setups are indistinguishable) |
 | `exception.*` | not provided |
+| `coding_agent.usage.cost` | not provided (`codex.turn_cost` is a log-only event the edge does not read, and the pinned capture carries none) |
 
 ## Metrics
 

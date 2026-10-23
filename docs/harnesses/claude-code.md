@@ -198,6 +198,7 @@ canonical allowlist.
 | `coding_agent.team.id` | not provided (the `organization.id` standard attribute drops; the edge does not map it) |
 | `server.address` / `server.port` | not provided |
 | `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
+| `coding_agent.usage.cost` | not provided (no per-request cost on the traces wire; `claude_code.cost.usage` is a metric) |
 | `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
 | `coding_agent.source.scope` | not provided (this edge writes `coding_agent.source.event` instead) |
 
