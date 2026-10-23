@@ -144,7 +144,7 @@ out of canonical output.
 | `tool_namespace` | — | dropped (tool provenance detail, outside the usage/cost/performance scope) |
 | `tool_result_seq` | — | dropped (process-wide result counter, not a per-turn ordinal) |
 | `output_truncated` | — | dropped (qualifies tool output content that the connector strips at parse time) |
-| `agent_name` | — | dropped (agent identity: `/root` for the main agent, as in the pinned capture; for a subagent, its agent path, its nickname, or its conversation UUID; per-subagent `invoke_agent` spans would be the semconv-shaped path if this is ever wanted) |
+| `agent_name` | `gen_ai.agent.id` | mapped (verbatim on execute_tool spans; `/root` for the main agent, as in the pinned capture, otherwise the subagent's path, nickname, or conversation UUID; absent on wires older than 0.163.0 and on a record without it; the root keeps `gen_ai.agent.name` = `codex` and no agent id) |
 | `product_sku` | — | dropped (absent from the pinned capture) |
 
 ##### invoke_agent codex root
@@ -203,7 +203,8 @@ they appear on every emitted span except where noted:
 | `gen_ai.response.finish_reasons` | not provided (Codex logs no model stop reason; see the dropped connector-derived `finish_reason` above) |
 | `gen_ai.response.id` / `gen_ai.response.model` | not provided |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
-| `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
+| `gen_ai.agent.version` | not provided |
+| `coding_agent.agent.parent_id` | not provided (Codex names the calling agent but not its parent) |
 | `gen_ai.tool.call.id` / `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
 | `server.address` / `server.port` | not provided (proxied setups are indistinguishable) |
 | `exception.*` | not provided |

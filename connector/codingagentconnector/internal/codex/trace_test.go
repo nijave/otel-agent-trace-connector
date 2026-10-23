@@ -479,6 +479,33 @@ func TestBuildTraceFiltersVendorResourceAttributes(t *testing.T) {
 	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
 }
 
+// TestToolSpanCarriesAgentName pins gen_ai.agent.id on execute_tool spans:
+// Codex 0.163.0 stamps agent_name on every tool_result ("/root" for the main
+// agent, a subagent's path otherwise), copied verbatim; an older wire without
+// it yields a tool span with no agent key.
+func TestToolSpanCarriesAgentName(t *testing.T) {
+	base := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	turn := &turnState{
+		conversationID: "conversation-1", first: base, last: base.Add(3 * time.Second), promptSeen: true,
+		resource: map[string]any{"service.name": "codex_cli_rs"},
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.tool_result", base.Add(time.Second), map[string]any{"tool_name": "shell", "call_id": "call-1", "agent_name": "/root"}),
+			testEvent("codex.tool_result", base.Add(2*time.Second), map[string]any{"tool_name": "read_file", "call_id": "call-2", "agent_name": "/root/explorer"}),
+			testEvent("codex.tool_result", base.Add(3*time.Second), map[string]any{"tool_name": "apply_patch", "call_id": "call-3"}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, "/root", attrString(t, findSpan(t, spans, "execute_tool shell"), "gen_ai.agent.id"))
+	require.Equal(t, "/root/explorer", attrString(t, findSpan(t, spans, "execute_tool read_file"), "gen_ai.agent.id"))
+	_, ok := findSpan(t, spans, "execute_tool apply_patch").Attributes().Get("gen_ai.agent.id")
+	require.False(t, ok, "no agent_name on the wire, no key")
+	_, ok = findSpan(t, spans, "execute_tool shell").Attributes().Get("agent_name")
+	require.False(t, ok, "the raw key must not survive")
+	_, ok = findSpan(t, spans, "invoke_agent codex").Attributes().Get("gen_ai.agent.id")
+	require.False(t, ok, "the root names the harness via gen_ai.agent.name, not a subagent")
+}
+
 func attrDouble(t *testing.T, span ptrace.Span, key string) float64 {
 	t.Helper()
 	value, ok := span.Attributes().Get(key)
