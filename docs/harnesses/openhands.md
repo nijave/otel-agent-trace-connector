@@ -107,7 +107,7 @@ capture). Sources:
 | `gen_ai.request.max_tokens` | `gen_ai.request.max_tokens` | mapped (the request's output limit, which lmnr copies from `max_tokens`, `max_completion_tokens` (the chat path's key), or `max_output_tokens` (the responses path's); absent when the SDK resolves no limit, on a responses-API call in subscription mode, and on a kept `llm.<model>` wrapper, which carries no request keys. The fixture's value is synthetic — the 2026-10-19 capture carries no such key, because lmnr omits it when the SDK resolves no limit) |
 | `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, `lmnr.span.input`, `lmnr.span.output` | — | dropped (prompt, response, and tool-definition content never leaves the edge) |
 | `lmnr.span.*` bookkeeping (`path`, `parent_path`, `ids_path`, `parent_ids_path`, `type`, `sdk_version`, `language_version`, `instrumentation_source`, `instrumentation_scope.name`, `instrumentation_scope.version`) | — | dropped (Laminar span bookkeeping; the edge reads only `lmnr.span.type`, to classify the span) |
-| `gen_ai.usage.cost` | — | dropped (the SDK's per-request dollar cost rides the folded `llm.<model>` wrapper spans, and the canonical vocabulary has no cost key) |
+| `gen_ai.usage.cost` | `coding_agent.usage.cost` | mapped (USD double; the SDK writes it on the `llm.<model>` wrapper, and the fold carries it onto the inner chat span when that span reports none of its own; absent when the SDK has no price for the model) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
 
 lmnr attribute sources:

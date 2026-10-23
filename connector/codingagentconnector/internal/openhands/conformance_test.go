@@ -34,6 +34,7 @@ func TestOpenHandsConformance(t *testing.T) {
 			{RawKey: "gen_ai.response.id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
 			{RawKey: "gen_ai.response.model", CanonicalKey: "gen_ai.response.model", Kind: canonical.Presence},
 			{RawKey: "lmnr.association.properties.metadata.tool_call_id", CanonicalKey: "gen_ai.tool.call.id", Kind: canonical.Presence},
+			{RawKey: "gen_ai.usage.cost", CanonicalKey: "coding_agent.usage.cost", Kind: canonical.Presence},
 		},
 	})
 }
