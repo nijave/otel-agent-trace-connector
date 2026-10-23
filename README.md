@@ -217,6 +217,7 @@ connectors:
     max_active_turns: 10000
     max_events_per_turn: 1000
     capture_identity: true
+    signals: [logs, traces]
   coding_agent/claude:
 
 service:
@@ -254,6 +255,16 @@ and the resource `host.name`) — an upgrade to this connector version starts
 emitting them immediately. Set `capture_identity: false` to restore the
 previous no-identity output. `coding_agent.terminal.type` carries no
 identity, so it ships regardless of this setting.
+
+`signals` lists which input signals a `coding_agent` instance consumes and
+defaults to both. Set `signals: [traces]` on an instance that sits in a logs
+pipeline to make it a pass-through: the records still reach every other
+exporter in that pipeline, and the connector emits nothing from them. This
+matters for a harness that sends both signals (Codex with `otel.trace_exporter`
+set, for example), where consuming both would produce two canonical traces per
+turn. Pipeline wiring is the other way to choose: a connector instance only
+sees the signals of the pipelines that list it as an exporter, as the example
+above does with `coding_agent` and `coding_agent/claude`.
 
 Strands captures prompt and completion content in span events by default and
 its redaction is opt-in, so the raw trace destination receives content under
