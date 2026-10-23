@@ -26,7 +26,8 @@ import (
 // so a group is emitted at most once and unclaimed groups stay out of the
 // canonical edge.
 type tracesRouter struct {
-	edges []connector.Traces
+	edges   []connector.Traces
+	consume bool
 	component.StartFunc
 	component.ShutdownFunc
 }
@@ -35,7 +36,7 @@ func newTracesRouter(cfg *Config, next consumer.Traces) connector.Traces {
 	id := cfg.CaptureIdentity
 	return &tracesRouter{edges: []connector.Traces{
 		claude.New(next, id), genai.New(next, id), opencode.New(next, id), pi.New(next, id), openhands.New(next, id),
-	}}
+	}, consume: cfg.ConsumesTraces()}
 }
 
 func (*tracesRouter) Capabilities() consumer.Capabilities {
@@ -43,6 +44,9 @@ func (*tracesRouter) Capabilities() consumer.Capabilities {
 }
 
 func (r *tracesRouter) ConsumeTraces(ctx context.Context, traces ptrace.Traces) error {
+	if !r.consume {
+		return nil
+	}
 	for _, edge := range r.edges {
 		if err := edge.ConsumeTraces(ctx, traces); err != nil {
 			return err

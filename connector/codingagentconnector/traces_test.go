@@ -197,3 +197,19 @@ func TestTracesRouterClaimsOpenHandsGroup(t *testing.T) {
 	require.Contains(t, names, "invoke_agent openhands")
 	require.NotContains(t, names, "unrelated_span")
 }
+
+// TestTracesRouterSkipsSpansWhenTracesSignalOff pins the signals switch on
+// the traces edge: with traces off, a Claude group produces no canonical
+// output.
+func TestTracesRouterSkipsSpansWhenTracesSignalOff(t *testing.T) {
+	input := ptrace.NewTraces()
+	claudeGroup := input.ResourceSpans().AppendEmpty()
+	claudeGroup.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("claude_code.interaction")
+
+	cfg := createDefaultConfig()
+	cfg.Signals = []string{"logs"}
+	sink := &routerSink{}
+	router := newTracesRouter(cfg, sink)
+	require.NoError(t, router.ConsumeTraces(context.Background(), input))
+	require.Empty(t, sink.traces, "traces off: the edges must emit nothing")
+}

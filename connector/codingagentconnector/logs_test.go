@@ -100,3 +100,23 @@ func TestLogsRouterShutdownSweepsBothEdges(t *testing.T) {
 	require.NoError(t, logsEdge.Shutdown(context.Background()))
 	require.Len(t, sink.traces, 2)
 }
+
+// TestLogsRouterSkipsRecordsWhenLogsSignalOff pins the signals switch on the
+// logs edge: with logs off, nothing reaches the canonical sink and the input
+// batch is left intact for the pipeline's other exporters.
+func TestLogsRouterSkipsRecordsWhenLogsSignalOff(t *testing.T) {
+	sink := &logsSink{}
+	cfg := createDefaultConfig()
+	cfg.Signals = []string{"traces"}
+	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
+	logsEdge, err := newLogsRouter(cfg, set, sink)
+	require.NoError(t, err)
+	require.NoError(t, logsEdge.Start(context.Background(), nil))
+
+	input := mixedLogs(t)
+	before := input.LogRecordCount()
+	require.NoError(t, logsEdge.ConsumeLogs(context.Background(), input))
+	require.NoError(t, logsEdge.Shutdown(context.Background()))
+	require.Empty(t, sink.traces, "logs off: the edges must emit nothing")
+	require.Equal(t, before, input.LogRecordCount(), "input must pass through untouched")
+}
