@@ -93,7 +93,9 @@ only in one serialized object, provider only inside the model id).
 | `stopReason` | `gen_ai.response.finish_reasons` | mapped (single-element slice, when non-empty) |
 | `responseId` | `gen_ai.response.id` | mapped (when non-empty) |
 | `langfuse.observation.completion_start_time` | `gen_ai.response.time_to_first_chunk` | mapped (0.1.28; ISO-8601 timestamp of the first streamed token minus the span start, in seconds as a double; absent when the extension observed no first token, when the value does not parse as RFC 3339, or when it precedes the span start) |
-| `usage` → `cost`, `usage` → `cacheWrite1h`, `usage.cost.total` | — | dropped (no canonical counterpart; cost detail stays in the raw pipeline) |
+| `usage` → `cost` → `total` | `coding_agent.usage.cost` | mapped (USD double, 0.1.28 serialized object; absent when the object has no numeric `cost.total`; the extension prices from its own model table, so the value is an estimate) |
+| `usage.cost.total` | `coding_agent.usage.cost` | mapped (0.1.9 flat key, fallback only when the serialized object carries no `cost.total`) |
+| `usage` → `cost` → `input`/`output`/`cacheRead`/`cacheWrite`, `usage` → `cacheWrite1h` | — | dropped (per-component cost breakdown and the 1h cache-write counter have no canonical counterpart) |
 | `reasoning`, `cacheWrite1h` (standalone attributes) | — | dropped (0.1.28 duplicates the same numbers inside the `usage` object, which is the source the edge reads) |
 | `llmGenerationId` | — | dropped |
 | `sessionId` | — | dropped (the turn root carries the conversation id — but only when the `chat-turn` ships in the same batch; see below) |
