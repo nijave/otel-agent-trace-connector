@@ -886,4 +886,13 @@ func TestValidateCodexNativeTracesRequiresNativeRoot(t *testing.T) {
 	detached.Attributes().PutStr("coding_agent.source", "native")
 	detached.Attributes().PutStr("coding_agent.client.name", "codex")
 	require.NoError(t, validateCodexNativeTraces(traces, runID))
+
+	// The file wrapper the live test calls: same rule over a JSONL export,
+	// scoped to the run id.
+	encoded, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
+	require.NoError(t, err)
+	path := t.TempDir() + "/canonical.json"
+	require.NoError(t, os.WriteFile(path, append(encoded, '\n'), 0o600))
+	require.NoError(t, validateCodexNativeFile(path, runID))
+	require.Error(t, validateCodexNativeFile(path, "different-run"))
 }
