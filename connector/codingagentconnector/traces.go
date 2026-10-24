@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codextraces"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/genai"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/openhands"
@@ -23,8 +24,9 @@ import (
 // edge defers to Claude via claude.ContainsClaudeSpans, to OpenCode via
 // opencode.ContainsOpenCodeSpans, and to Pi via pi.ContainsPiSpans; the
 // OpenHands edge claims lmnr.tracer scope groups carrying OpenHands markers,
-// so a group is emitted at most once and unclaimed groups stay out of the
-// canonical edge.
+// and the Codex native edge claims groups whose scope equals the service name
+// and holds a turn span), so a group is emitted at most once and unclaimed
+// groups stay out of the canonical edge.
 type tracesRouter struct {
 	edges   []connector.Traces
 	consume bool
@@ -35,7 +37,7 @@ type tracesRouter struct {
 func newTracesRouter(cfg *Config, next consumer.Traces) connector.Traces {
 	id := cfg.CaptureIdentity
 	return &tracesRouter{edges: []connector.Traces{
-		claude.New(next, id), genai.New(next, id), opencode.New(next, id), pi.New(next, id), openhands.New(next, id),
+		claude.New(next, id), genai.New(next, id), opencode.New(next, id), pi.New(next, id), openhands.New(next, id), codextraces.New(next, id),
 	}, consume: cfg.ConsumesTraces()}
 }
 

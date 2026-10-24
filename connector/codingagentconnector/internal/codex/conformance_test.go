@@ -36,6 +36,7 @@ func TestCodexConformance(t *testing.T) {
 			{RawKey: "model_reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
 			{RawKey: "service_tier", CanonicalKey: "coding_agent.request.service_tier", Kind: canonical.Presence},
 			{RawKey: "agent_name", CanonicalKey: "gen_ai.agent.id", Kind: canonical.Presence},
+			{RawKey: "call_id", CanonicalKey: "gen_ai.tool.call.id", Kind: canonical.Presence},
 		},
 	})
 }

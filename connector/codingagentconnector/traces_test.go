@@ -213,3 +213,23 @@ func TestTracesRouterSkipsSpansWhenTracesSignalOff(t *testing.T) {
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.traces, "traces off: the edges must emit nothing")
 }
+
+func TestTracesRouterClaimsCodexNativeGroup(t *testing.T) {
+	input := ptrace.NewTraces()
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "codex_exec")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("codex_exec")
+	turn := ss.Spans().AppendEmpty()
+	turn.SetName("session_task.turn")
+	turn.SetTraceID(pcommon.TraceID([16]byte{5}))
+	turn.SetSpanID(pcommon.SpanID([8]byte{6}))
+	turn.Attributes().PutStr("thread.id", "thread-router")
+
+	sink := &routerSink{}
+	require.NoError(t, newTracesRouter(createDefaultConfig(), sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.traces, 1, "exactly one edge claims a Codex group")
+	spans := sink.traces[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 1, spans.Len())
+	require.Equal(t, "invoke_agent codex", spans.At(0).Name())
+}
