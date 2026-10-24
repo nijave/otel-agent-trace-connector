@@ -830,3 +830,49 @@ func TestRoutingHomes(t *testing.T) {
 		t.Fatalf("expected root and chat, got %+v", home)
 	}
 }
+
+// TestValidateCodexNativeTracesRequiresNativeRoot pins the live-run check for
+// the Codex traces edge: a run must hold an invoke_agent codex root with
+// coding_agent.source=native, a chat child with usage, and an execute_tool
+// child; the logs edge's normalized root alone does not satisfy it.
+func TestValidateCodexNativeTracesRequiresNativeRoot(t *testing.T) {
+	runID := "codex-otel-test"
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", runID)
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	addRoot := func(source string, id byte) ptrace.Span {
+		root := spans.AppendEmpty()
+		root.SetName("invoke_agent codex")
+		root.SetTraceID(pcommon.TraceID([16]byte{id}))
+		root.SetSpanID(pcommon.SpanID([8]byte{id}))
+		root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+		root.Attributes().PutStr("gen_ai.conversation.id", "conv")
+		root.Attributes().PutStr("coding_agent.source", source)
+		root.Attributes().PutStr("coding_agent.client.name", "codex")
+		return root
+	}
+	addChild := func(root ptrace.Span, operation string, id byte) ptrace.Span {
+		child := spans.AppendEmpty()
+		child.SetName(operation)
+		child.SetTraceID(root.TraceID())
+		child.SetSpanID(pcommon.SpanID([8]byte{id}))
+		child.SetParentSpanID(root.SpanID())
+		child.Attributes().PutStr("gen_ai.operation.name", operation)
+		child.Attributes().PutStr("coding_agent.source", "native")
+		child.Attributes().PutStr("coding_agent.client.name", "codex")
+		return child
+	}
+
+	normalized := addRoot("normalized", 1)
+	addChild(normalized, "chat", 2).Attributes().PutInt("gen_ai.usage.input_tokens", 1)
+	addChild(normalized, "execute_tool", 3)
+	require.ErrorContains(t, validateCodexNativeTraces(traces, runID), "native")
+
+	native := addRoot("native", 4)
+	addChild(native, "chat", 5).Attributes().PutInt("gen_ai.usage.input_tokens", 1)
+	require.ErrorContains(t, validateCodexNativeTraces(traces, runID), "execute_tool")
+	addChild(native, "execute_tool", 6)
+	require.NoError(t, validateCodexNativeTraces(traces, runID))
+}
