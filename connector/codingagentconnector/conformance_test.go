@@ -256,6 +256,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 				{RawKey: "stop_reason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
 				{RawKey: "effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+				{RawKey: "organization.id", CanonicalKey: "coding_agent.team.id", Kind: canonical.Presence},
 			},
 		}},
 		{wired: "codex", edge: canonical.Edge{
@@ -274,6 +275,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 				{RawKey: "model_reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
 				{RawKey: "service_tier", CanonicalKey: "coding_agent.request.service_tier", Kind: canonical.Presence},
+				{RawKey: "agent_name", CanonicalKey: "gen_ai.agent.id", Kind: canonical.Presence},
 			},
 		}},
 		{wired: "cursor", edge: canonical.Edge{
@@ -287,6 +289,8 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "cursor.api.request.output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "cursor.api.request.cache_read_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
 				{RawKey: "cursor.api.request.cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				{RawKey: "cursor.tool.name", CanonicalKey: "gen_ai.tool.name", Kind: canonical.Presence},
+				{RawKey: "cursor.grok_bot.tool_call.id", CanonicalKey: "gen_ai.tool.call.id", Kind: canonical.Presence},
 			},
 		}},
 		// Three fixture edges, one wired GenAI pipeline: genai.New claims

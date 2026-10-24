@@ -503,6 +503,37 @@ func TestCursorCanonicalFixtureValidates(t *testing.T) {
 	require.NoError(t, validateCursorCanonicalFile(path))
 }
 
+// TestValidateCursorToolSpan pins the Grok Bot tool-span rule: a well-formed
+// execute_tool span passes, an unknown tool type and an inverted time range
+// fail, and a span outside the three shapes is still rejected.
+func TestValidateCursorToolSpan(t *testing.T) {
+	build := func(toolType string, start, end uint64) []ptrace.Span {
+		traces := ptrace.NewTraces()
+		spans := traces.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+		root := spans.AppendEmpty()
+		root.SetName("invoke_agent cursor")
+		root.Attributes().PutStr("gen_ai.conversation.id", "conv-1")
+		chat := spans.AppendEmpty()
+		chat.SetName("chat")
+		chat.Attributes().PutStr("gen_ai.operation.name", "chat")
+		tool := spans.AppendEmpty()
+		tool.SetName("execute_tool shell")
+		tool.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+		tool.Attributes().PutStr("gen_ai.tool.type", toolType)
+		tool.SetStartTimestamp(pcommon.Timestamp(start))
+		tool.SetEndTimestamp(pcommon.Timestamp(end))
+		return allSpans(traces)
+	}
+	require.NoError(t, validateCursorSpans(build("builtin", 10, 20)))
+	require.NoError(t, validateCursorSpans(build("mcp", 20, 20)))
+	require.ErrorContains(t, validateCursorSpans(build("plugin", 10, 20)), "tool span type")
+	require.ErrorContains(t, validateCursorSpans(build("builtin", 30, 20)), "starts after it ends")
+
+	stray := build("builtin", 10, 20)
+	stray[2].SetName("sql.execute")
+	require.ErrorContains(t, validateCursorSpans(stray), "unexpected span")
+}
+
 func TestRejectOpenCodeContent(t *testing.T) {
 	leaky := ptrace.NewTraces()
 	span := leaky.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()

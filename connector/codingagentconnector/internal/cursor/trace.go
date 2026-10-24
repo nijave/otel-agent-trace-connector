@@ -6,9 +6,11 @@ package cursor
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
@@ -62,6 +64,7 @@ func buildTrace(burst *burstState, reason, scopeVersion string, captureIdentity 
 	}
 
 	appendChatSpans(ss.Spans(), traceID, rootID, events)
+	appendToolSpans(ss.Spans(), traceID, rootID, events)
 	appendRootEvents(root.Events(), events)
 	if resErr != nil {
 		return traces, fmt.Errorf("copy burst resource attributes: %w", resErr)
@@ -162,7 +165,65 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 	}
 }
 
-// appendRootEvents lands every non-chat record the chat spans did not consume:
+// appendToolSpans turns each Grok Bot tool row into an execute_tool child of
+// the burst root. The wire records a settled call once per row, so a builtin
+// call that re-ran after a transient model-stream failure yields two spans
+// sharing a call id; span ids derive from the row's own event id, so they
+// never collide. The row's duration sets the span start; a row without one is
+// a zero-length span at its timestamp.
+func appendToolSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID pcommon.SpanID, events []Event) {
+	for _, event := range events {
+		if !IsToolEvent(event.Name) {
+			continue
+		}
+		span := spans.AppendEmpty()
+		name := "execute_tool"
+		if tool := StringValue(event.Attrs["cursor.tool.name"]); tool != "" {
+			name += " " + tool
+			span.Attributes().PutStr("gen_ai.tool.name", tool)
+		}
+		span.SetName(name)
+		span.SetTraceID(traceID)
+		span.SetSpanID(deterministicSpanID(traceID, "tool:"+event.EventID))
+		span.SetParentSpanID(parentID)
+		span.SetKind(ptrace.SpanKindInternal)
+		span.SetStartTimestamp(pcommon.NewTimestampFromTime(event.Timestamp.Add(-toolDuration(event))))
+		span.SetEndTimestamp(pcommon.NewTimestampFromTime(event.Timestamp))
+		span.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+		span.Attributes().PutStr("coding_agent.source", "normalized")
+		span.Attributes().PutStr("coding_agent.client.name", "cursor")
+		span.Attributes().PutStr("coding_agent.source.event", event.Name)
+		if callID := StringValue(event.Attrs["cursor.grok_bot.tool_call.id"]); callID != "" {
+			span.Attributes().PutStr("gen_ai.tool.call.id", callID)
+		}
+		toolType, failed := "builtin", StringValue(event.Attrs["cursor.grok_bot.tool_result.outcome"]) == "error"
+		if event.Name == NameGrokBotMCPToolCall {
+			toolType, failed = "mcp", StringValue(event.Attrs["cursor.tool.status"]) == "failure"
+		}
+		span.Attributes().PutStr("gen_ai.tool.type", toolType)
+		if failed {
+			span.Status().SetCode(ptrace.StatusCodeError)
+			span.Status().SetMessage("tool execution failed")
+		}
+	}
+}
+
+// toolDuration reads the row's wall time: the builtin and MCP rows spell the
+// field differently. A negative or overflowing value reports no duration so a
+// span's start can never move past its end.
+func toolDuration(event Event) time.Duration {
+	key := "cursor.grok_bot.tool_result.duration_ms"
+	if event.Name == NameGrokBotMCPToolCall {
+		key = "cursor.grok_bot.mcp.duration_ms"
+	}
+	ms, ok := Int64Value(event.Attrs[key])
+	if !ok || ms < 0 || ms > math.MaxInt64/int64(time.Millisecond) {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+// appendRootEvents lands every record neither the chat spans nor the tool spans consumed:
 // unjoined api errors and corrections (their request sat in an earlier,
 // already-finalized burst) and events the connector does not model. Events
 // carry their names and timestamps only — correction and error kinds stay
@@ -175,7 +236,7 @@ func appendRootEvents(dst ptrace.SpanEventSlice, events []Event) {
 		}
 	}
 	for _, event := range events {
-		if event.Name == NameAPIRequest {
+		if event.Name == NameAPIRequest || IsToolEvent(event.Name) {
 			continue
 		}
 		if (event.Name == NameAPIError || IsCorrectionEvent(event.Name)) && event.UsageEventID != "" && joined[event.UsageEventID] {

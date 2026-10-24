@@ -148,7 +148,8 @@ Event-to-span mapping:
 | `api_error` whose request sat in an earlier burst | root span event (name only) |
 | `api_correction_<kind>` joined to an in-burst request | chat span event named `api_correction_<kind>` (name only) |
 | `api_correction_<kind>`, unjoined | root span event (name only) |
-| `skill_activated`, `hook_execution_complete`, `cloud_agent_*`, `grok_bot_*` | root span events (name only) |
+| `grok_bot_tool_result`, `grok_bot_mcp_tool_call` (`grok_bot` surface, Action Recording on) | `execute_tool <tool>` span |
+| `skill_activated`, `hook_execution_complete`, `cloud_agent_*`, other `grok_bot_*` | root span events (name only) |
 | `cursor.conversation.*` (opt-in; body is the scrubbed message or tool I/O text) | never emitted (declined at parse: no span event, no `coding_agent.source.event`, no attributes) |
 | `plugin_installed` | never emitted (the record carries no conversation id, so the standing no-conversation-id policy declines it at parse) |
 
@@ -200,6 +201,23 @@ raw key that would map there).
 | connector close reason (`quiet`/`timeout`/`evicted`/`shutdown`) | — | dropped (was **connector-derived**, never a model stop reason; timeouts surface as root span Status Error and every close shows up in the `otelcol_coding_agent_turns_emitted` metric's `finish_reason` label) |
 | events-truncated flag | — | dropped (still exposed via `otelcol_coding_agent_turns_truncated`) |
 
+##### grok_bot_tool_result / grok_bot_mcp_tool_call → execute_tool
+
+Grok Bot is the only surface whose tool calls arrive as log records, and only
+with Action Recording on; the IDE, CLI, cloud-agent, and bugbot surfaces
+record tool calls as the `cursor.tool.calls` metric only. One row is one
+settled call. A builtin call that re-ran after a transient model-stream
+failure produces two rows sharing a call id, so two spans.
+
+| Raw key | Canonical key | Status |
+|---|---|---|
+| `cursor.tool.name` | `gen_ai.tool.name` | mapped (also names the span; a row without it emits as bare `execute_tool`) |
+| `cursor.grok_bot.tool_call.id` | `gen_ai.tool.call.id` | mapped (absent when the row carries none; the wire marks it optional on `tool_result`) |
+| record kind | `gen_ai.tool.type` | mapped (`builtin` for `tool_result`, `mcp` for `mcp_tool_call`) |
+| `cursor.grok_bot.tool_result.outcome` = `error` / `cursor.tool.status` = `failure` | span Status = Error, message `tool execution failed` | mapped to status (`denied`, `cancelled`, and `success` leave the status unset; the attribute itself drops) |
+| `cursor.grok_bot.tool_result.duration_ms`, `cursor.grok_bot.mcp.duration_ms` | — | dropped (used for span bounds only: start = timestamp − duration; a row without one is a zero-length span) |
+| `cursor.grok_bot.tool_result.error_category`, `…target_host`, `cursor.mcp.server.name`, `cursor.grok_bot.mcp.*`, `cursor.grok_bot.turn.id`, `cursor.grok_bot.provenance`, `cursor.grok_bot.event.sequence`, `cursor.grok_bot.initiated_by` | — | dropped |
+
 ##### Root/chat span events (errors, corrections, skill/hook/cloud-agent records)
 
 Every event here used to carry `coding_agent.cursor.*` copies of its wire
@@ -217,7 +235,7 @@ only:
 | `coding_agent.cursor.hook.{name,type,outcome,duration_ms}` | `cursor.hook.*` | dropped (event name `hook_execution_complete` survives) |
 | `coding_agent.cursor.pull_request.{kind,number,draft}` | `cursor.cloud_agent.pull_request.*` | dropped (cloud-agent event name survives) |
 | `coding_agent.cursor.setup.{kind,duration_ms,reason}` | `cursor.cloud_agent.setup.*` | dropped (cloud-agent event name survives) |
-| `coding_agent.cursor.artifact.{file_name,content_type}` | `cursor.cloud_agent.artifact.*` | dropped (cloud-agent event name survives) |
+| `coding_agent.cursor.artifact.{file_name,content_type}` | `cursor.cloud_agent.artifact.*` | dropped (cloud-agent event name survives as `cloud_agent_artifact`; before the wire-event-name rule landed in PR #104 this event was named `cloud_agent_artifact_created` from the record body — the wire documents `cursor.cloud_agent.artifact` with no kind attribute, so there is no suffix to restore, and anything matching on the old name needs the new one) |
 | `coding_agent.cursor.mcp.server.name` | `cursor.mcp.server.name` | dropped (cloud-agent event name survives) |
 
 Attributes that never had a `coding_agent.cursor.*` copy drop the same way,
@@ -237,7 +255,7 @@ they appear on every emitted span except where noted:
 - `coding_agent.source` = `normalized`
 - `coding_agent.client.name` = `cursor`
 - `coding_agent.source.event` = originating record's event name (`api_request`, …)
-- `gen_ai.operation.name` = `invoke_agent` / `chat`
+- `gen_ai.operation.name` = `invoke_agent` / `chat` / `execute_tool`
 - `gen_ai.agent.name` = `cursor` (invoke_agent root only)
 
 #### Canonical keys with no Cursor source
@@ -254,9 +272,11 @@ they appear on every emitted span except where noted:
 | `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
 | `coding_agent.terminal.type` | not provided |
 | `coding_agent.usage.cost` | not provided (`cursor.cost.usage` is a metric with no conversation id; the logs carry no cost) |
-| `gen_ai.tool.*` / `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
+| `gen_ai.tool.name` / `gen_ai.tool.call.id` / `gen_ai.tool.type` | mapped on the Grok Bot surface only (see the tool table); not provided for every other surface |
+| `gen_ai.tool.status` / `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `server.address` / `server.port` | not provided |
 | `exception.*` | not provided (errors surface as chat span Status Error) |
+| `coding_agent.agent.parent_id` | not provided (subagents get their own `cursor.conversation.id`; outside Grok Bot the wire has no parent rollup, and `cursor.grok_bot.root_turn.id` is a turn id, not an agent id) |
 
 ## Metrics
 

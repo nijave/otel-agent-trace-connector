@@ -535,3 +535,73 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	normalizedRoot := findSpan(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent claude_code")
 	require.Equal(t, "session-1", attrString(t, normalizedRoot, "gen_ai.conversation.id"))
 }
+
+// TestClaudeMapsParentAgentID pins coding_agent.agent.parent_id: verbatim on
+// any span type that carries parent_agent_id, absent otherwise, and never
+// gated by captureIdentity.
+func TestClaudeMapsParentAgentID(t *testing.T) {
+	buildInput := func() ptrace.Traces {
+		input := ptrace.NewTraces()
+		rs := input.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "claude-code")
+		spans := rs.ScopeSpans().AppendEmpty().Spans()
+		llm := spans.AppendEmpty()
+		llm.SetName("claude_code.llm_request")
+		llm.Attributes().PutStr("agent_id", "agent-child")
+		llm.Attributes().PutStr("parent_agent_id", "agent-main")
+		tool := spans.AppendEmpty()
+		tool.SetName("claude_code.tool")
+		tool.Attributes().PutStr("parent_agent_id", "agent-main")
+		spans.AppendEmpty().SetName("claude_code.interaction")
+		return input
+	}
+	for _, captureIdentity := range []bool{true, false} {
+		sink := &traceSink{}
+		require.NoError(t, New(sink, captureIdentity).ConsumeTraces(context.Background(), buildInput()))
+		all := reassemble(sink)
+		chat := findSpan(t, all, "chat")
+		require.Equal(t, "agent-child", attrString(t, chat, "gen_ai.agent.id"))
+		require.Equal(t, "agent-main", attrString(t, chat, "coding_agent.agent.parent_id"))
+		require.Equal(t, "agent-main", attrString(t, findSpan(t, all, "execute_tool"), "coding_agent.agent.parent_id"))
+		root := findSpan(t, all, "invoke_agent claude_code")
+		_, ok := root.Attributes().Get("coding_agent.agent.parent_id")
+		require.False(t, ok, "no parent_agent_id on the wire, no key")
+		_, ok = chat.Attributes().Get("parent_agent_id")
+		require.False(t, ok, "the raw key must not survive")
+	}
+}
+
+// TestClaudeMapsOrganizationToTeam pins coding_agent.team.id from
+// organization.id on the interaction root, behind captureIdentity.
+func TestClaudeMapsOrganizationToTeam(t *testing.T) {
+	buildInput := func() ptrace.Traces {
+		input := ptrace.NewTraces()
+		rs := input.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "claude-code")
+		spans := rs.ScopeSpans().AppendEmpty().Spans()
+		root := spans.AppendEmpty()
+		root.SetName("claude_code.interaction")
+		root.Attributes().PutStr("organization.id", "org-00000000-0000-0000-0000-000000000000")
+		spans.AppendEmpty().SetName("claude_code.llm_request")
+		return input
+	}
+	onSink := &traceSink{}
+	require.NoError(t, New(onSink, true).ConsumeTraces(context.Background(), buildInput()))
+	onRoot := findSpan(t, reassemble(onSink), "invoke_agent claude_code")
+	require.Equal(t, "org-00000000-0000-0000-0000-000000000000", attrString(t, onRoot, "coding_agent.team.id"))
+	_, ok := onRoot.Attributes().Get("organization.id")
+	require.False(t, ok, "the raw key must not survive")
+
+	offSink := &traceSink{}
+	require.NoError(t, New(offSink, false).ConsumeTraces(context.Background(), buildInput()))
+	offRoot := findSpan(t, reassemble(offSink), "invoke_agent claude_code")
+	_, ok = offRoot.Attributes().Get("coding_agent.team.id")
+	require.False(t, ok, "coding_agent.team.id must be gated behind captureIdentity")
+
+	bareSink := &traceSink{}
+	bare := ptrace.NewTraces()
+	bare.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("claude_code.interaction")
+	require.NoError(t, New(bareSink, true).ConsumeTraces(context.Background(), bare))
+	_, ok = findSpan(t, reassemble(bareSink), "invoke_agent claude_code").Attributes().Get("coding_agent.team.id")
+	require.False(t, ok, "no organization.id on the wire, no key")
+}

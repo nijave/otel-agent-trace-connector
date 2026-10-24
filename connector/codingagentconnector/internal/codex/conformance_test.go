@@ -35,6 +35,7 @@ func TestCodexConformance(t *testing.T) {
 			{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 			{RawKey: "model_reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
 			{RawKey: "service_tier", CanonicalKey: "coding_agent.request.service_tier", Kind: canonical.Presence},
+			{RawKey: "agent_name", CanonicalKey: "gen_ai.agent.id", Kind: canonical.Presence},
 		},
 	})
 }

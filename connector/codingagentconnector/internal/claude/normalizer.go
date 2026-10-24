@@ -99,11 +99,15 @@ func ContainsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 }
 
 func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, captureIdentity bool) {
-	// agent_id is the subagent's own id, so canonical output names it
-	// gen_ai.agent.id verbatim on any span type that carries it. user.email
-	// is PII, so it follows user.id behind captureIdentity.
+	// agent_id is the subagent's own id and parent_agent_id the agent that
+	// spawned it, so canonical output names them gen_ai.agent.id and
+	// coding_agent.agent.parent_id verbatim on any span type that carries
+	// them. user.email is PII, so it follows user.id behind captureIdentity.
 	if agentID := firstSpanString(span, "agent_id"); agentID != "" {
 		span.Attributes().PutStr("gen_ai.agent.id", agentID)
+	}
+	if parentID := firstSpanString(span, "parent_agent_id"); parentID != "" {
+		span.Attributes().PutStr("coding_agent.agent.parent_id", parentID)
 	}
 	if captureIdentity {
 		if email := firstSpanString(span, "user.email"); email != "" {
@@ -133,6 +137,11 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, ca
 		if captureIdentity {
 			if uid := firstSpanString(span, "user.id"); uid != "" {
 				span.Attributes().PutStr("coding_agent.user.id", uid)
+			}
+			// organization.id is the Anthropic organization, the
+			// billing-scale group; Cursor's team id is the same scale.
+			if org := firstSpanString(span, "organization.id"); org != "" {
+				span.Attributes().PutStr("coding_agent.team.id", org)
 			}
 		}
 	case "claude_code.llm_request":

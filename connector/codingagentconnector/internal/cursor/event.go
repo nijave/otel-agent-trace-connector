@@ -37,6 +37,11 @@ const (
 	// conversation_content family.
 	NameAPIRequest = "api_request"
 	NameAPIError   = "api_error"
+	// NameGrokBotToolResult and NameGrokBotMCPToolCall are the Grok Bot
+	// action rows that record one settled tool call: builtin tools and MCP
+	// tools respectively. They become execute_tool spans.
+	NameGrokBotToolResult  = "grok_bot_tool_result"
+	NameGrokBotMCPToolCall = "grok_bot_mcp_tool_call"
 )
 
 // kindAttrs restores the kind the wire puts in the body but not in the event
@@ -71,6 +76,12 @@ type Event struct {
 // carries it).
 func IsCorrectionEvent(name string) bool {
 	return strings.HasPrefix(name, "api_correction")
+}
+
+// IsToolEvent reports whether a canonical event name is one of the Grok Bot
+// tool rows the edge turns into execute_tool spans.
+func IsToolEvent(name string) bool {
+	return name == NameGrokBotToolResult || name == NameGrokBotMCPToolCall
 }
 
 // wireEventName reads the record's OTLP event name, falling back to the

@@ -95,6 +95,40 @@
               ]
             },
             {
+              "timeUnixNano": "1787306426000000000",
+              "eventName": "cursor.grok_bot.tool_result",
+              "body": { "stringValue": "grok_bot_tool_result" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-6a" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-6a" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.grok_bot.provenance", "value": { "stringValue": "client" } },
+                { "key": "cursor.grok_bot.turn.id", "value": { "stringValue": "turn-aaaa" } },
+                { "key": "cursor.grok_bot.tool_call.id", "value": { "stringValue": "call_a1" } },
+                { "key": "cursor.tool.name", "value": { "stringValue": "shell" } },
+                { "key": "cursor.grok_bot.tool_result.outcome", "value": { "stringValue": "error" } },
+                { "key": "cursor.grok_bot.tool_result.duration_ms", "value": { "intValue": "1200" } },
+                { "key": "cursor.grok_bot.tool_result.error_category", "value": { "stringValue": "timeout" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1787306427000000000",
+              "eventName": "cursor.grok_bot.mcp_tool_call",
+              "body": { "stringValue": "grok_bot_mcp_tool_call" },
+              "attributes": [
+                { "key": "cursor.event.id", "value": { "stringValue": "customer-telemetry:v1:ev-6b" } },
+                { "key": "cursor.source_event.id", "value": { "stringValue": "src-6b" } },
+                { "key": "cursor.conversation.id", "value": { "stringValue": "11111111-2222-3333-4444-555555555555" } },
+                { "key": "cursor.grok_bot.provenance", "value": { "stringValue": "client" } },
+                { "key": "cursor.grok_bot.turn.id", "value": { "stringValue": "turn-aaaa" } },
+                { "key": "cursor.grok_bot.tool_call.id", "value": { "stringValue": "call_a2" } },
+                { "key": "cursor.tool.name", "value": { "stringValue": "search_issues" } },
+                { "key": "cursor.tool.status", "value": { "stringValue": "success" } },
+                { "key": "cursor.mcp.server.name", "value": { "stringValue": "github" } },
+                { "key": "cursor.grok_bot.mcp.duration_ms", "value": { "intValue": "300" } }
+              ]
+            },
+            {
               "timeUnixNano": "1787306430000000000",
               "body": { "stringValue": "cloud_agent_mcp_auth_error" },
               "attributes": [
