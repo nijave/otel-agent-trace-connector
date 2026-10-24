@@ -234,6 +234,7 @@ Across all four emitters there is no raw source for:
 | `gen_ai.usage.reasoning.output_tokens` | openai_v2, strands | not provided (Copilot provides it — directly, or via the legacy `reasoning_tokens` spelling this edge maps; util-genai can when the instrumentation sets it) |
 | `gen_ai.response.time_to_first_chunk` | openai_v2 | not provided (openai-v2 2.4b0 records no TTFT); util-genai provides it through its shared stream wrappers; Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) and VS Code Copilot Chat via the mapped `copilot_chat.time_to_first_token` key |
 | `coding_agent.usage.cost` | openai_v2, util-genai, strands | not provided (Copilot provides it) |
+| `coding_agent.agent.parent_id` | all four | not provided (Copilot's `gen_ai.agent.id` names the agent; no emitter names a parent) |
 
 #### Connector-written attributes
 

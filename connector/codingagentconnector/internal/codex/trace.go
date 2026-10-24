@@ -219,6 +219,12 @@ func appendToolSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 		span.Attributes().PutStr("coding_agent.source", "normalized")
 		span.Attributes().PutStr("coding_agent.client.name", "codex")
 		span.Attributes().PutStr("coding_agent.source.event", event.name)
+		// agent_name is the agent that made the call: "/root" for the main
+		// agent, a subagent's path, nickname, or conversation id otherwise.
+		// It copies verbatim; the connector never renames the main agent.
+		if agent := stringValue(event.attrs["agent_name"]); agent != "" {
+			span.Attributes().PutStr("gen_ai.agent.id", agent)
+		}
 		if success, ok := boolValue(event.attrs["success"]); ok && !success {
 			span.Status().SetCode(ptrace.StatusCodeError)
 			span.Status().SetMessage("tool execution failed")

@@ -33,6 +33,9 @@ const (
 	attrToolCallID = attrMetadata + "tool_call_id"
 	attrIsDelegate = attrMetadata + "is_delegate"
 
+	attrSubagentType    = attrMetadata + "subagent_type"
+	attrParentSessionID = attrMetadata + "parent_session_id"
+
 	wireCost      = "gen_ai.usage.cost"
 	canonicalCost = "coding_agent.usage.cost"
 
@@ -424,6 +427,15 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup, captureIdentity bool) {
 	attrs.PutStr("gen_ai.agent.name", agentName)
 	if sid := firstString(src, attrSessionID); sid != "" {
 		attrs.PutStr("gen_ai.conversation.id", sid)
+	}
+	// A delegate's root names the subagent and the conversation that
+	// spawned it. Neither is identity, so the flag does not control them;
+	// a non-delegate conversation carries neither key on the wire.
+	if subagent := firstString(src, attrSubagentType); subagent != "" {
+		attrs.PutStr("gen_ai.agent.id", subagent)
+	}
+	if parent := firstString(src, attrParentSessionID); parent != "" {
+		attrs.PutStr("coding_agent.agent.parent_id", parent)
 	}
 	if captureIdentity {
 		if uid := firstString(src, attrUserID); uid != "" {
