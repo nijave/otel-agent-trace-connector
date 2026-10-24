@@ -13,7 +13,8 @@ This repository provides an external OpenTelemetry Collector connector and an
 OCB-built distribution for coding-agent traces:
 
 - **Codex:** correlates structured `codex.*` OTLP logs into one canonical trace
-  per user turn.
+  per user turn; with `otel.trace_exporter` set, its native spans normalize
+  through the traces edge too.
 - **Cursor:** correlates native `cursor.telemetry` OTLP logs (Enterprise
   beta, metrics + logs only) into one canonical trace per activity burst,
   keyed on `cursor.conversation.id`. Chat spans carry per-request token
@@ -80,6 +81,7 @@ automatic. No per-source connector setting exists.
 | Harness | Edge | Connector detection | Harness-side configuration |
 | --- | --- | --- | --- |
 | Codex | logs | log records whose `event.name` starts with `codex.` | `[otel]` block in user-level `~/.codex/config.toml` |
+| Codex (native traces) | traces | resource groups whose scope equals `service.name` and hold a Codex marker span (`session_task.*`, a `codex.*` attribute, or a `codex.tool_result` event) | `trace_exporter` in the same `[otel]` block |
 | Cursor | logs | instrumentation scope starting with `cursor.telemetry` | Team Settings → OpenTelemetry Export (Enterprise beta), OTLP/HTTP to `/v1/logs` |
 | Claude Code | traces | span names starting with `claude_code.` | telemetry env vars with beta trace flag (below) |
 | OpenCode | traces | instrumentation scope named exactly `opencode` | `experimental.openTelemetry: true` plus OTLP endpoint env vars |
@@ -245,8 +247,8 @@ completion event on the wire, so each conversation's activity burst finalizes
 when `reorder_window` passes with no new record, by `turn_timeout`, at
 shutdown, or through bounded-state eviction.
 
-The traces edge auto-detects Claude Code, OpenCode, OpenHands, and
-GenAI-semconv sources, so every source enters the same pipeline.
+The traces edge auto-detects Claude Code, OpenCode, OpenHands, Codex native
+spans, and GenAI-semconv sources, so every source enters the same pipeline.
 
 `capture_identity` defaults to `true` and applies to every `coding_agent`
 instance in the pipeline. It controls the PII-bearing identity keys
