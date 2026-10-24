@@ -93,15 +93,27 @@ func (*codexTraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
+// spanKey identifies a span within one batch; span ids are unique only
+// within a trace.
+type spanKey struct {
+	trace pcommon.TraceID
+	span  pcommon.SpanID
+}
+
+func keyOf(span ptrace.Span) spanKey {
+	return spanKey{trace: span.TraceID(), span: span.SpanID()}
+}
+
 // ConsumeTraces rewrites each claimed group: kept spans are renamed and
 // re-attributed, every other span drops, and kept children whose parent left
-// the batch reparent onto the batch's turn root.
+// the batch reparent onto the batch's turn root for their trace.
 func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	// The turn can export in a different resource group than the response
 	// spans it models (one export carries several groups), so the model is
 	// looked up across the batch's claimed groups rather than per group.
 	model := batchTurnModel(input)
+	kinds := make(map[spanKey]spanKind, input.SpanCount())
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputRS := input.ResourceSpans().At(i)
 		if !ContainsCodexSpans(inputRS) {
@@ -113,19 +125,18 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		canonical.FilterResource(rs, n.captureIdentity)
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			spans := rs.ScopeSpans().At(j).Spans()
-			kinds := make(map[pcommon.SpanID]spanKind, spans.Len())
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				kinds[span.SpanID()] = normalizeSpan(span, version, model)
+				kinds[keyOf(span)] = normalizeSpan(span, version, model)
 			}
-			spans.RemoveIf(func(s ptrace.Span) bool { return kinds[s.SpanID()] == kindDrop })
-			reparentOrphans(spans, kinds)
+			spans.RemoveIf(func(s ptrace.Span) bool { return kinds[keyOf(s)] == kindDrop })
 		}
 		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool { return ss.Spans().Len() == 0 })
 	}
 	if output.SpanCount() == 0 {
 		return nil
 	}
+	reparentOrphans(output, kinds)
 	return n.next.ConsumeTraces(ctx, output)
 }
 
@@ -278,30 +289,43 @@ func normalizeSpan(span ptrace.Span, version, model string) spanKind {
 }
 
 // reparentOrphans attaches kept children whose wire parent dropped or never
-// arrived onto the batch's earliest turn root. A batch without a turn (Codex
-// exports children before the turn ends) leaves parents alone so the backend
-// can reattach them when the turn arrives.
-func reparentOrphans(spans ptrace.SpanSlice, kinds map[pcommon.SpanID]spanKind) {
-	exported := make(map[pcommon.SpanID]bool, spans.Len())
-	var root pcommon.SpanID
-	var rootStart pcommon.Timestamp
-	foundRoot := false
-	for i := 0; i < spans.Len(); i++ {
-		span := spans.At(i)
-		exported[span.SpanID()] = true
-		if kinds[span.SpanID()] == kindRoot && (!foundRoot || span.StartTimestamp() < rootStart) {
-			root, rootStart, foundRoot = span.SpanID(), span.StartTimestamp(), true
+// arrived onto the batch's earliest turn root carrying the same trace id.
+// Codex exports a span when it ends and splits one export across resource
+// groups, so the root is sought across the whole batch, not one group. A
+// trace with no root in the batch keeps its parent ids: the connector is
+// stateless, so a child that exports before its turn stays parented to the
+// dropped wire span and a backend groups it with the turn by trace id.
+func reparentOrphans(output ptrace.Traces, kinds map[spanKey]spanKind) {
+	roots := map[pcommon.TraceID]ptrace.Span{}
+	exported := make(map[spanKey]bool, len(kinds))
+	eachSpan(output, func(span ptrace.Span) {
+		exported[keyOf(span)] = true
+		if kinds[keyOf(span)] != kindRoot {
+			return
 		}
-	}
-	if !foundRoot {
-		return
-	}
-	for i := 0; i < spans.Len(); i++ {
-		span := spans.At(i)
-		if kinds[span.SpanID()] == kindRoot || exported[span.ParentSpanID()] {
-			continue
+		if current, ok := roots[span.TraceID()]; !ok || span.StartTimestamp() < current.StartTimestamp() {
+			roots[span.TraceID()] = span
 		}
-		span.SetParentSpanID(root)
+	})
+	eachSpan(output, func(span ptrace.Span) {
+		if kinds[keyOf(span)] == kindRoot || exported[spanKey{trace: span.TraceID(), span: span.ParentSpanID()}] {
+			return
+		}
+		if root, ok := roots[span.TraceID()]; ok {
+			span.SetParentSpanID(root.SpanID())
+		}
+	})
+}
+
+func eachSpan(traces ptrace.Traces, visit func(ptrace.Span)) {
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		rs := traces.ResourceSpans().At(i)
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			spans := rs.ScopeSpans().At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				visit(spans.At(k))
+			}
+		}
 	}
 }
 

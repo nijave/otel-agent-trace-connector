@@ -475,8 +475,34 @@ func TestOrphansReparentToEarliestTurn(t *testing.T) {
 	late.SetEndTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(30 * time.Second)))
 	early := addTurn(spans)
 	addResponse(spans, "response.completed", 3, 2)
+	// A tool span Codex started under a detached task carries its own trace
+	// id (seen in the 2026-10-23 capture); it must not be parented across
+	// traces.
+	detached := addSpan(spans, "dispatch_tool_call_with_state", 5, 4, 3*time.Second, 4*time.Second)
+	detached.SetTraceID(pcommon.TraceID([16]byte{2}))
+	addToolResultEvent(detached, true, "exec_command", "call-1", true)
+
 	out := normalizeOne(t, input)
 	require.Equal(t, early.SpanID(), findSpan(t, out, "chat gpt-5.6-luna").ParentSpanID())
+	require.Equal(t, pcommon.SpanID([8]byte{4}), findSpan(t, out, "execute_tool exec_command").ParentSpanID(), "no root in its trace: the wire parent stays")
+}
+
+// TestOrphansReparentAcrossResourceGroups pins the batch-wide rule: Codex
+// splits one export across resource groups, so the turn can land in a
+// different group than the response and tool spans it parents.
+func TestOrphansReparentAcrossResourceGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	children := newCodexGroup(input)
+	addResponse(children, "handle_responses", 3, 2)
+	carrier := addSpan(children, "dispatch_tool_call_with_state", 5, 4, 3*time.Second, 4*time.Second)
+	addToolResultEvent(carrier, true, "exec_command", "call-1", true)
+	turn := addTurn(newCodexGroup(input))
+
+	out := normalizeOne(t, input)
+	require.Equal(t, 3, out.Len())
+	require.Equal(t, turn.SpanID(), findSpan(t, out, "chat gpt-5.6-luna").ParentSpanID(), "the chat finds its turn in the other group")
+	require.Equal(t, turn.SpanID(), findSpan(t, out, "execute_tool exec_command").ParentSpanID())
+	require.Equal(t, "gpt-5.6-luna", attrString(t, findSpan(t, out, "chat gpt-5.6-luna"), "gen_ai.request.model"))
 }
 
 func TestResourceIsFiltered(t *testing.T) {

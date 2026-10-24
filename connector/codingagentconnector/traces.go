@@ -25,7 +25,7 @@ import (
 // opencode.ContainsOpenCodeSpans, and to Pi via pi.ContainsPiSpans; the
 // OpenHands edge claims lmnr.tracer scope groups carrying OpenHands markers,
 // and the Codex native edge claims groups whose scope equals the service name
-// and holds a turn span), so a group is emitted at most once and unclaimed
+// and holds a Codex marker), so a group is emitted at most once and unclaimed
 // groups stay out of the canonical edge.
 type tracesRouter struct {
 	edges   []connector.Traces
