@@ -35,6 +35,51 @@ func TestConfigValidate(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigConsumesBothSignals(t *testing.T) {
+	cfg := createDefaultConfig()
+	require.Equal(t, []string{"logs", "traces"}, cfg.Signals)
+	require.True(t, cfg.ConsumesLogs())
+	require.True(t, cfg.ConsumesTraces())
+}
+
+func TestConfigValidateSignals(t *testing.T) {
+	tests := []struct {
+		name      string
+		signals   []string
+		wantError string
+	}{
+		{name: "logs only", signals: []string{"logs"}},
+		{name: "traces only", signals: []string{"traces"}},
+		{name: "empty", signals: []string{}, wantError: "signals"},
+		{name: "unknown", signals: []string{"metrics"}, wantError: `"metrics"`},
+		{name: "duplicate", signals: []string{"logs", "logs"}, wantError: "twice"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := createDefaultConfig()
+			cfg.Signals = tt.signals
+			err := cfg.Validate()
+			if tt.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantError)
+			}
+		})
+	}
+}
+
+// TestConfigDecodeSignalsReplacesDefault pins that a configured list replaces
+// the default rather than merging with it: `signals: [logs]` must turn traces
+// off.
+func TestConfigDecodeSignalsReplacesDefault(t *testing.T) {
+	cfg := createDefaultConfig()
+	conf := confmap.NewFromStringMap(map[string]any{"signals": []any{"logs"}})
+	require.NoError(t, conf.Unmarshal(cfg))
+	require.Equal(t, []string{"logs"}, cfg.Signals)
+	require.True(t, cfg.ConsumesLogs())
+	require.False(t, cfg.ConsumesTraces())
+}
+
 func TestFactoryDefaultsAreIndependent(t *testing.T) {
 	factory := NewFactory()
 	first := factory.CreateDefaultConfig().(*Config)

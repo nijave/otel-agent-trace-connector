@@ -21,9 +21,11 @@ import (
 // Cursor claims the cursor.telemetry scope), so a record lands in at most one
 // edge and unclaimed records stay out of the canonical edge. Unlike the
 // stateless tracesRouter, Start and Shutdown fan out: both edges own sweep
-// loops and drain-on-shutdown state.
+// loops and drain-on-shutdown state. consume mirrors the signals config: when
+// logs are off the router is a pass-through and the edges never see a record.
 type logsRouter struct {
-	edges []connector.Logs
+	edges   []connector.Logs
+	consume bool
 }
 
 func newLogsRouter(cfg *Config, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
@@ -35,7 +37,7 @@ func newLogsRouter(cfg *Config, set connector.Settings, next consumer.Traces) (c
 	if err != nil {
 		return nil, err
 	}
-	return &logsRouter{edges: []connector.Logs{codexEdge, cursorEdge}}, nil
+	return &logsRouter{edges: []connector.Logs{codexEdge, cursorEdge}, consume: cfg.ConsumesLogs()}, nil
 }
 
 func (*logsRouter) Capabilities() consumer.Capabilities {
@@ -60,6 +62,9 @@ func (r *logsRouter) Shutdown(ctx context.Context) error {
 }
 
 func (r *logsRouter) ConsumeLogs(ctx context.Context, logs plog.Logs) error {
+	if !r.consume {
+		return nil
+	}
 	for _, edge := range r.edges {
 		if err := edge.ConsumeLogs(ctx, logs); err != nil {
 			return err

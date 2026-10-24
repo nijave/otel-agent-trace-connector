@@ -96,6 +96,8 @@ func putRaw(attrs pcommon.Map, key string, v any) {
 		attrs.PutStr(key, value)
 	case int64:
 		attrs.PutInt(key, value)
+	case float64:
+		attrs.PutDouble(key, value)
 	case bool:
 		attrs.PutBool(key, value)
 	case []string:
@@ -753,23 +755,53 @@ func TestOutputScopeCarriesWireVersion(t *testing.T) {
 	require.Equal(t, "0.7.56", scopes.At(0).Scope().Version())
 }
 
-func TestDelegateLinkageDropped(t *testing.T) {
-	// The delegate flag still claims the group, but linkage detail is
-	// outside the canonical vocabulary and must not reach output.
+// TestDelegateRootCarriesAgentKeys pins subagent attribution: a delegate
+// group's root names the subagent (gen_ai.agent.id ← subagent_type) and the
+// conversation that spawned it (coding_agent.agent.parent_id ←
+// parent_session_id); task ids and the severed parent trace/span ids still
+// drop, and a non-delegate root carries neither key.
+func TestDelegateRootCarriesAgentKeys(t *testing.T) {
 	attrs := baseAttrs()
 	attrs[attrIsDelegate] = "true"
 	attrs[attrMetadata+"task_id"] = "task-9"
 	attrs[attrMetadata+"subagent_type"] = "bash_delegate"
 	attrs[attrMetadata+"parent_session_id"] = "parent-conversation-uuid"
+	attrs[attrMetadata+"delegate.parent_trace_id"] = "0123"
 	delegated := makeTraces(makeSpan(traceB, spanSpec{
 		name: "conversation", spanID: "cccccccccccccccc", attrs: attrs,
 	}))
-	out := normalizeOne(t, delegated)
-	root := findByName(t, out, "invoke_agent openhands")[0]
+	root := findByName(t, normalizeOne(t, delegated), "invoke_agent openhands")[0]
+	require.Equal(t, "bash_delegate", attrString(root, "gen_ai.agent.id"))
+	require.Equal(t, "parent-conversation-uuid", attrString(root, "coding_agent.agent.parent_id"))
+	require.Equal(t, "openhands", attrString(root, "gen_ai.agent.name"), "the harness name is unchanged")
 	root.Attributes().Range(func(k string, _ pcommon.Value) bool {
-		require.NotContains(t, k, "coding_agent.openhands.delegate")
+		require.NotContains(t, k, "coding_agent.openhands")
+		require.NotContains(t, k, "lmnr.")
 		return true
 	})
+
+	plain := findByName(t, normalizeOne(t, makeTraces(makeSpan(traceA, conversationSpec()))), "invoke_agent openhands")[0]
+	_, ok := plain.Attributes().Get("gen_ai.agent.id")
+	require.False(t, ok, "a non-delegate conversation names no subagent")
+	_, ok = plain.Attributes().Get("coding_agent.agent.parent_id")
+	require.False(t, ok)
+}
+
+// TestDelegateFragmentInheritsAgentKeys pins that a delegate batch exported
+// without its conversation root still carries the keys on its synthetic root,
+// read from the kept children the way session_id is.
+func TestDelegateFragmentInheritsAgentKeys(t *testing.T) {
+	attrs := baseAttrs()
+	attrs[attrIsDelegate] = "true"
+	attrs[attrMetadata+"subagent_type"] = "bash_delegate"
+	attrs[attrMetadata+"parent_session_id"] = "parent-conversation-uuid"
+	attrs["gen_ai.request.model"] = "glm-5.3-flash"
+	fragment := makeTraces(makeSpan(traceB, spanSpec{
+		name: "litellm.completion", spanID: "eeeeeeeeeeeeeeee", spanType: "LLM", attrs: attrs,
+	}))
+	root := findByName(t, normalizeOne(t, fragment), "invoke_agent openhands")[0]
+	require.Equal(t, "bash_delegate", attrString(root, "gen_ai.agent.id"))
+	require.Equal(t, "parent-conversation-uuid", attrString(root, "coding_agent.agent.parent_id"))
 }
 
 func TestTagsAssociationPropertyDropped(t *testing.T) {
@@ -881,4 +913,64 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	}
 	_, hasVendor := attrs.Get("vendor.thing")
 	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
+}
+
+// TestWrapperCostFoldsOntoChatSpan pins coding_agent.usage.cost: the SDK writes
+// gen_ai.usage.cost on the llm.<model> wrapper only, so after the fold the
+// inner chat span carries it exactly once; an inner span that already reports a
+// cost keeps its own.
+func TestWrapperCostFoldsOntoChatSpan(t *testing.T) {
+	wrapperAttrs := baseAttrs()
+	wrapperAttrs["gen_ai.usage.cost"] = 0.00073285
+	innerAttrs := baseAttrs()
+	innerAttrs["gen_ai.request.model"] = "glm-5.3-flash"
+	out := normalizeOne(t, makeTraces(
+		makeSpan(traceA, spanSpec{name: "conversation", spanID: "aaaaaaaaaaaaaaaa", attrs: baseAttrs()}),
+		makeSpan(traceA, spanSpec{name: "llm.glm-5.3-flash", spanID: "bbbbbbbbbbbbbbbb", parentID: "aaaaaaaaaaaaaaaa", spanType: "LLM", attrs: wrapperAttrs}),
+		makeSpan(traceA, spanSpec{name: "litellm.completion", spanID: "cccccccccccccccc", parentID: "bbbbbbbbbbbbbbbb", spanType: "LLM", attrs: innerAttrs}),
+	))
+	chats := findByName(t, out, "chat glm-5.3-flash")
+	require.Len(t, chats, 1)
+	cost, ok := chats[0].Attributes().Get("coding_agent.usage.cost")
+	require.True(t, ok, "the wrapper's cost must land on the folded chat span")
+	require.InDelta(t, 0.00073285, cost.Double(), 1e-12)
+	_, raw := chats[0].Attributes().Get("gen_ai.usage.cost")
+	require.False(t, raw, "the wire key must not survive")
+
+	innerAttrs["gen_ai.usage.cost"] = 0.5
+	out = normalizeOne(t, makeTraces(
+		makeSpan(traceA, spanSpec{name: "conversation", spanID: "aaaaaaaaaaaaaaaa", attrs: baseAttrs()}),
+		makeSpan(traceA, spanSpec{name: "llm.glm-5.3-flash", spanID: "bbbbbbbbbbbbbbbb", parentID: "aaaaaaaaaaaaaaaa", spanType: "LLM", attrs: wrapperAttrs}),
+		makeSpan(traceA, spanSpec{name: "litellm.completion", spanID: "cccccccccccccccc", parentID: "bbbbbbbbbbbbbbbb", spanType: "LLM", attrs: innerAttrs}),
+	))
+	cost, _ = findByName(t, out, "chat glm-5.3-flash")[0].Attributes().Get("coding_agent.usage.cost")
+	require.InDelta(t, 0.5, cost.Double(), 1e-12, "the inner span's own cost wins over the wrapper's")
+}
+
+// TestWrapperWithoutInnerKeepsCost pins that a wrapper with no inner chat child
+// stays a chat span and keeps its cost.
+func TestWrapperWithoutInnerKeepsCost(t *testing.T) {
+	wrapperAttrs := baseAttrs()
+	wrapperAttrs["gen_ai.usage.cost"] = 0.00017819
+	out := normalizeOne(t, makeTraces(
+		makeSpan(traceA, spanSpec{name: "conversation", spanID: "aaaaaaaaaaaaaaaa", attrs: baseAttrs()}),
+		makeSpan(traceA, spanSpec{name: "llm.glm-5.3-flash", spanID: "bbbbbbbbbbbbbbbb", parentID: "aaaaaaaaaaaaaaaa", spanType: "LLM", attrs: wrapperAttrs}),
+	))
+	chats := findByName(t, out, "chat")
+	require.Len(t, chats, 1)
+	cost, ok := chats[0].Attributes().Get("coding_agent.usage.cost")
+	require.True(t, ok)
+	require.InDelta(t, 0.00017819, cost.Double(), 1e-12)
+}
+
+// TestChatWithoutCostCarriesNoCostKey pins the absence rule.
+func TestChatWithoutCostCarriesNoCostKey(t *testing.T) {
+	innerAttrs := baseAttrs()
+	innerAttrs["gen_ai.request.model"] = "glm-5.3-flash"
+	out := normalizeOne(t, makeTraces(
+		makeSpan(traceA, spanSpec{name: "conversation", spanID: "aaaaaaaaaaaaaaaa", attrs: baseAttrs()}),
+		makeSpan(traceA, spanSpec{name: "litellm.completion", spanID: "cccccccccccccccc", parentID: "aaaaaaaaaaaaaaaa", spanType: "LLM", attrs: innerAttrs}),
+	))
+	_, ok := findByName(t, out, "chat glm-5.3-flash")[0].Attributes().Get("coding_agent.usage.cost")
+	require.False(t, ok)
 }

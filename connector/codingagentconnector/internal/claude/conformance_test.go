@@ -28,6 +28,7 @@ func TestClaudeConformance(t *testing.T) {
 			{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 			{RawKey: "stop_reason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
 			{RawKey: "effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+			{RawKey: "organization.id", CanonicalKey: "coding_agent.team.id", Kind: canonical.Presence},
 		},
 	})
 }

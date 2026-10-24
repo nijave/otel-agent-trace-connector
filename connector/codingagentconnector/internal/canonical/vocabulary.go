@@ -48,6 +48,7 @@ var canonicalAttributeKeys = []string{
 	"exception.escaped",
 	"exception.stacktrace",
 	"coding_agent.request.service_tier",
+	"coding_agent.usage.cost",
 	"coding_agent.source",
 	"coding_agent.source.scope",
 	"coding_agent.source.event",
@@ -57,6 +58,7 @@ var canonicalAttributeKeys = []string{
 	"coding_agent.user.email",
 	"coding_agent.team.id",
 	"coding_agent.terminal.type",
+	"coding_agent.agent.parent_id",
 }
 
 // canonicalAttributePrefixes are safe attribute families too large to

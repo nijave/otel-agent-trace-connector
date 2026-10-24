@@ -102,6 +102,7 @@ there, never here. Keys appear in declaration order:
 - `exception.escaped`
 - `exception.stacktrace`
 - `coding_agent.request.service_tier`
+- `coding_agent.usage.cost`
 - `coding_agent.source`
 - `coding_agent.source.scope`
 - `coding_agent.source.event`
@@ -111,6 +112,7 @@ there, never here. Keys appear in declaration order:
 - `coding_agent.user.email`
 - `coding_agent.team.id`
 - `coding_agent.terminal.type`
+- `coding_agent.agent.parent_id`
 <!-- /vocabulary:generated -->
 
 `gen_ai.response.time_to_first_chunk` is seconds, double — every edge converts its wire unit to seconds at normalization time.
@@ -123,6 +125,10 @@ other edges map their native cache-write counters onto it directly.
 `gen_ai.request.reasoning.level` records the reasoning effort the request asked for (Codex's `model_reasoning_effort`; it corresponds to OpenAI's `reasoning.effort` request parameter), copied verbatim from the wire when present.
 
 `coding_agent.request.service_tier` records the provider service tier a request ran in, copied verbatim from the wire when present. The connector namespace holds it rather than a provider namespace because providers beyond OpenAI have tier concepts and other harnesses pass tiers through; one key keeps cross-provider queries uniform.
+
+`coding_agent.usage.cost` records the per-request cost in US dollars as a double, copied verbatim from the wire onto chat spans when the harness reports one (Pi's serialized `usage.cost.total`, OpenHands' `gen_ai.usage.cost`, Copilot's `github.copilot.cost`) and absent otherwise. Every source is the harness's own estimate from its pricing table, not an invoice, so the key serves trend and comparison queries, not billing. It sits in the connector namespace because the GenAI registry defines no cost attribute.
+
+`gen_ai.agent.id` names the agent that produced a span, verbatim from the wire: Claude Code's `agent_id` (a subagent's id; the main agent omits it), Codex's `agent_name` on tool results (`/root` for the main agent, a subagent's path, nickname, or conversation id otherwise), and OpenHands' `…metadata.subagent_type` on a delegate's root. `coding_agent.agent.parent_id` names the agent that spawned it, where the wire says so: Claude Code's `parent_agent_id` and OpenHands' `…metadata.parent_session_id`. Both are absent on the main agent's spans and whenever the wire omits them; neither is identity, so `capture_identity` does not control them. The connector synthesizes no per-subagent spans: the two keys join a subagent's existing chat and tool spans to the agent that spawned it.
 
 
 Beyond the enumerated keys, any key under the `exception.` prefix may appear:
@@ -159,11 +165,12 @@ from.
   - `gen_ai.event.start_time`, `gen_ai.event.end_time`: Strands emits them
     natively on every span and the GenAI edge keeps them verbatim.
 - **Connector namespace**: `coding_agent.request.service_tier`,
-  `coding_agent.source`, `coding_agent.source.scope`,
+  `coding_agent.usage.cost`, `coding_agent.source`, `coding_agent.source.scope`,
   `coding_agent.source.event`, `coding_agent.client.name`,
   `coding_agent.client.version`, `coding_agent.user.id`,
-  `coding_agent.user.email`, `coding_agent.team.id`, and
-  `coding_agent.terminal.type` are connector-defined.
+  `coding_agent.user.email`, `coding_agent.team.id`,
+  `coding_agent.terminal.type`, and `coding_agent.agent.parent_id` are
+  connector-defined.
 
 ## Raw preservation
 

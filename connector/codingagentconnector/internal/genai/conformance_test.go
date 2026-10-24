@@ -63,6 +63,7 @@ func TestGenAIConformance(t *testing.T) {
 				// dormant until a capture carries the key.
 				{RawKey: "gen_ai.usage.cache_creation.input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
 				{RawKey: "gen_ai.usage.cache_write.input_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				{RawKey: "github.copilot.cost", CanonicalKey: "coding_agent.usage.cost", Kind: canonical.Presence},
 			},
 		})
 	})

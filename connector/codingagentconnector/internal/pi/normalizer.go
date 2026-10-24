@@ -277,7 +277,8 @@ var usageCounters = []struct {
 // mapUsage writes the canonical token counts, preferring the serialized usage
 // object per field and falling back to the flat source key when the object
 // omits it. A zero count is mapped: the wire reports no cache as 0 rather than
-// by omission.
+// by omission. The per-request cost rides the same object (0.1.28 nests it as
+// cost.total) or the older flat usage.cost.total.
 func mapUsage(attrs, wire pcommon.Map) {
 	blob := usageBlob(wire)
 	for _, counter := range usageCounters {
@@ -293,6 +294,53 @@ func mapUsage(attrs, wire pcommon.Map) {
 				attrs.PutInt(counter.canonicalKey, count)
 			}
 		}
+	}
+	mapCost(attrs, wire, blob)
+}
+
+// mapCost copies the harness's per-request cost estimate onto
+// coding_agent.usage.cost (USD, double). The serialized object's cost.total
+// wins; the 0.1.9 wire's flat usage.cost.total is the fallback. Nothing maps
+// when neither parses as a number.
+func mapCost(attrs, wire pcommon.Map, blob map[string]any) {
+	if cost, ok := blob["cost"].(map[string]any); ok {
+		if total, ok := blobFloat(cost, "total"); ok {
+			attrs.PutDouble("coding_agent.usage.cost", total)
+			return
+		}
+	}
+	if value, ok := wire.Get("usage.cost.total"); ok {
+		if total, ok := coerceFloat(value); ok {
+			attrs.PutDouble("coding_agent.usage.cost", total)
+		}
+	}
+}
+
+// blobFloat coerces one member to a float: OTLP JSON numbers decode as
+// float64 and some paths deliver numbers as strings.
+func blobFloat(blob map[string]any, field string) (float64, bool) {
+	switch value := blob[field].(type) {
+	case float64:
+		return value, true
+	case string:
+		total, err := strconv.ParseFloat(value, 64)
+		return total, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func coerceFloat(value pcommon.Value) (float64, bool) {
+	switch value.Type() {
+	case pcommon.ValueTypeDouble:
+		return value.Double(), true
+	case pcommon.ValueTypeInt:
+		return float64(value.Int()), true
+	case pcommon.ValueTypeStr:
+		total, err := strconv.ParseFloat(value.Str(), 64)
+		return total, err == nil
+	default:
+		return 0, false
 	}
 }
 

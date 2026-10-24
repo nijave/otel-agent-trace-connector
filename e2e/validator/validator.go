@@ -592,6 +592,10 @@ func validateCursorSpans(spans []ptrace.Span) error {
 			if err := validateCursorChat(span); err != nil {
 				return err
 			}
+		case span.Name() == "execute_tool" || strings.HasPrefix(span.Name(), "execute_tool "):
+			if err := validateCursorTool(span); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unexpected span %q in cursor canonical output", span.Name())
 		}
@@ -627,6 +631,21 @@ func validateCursorChat(span ptrace.Span) error {
 	}
 	if span.StartTimestamp() != span.EndTimestamp() {
 		return errors.New("cursor chat span must stay a point span; the wire carries no durations")
+	}
+	return nil
+}
+
+// validateCursorTool asserts the Grok Bot tool-span shape: the row's duration
+// may give the span a length, but never a start after its end.
+func validateCursorTool(span ptrace.Span) error {
+	if got := stringAttr(span, "gen_ai.operation.name"); got != "execute_tool" {
+		return fmt.Errorf("cursor tool span operation %q", got)
+	}
+	if got := stringAttr(span, "gen_ai.tool.type"); got != "builtin" && got != "mcp" {
+		return fmt.Errorf("cursor tool span type %q (want builtin or mcp)", got)
+	}
+	if span.StartTimestamp() > span.EndTimestamp() {
+		return errors.New("cursor tool span starts after it ends")
 	}
 	return nil
 }

@@ -33,6 +33,12 @@ const (
 	attrToolCallID = attrMetadata + "tool_call_id"
 	attrIsDelegate = attrMetadata + "is_delegate"
 
+	attrSubagentType    = attrMetadata + "subagent_type"
+	attrParentSessionID = attrMetadata + "parent_session_id"
+
+	wireCost      = "gen_ai.usage.cost"
+	canonicalCost = "coding_agent.usage.cost"
+
 	syntheticRootDiscriminator = ":synthetic-root"
 )
 
@@ -356,7 +362,8 @@ func foldLLMWrappers(children []kept) ([]kept, map[pcommon.SpanID]ptrace.Span) {
 // foldUsage carries the folded wrapper's usage counters onto the canonical chat
 // span, leaving every counter the inner span already reported intact: the inner
 // span is the per-call record, while the wrapper only fills the gaps the
-// provider did not report to lmnr (the cache counters).
+// provider did not report to lmnr (the cache counters) and the SDK's per-request
+// cost estimate.
 func foldUsage(wrapper, span ptrace.Span) {
 	attrs := span.Attributes()
 	for _, pair := range usageKeys {
@@ -365,6 +372,11 @@ func foldUsage(wrapper, span ptrace.Span) {
 		}
 		if value, ok := wrapper.Attributes().Get(pair[0]); ok && value.Type() == pcommon.ValueTypeInt {
 			attrs.PutInt(pair[1], value.Int())
+		}
+	}
+	if _, exists := attrs.Get(canonicalCost); !exists {
+		if cost, ok := wrapper.Attributes().Get(wireCost); ok && cost.Type() == pcommon.ValueTypeDouble {
+			attrs.PutDouble(canonicalCost, cost.Double())
 		}
 	}
 }
@@ -415,6 +427,15 @@ func putRootAttributes(attrs pcommon.Map, g *traceGroup, captureIdentity bool) {
 	attrs.PutStr("gen_ai.agent.name", agentName)
 	if sid := firstString(src, attrSessionID); sid != "" {
 		attrs.PutStr("gen_ai.conversation.id", sid)
+	}
+	// A delegate's root names the subagent and the conversation that
+	// spawned it. Neither is identity, so the flag does not control them;
+	// a non-delegate conversation carries neither key on the wire.
+	if subagent := firstString(src, attrSubagentType); subagent != "" {
+		attrs.PutStr("gen_ai.agent.id", subagent)
+	}
+	if parent := firstString(src, attrParentSessionID); parent != "" {
+		attrs.PutStr("coding_agent.agent.parent_id", parent)
 	}
 	if captureIdentity {
 		if uid := firstString(src, attrUserID); uid != "" {
@@ -468,6 +489,9 @@ func normalizeChat(wire, span ptrace.Span) {
 		if v, ok := wire.Attributes().Get(pair[0]); ok && v.Type() == pcommon.ValueTypeInt {
 			attrs.PutInt(pair[1], v.Int())
 		}
+	}
+	if cost, ok := wireAttrs.Get(wireCost); ok && cost.Type() == pcommon.ValueTypeDouble {
+		attrs.PutDouble(canonicalCost, cost.Double())
 	}
 }
 

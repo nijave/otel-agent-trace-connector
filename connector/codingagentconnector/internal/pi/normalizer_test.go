@@ -508,6 +508,7 @@ func TestPiTraceNormalizerAllowlistsEverySpanType(t *testing.T) {
 		"gen_ai.usage.cache_read.input_tokens":  int64(4),
 		"gen_ai.usage.cache_write.input_tokens": int64(5),
 		"gen_ai.usage.reasoning.output_tokens":  int64(6),
+		"coding_agent.usage.cost":               0.5,
 		"coding_agent.source.event":             "llm-generation",
 	}), findSpan(t, all, "chat claude-haiku-5-5").Attributes().AsRaw(), "llm-generation")
 
@@ -1000,4 +1001,49 @@ func TestConsumeTracesFiltersResourceAttributes(t *testing.T) {
 	require.False(t, hasVendor, "vendor resource keys must not reach canonical output")
 	normalizedRoot := findSpan(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent pi")
 	require.Equal(t, "invoke_agent", attrString(t, normalizedRoot, "gen_ai.operation.name"))
+}
+
+// TestPiTraceNormalizerMapsCost pins coding_agent.usage.cost: the 0.1.28
+// serialized usage object nests cost.total; the 0.1.9 wire carried a flat
+// usage.cost.total. A missing or malformed cost maps nothing.
+func TestPiTraceNormalizerMapsCost(t *testing.T) {
+	cases := []struct {
+		name  string
+		usage string
+		flat  map[string]string
+		want  float64
+		found bool
+	}{
+		{name: "blob cost.total", usage: `{"input":4,"cost":{"input":0.0000004,"total":0.000181775}}`, want: 0.000181775, found: true},
+		{name: "blob string total", usage: `{"input":4,"cost":{"total":"0.0001"}}`, want: 0.0001, found: true},
+		{name: "blob zero total", usage: `{"input":4,"cost":{"total":0}}`, want: 0, found: true},
+		{name: "flat fallback", usage: `{"input":4}`, flat: map[string]string{"usage.cost.total": "0.00002297"}, want: 0.00002297, found: true},
+		{name: "blob wins over flat", usage: `{"cost":{"total":0.5}}`, flat: map[string]string{"usage.cost.total": "0.25"}, want: 0.5, found: true},
+		{name: "malformed total", usage: `{"cost":{"total":"abc"}}`, found: false},
+		{name: "no cost anywhere", usage: `{"input":4}`, found: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			rs := input.ResourceSpans().AppendEmpty()
+			scope := rs.ScopeSpans().AppendEmpty()
+			scope.Scope().SetName("@amaster.ai/pi-telemetry")
+			llm := scope.Spans().AppendEmpty()
+			llm.SetName("llm-generation [main] [request]")
+			llm.Attributes().PutStr("requestedModel", "glm-5.3-flash")
+			llm.Attributes().PutStr("usage", tc.usage)
+			for k, v := range tc.flat {
+				llm.Attributes().PutStr(k, v)
+			}
+			sink := &traceSink{}
+			require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+			chat := findSpan(t, sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "chat glm-5.3-flash")
+			value, ok := chat.Attributes().Get("coding_agent.usage.cost")
+			require.Equal(t, tc.found, ok)
+			if tc.found {
+				require.Equal(t, pcommon.ValueTypeDouble, value.Type())
+				require.InDelta(t, tc.want, value.Double(), 1e-12)
+			}
+		})
+	}
 }

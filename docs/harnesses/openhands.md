@@ -107,7 +107,7 @@ capture). Sources:
 | `gen_ai.request.max_tokens` | `gen_ai.request.max_tokens` | mapped (the request's output limit, which lmnr copies from `max_tokens`, `max_completion_tokens` (the chat path's key), or `max_output_tokens` (the responses path's); absent when the SDK resolves no limit, on a responses-API call in subscription mode, and on a kept `llm.<model>` wrapper, which carries no request keys. The fixture's value is synthetic — the 2026-10-19 capture carries no such key, because lmnr omits it when the SDK resolves no limit) |
 | `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.definitions`, `lmnr.span.input`, `lmnr.span.output` | — | dropped (prompt, response, and tool-definition content never leaves the edge) |
 | `lmnr.span.*` bookkeeping (`path`, `parent_path`, `ids_path`, `parent_ids_path`, `type`, `sdk_version`, `language_version`, `instrumentation_source`, `instrumentation_scope.name`, `instrumentation_scope.version`) | — | dropped (Laminar span bookkeeping; the edge reads only `lmnr.span.type`, to classify the span) |
-| `gen_ai.usage.cost` | — | dropped (the SDK's per-request dollar cost rides the folded `llm.<model>` wrapper spans, and the canonical vocabulary has no cost key) |
+| `gen_ai.usage.cost` | `coding_agent.usage.cost` | mapped (USD double; the SDK writes it on the `llm.<model>` wrapper, and the fold carries it onto the inner chat span when that span reports none of its own; absent when the SDK has no price for the model) |
 | any duration field | — | not provided (no wire duration ⇒ no TTFT source) |
 
 lmnr attribute sources:
@@ -150,19 +150,18 @@ v1.56.0, checked 2026-10-19).
 | `conversation.tags.<key>` → `coding_agent.openhands.tag.<key>` | — | dropped |
 | `…metadata.is_delegate` | (`coding_agent.openhands.delegate` flag) | dropped (but see claiming below) |
 | `…metadata.task_id` → `coding_agent.openhands.delegate.task_id` | — | dropped |
-| `…metadata.subagent_type` → `coding_agent.openhands.delegate.subagent_type` | — | dropped |
-| `…metadata.parent_session_id` → `coding_agent.openhands.delegate.parent_session_id` | — | dropped |
+| `…metadata.subagent_type` | `gen_ai.agent.id` | mapped (verbatim, on the delegate's invoke_agent root; absent on a non-delegate conversation and in the 2026-10-19 capture, which ran no delegate; a root-less fragment inherits it from kept children) |
+| `…metadata.parent_session_id` | `coding_agent.agent.parent_id` | mapped (same conditions; the conversation id of the agent that spawned the delegate) |
 | `…metadata.delegate.parent_trace_id`, `…metadata.delegate.parent_span_id` | — | dropped (the severed parent's trace and span IDs) |
 | other structural intermediates (`conversation.run`, `agent.step`, …) | — | dropped (their timing folds into the root's start/end bounds) |
 
-**Delegate linkage note.** The delegate metadata no longer reaches output as
-attributes, but `…metadata.is_delegate = true` still *claims* groups for this
-edge, and `…metadata.tool_call_id` drives the call/result dedupe internally
-while also mapping to `gen_ai.tool.call.id` on the `execute_tool` child.
-Severed sibling fragments stay reconcilable downstream via the
-preserved trace/conversation IDs; the remaining
-linkage detail (task ID, subagent type, parent session, parent trace and
-span IDs) is recoverable only through a raw-preservation branch. The SDK writes these keys in
+**Delegate linkage note.** `…metadata.is_delegate = true` claims a group for
+this edge, `…metadata.tool_call_id` drives the call/result dedupe internally,
+and the delegate's root carries the subagent type as `gen_ai.agent.id` and
+the spawning conversation as `coding_agent.agent.parent_id`, so a delegate's
+spans join to their parent conversation on that key. The task id and the
+severed parent's trace and span ids stay out of canonical output and are
+recoverable only through a raw-preservation branch. The SDK writes these keys in
 [`_delegate_observability_metadata`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-tools/openhands/tools/task/manager.py#L347-L365)
 and
 [`detached_delegate_context`](https://github.com/OpenHands/software-agent-sdk/blob/33d8aa29c3078d074799e2fbf5e847aeb2d71360/openhands-sdk/openhands/sdk/observability/laminar.py#L549-L593)
@@ -189,7 +188,7 @@ they appear on every emitted span except where noted:
 | `gen_ai.usage.reasoning.output_tokens` | not provided |
 | `gen_ai.request.stream` | not provided |
 | `server.address` / `server.port` | not provided |
-| `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
+| `gen_ai.agent.version` | not provided |
 | `exception.*` | not provided |
 
 ## Logs

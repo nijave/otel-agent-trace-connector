@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -359,4 +360,120 @@ func TestBuildTraceCapturesIdentity(t *testing.T) {
 	require.False(t, hasEmail)
 	_, hasTeam := rootOff.Attributes().Get("coding_agent.team.id")
 	require.False(t, hasTeam)
+}
+
+func grokBotBurst() *burstState {
+	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	events := []Event{
+		{Name: NameAPIRequest, EventID: "ev-1", ConversationID: testConversation, UsageEventID: "ue-1",
+			Timestamp: base, Resource: testResourceRaw(),
+			Attrs: map[string]any{"cursor.api.request.input_tokens": int64(1), "cursor.api.request.output_tokens": int64(2)}},
+		{Name: NameGrokBotToolResult, EventID: "ev-t1", ConversationID: testConversation,
+			Timestamp: base.Add(2 * time.Second), Resource: testResourceRaw(),
+			Attrs: map[string]any{
+				"cursor.tool.name": "shell", "cursor.grok_bot.tool_call.id": "call-1",
+				"cursor.grok_bot.tool_result.outcome": "error", "cursor.grok_bot.tool_result.duration_ms": int64(1500),
+				"cursor.grok_bot.tool_result.error_category": "timeout", "cursor.grok_bot.turn.id": "turn-1",
+			}},
+		{Name: NameGrokBotMCPToolCall, EventID: "ev-t2", ConversationID: testConversation,
+			Timestamp: base.Add(3 * time.Second), Resource: testResourceRaw(),
+			Attrs: map[string]any{
+				"cursor.tool.name": "search_issues", "cursor.tool.status": "success",
+				"cursor.grok_bot.tool_call.id": "call-2", "cursor.grok_bot.mcp.duration_ms": int64(250),
+				"cursor.mcp.server.name": "github",
+			}},
+		// No duration, no call id, denied: a zero-length span with Status unset.
+		{Name: NameGrokBotToolResult, EventID: "ev-t3", ConversationID: testConversation,
+			Timestamp: base.Add(4 * time.Second), Resource: testResourceRaw(),
+			Attrs: map[string]any{"cursor.tool.name": "read", "cursor.grok_bot.tool_result.outcome": "denied"}},
+		// A re-run after a stream failure: same call id as ev-t1, its own event id.
+		{Name: NameGrokBotToolResult, EventID: "ev-t4", ConversationID: testConversation,
+			Timestamp: base.Add(5 * time.Second), Resource: testResourceRaw(),
+			Attrs: map[string]any{"cursor.tool.name": "shell", "cursor.grok_bot.tool_call.id": "call-1",
+				"cursor.grok_bot.tool_result.outcome": "success", "cursor.grok_bot.tool_result.duration_ms": int64(100)}},
+		// An MCP failure.
+		{Name: NameGrokBotMCPToolCall, EventID: "ev-t5", ConversationID: testConversation,
+			Timestamp: base.Add(6 * time.Second), Resource: testResourceRaw(),
+			Attrs: map[string]any{"cursor.tool.name": "create_pr", "cursor.tool.status": "failure", "cursor.grok_bot.mcp.duration_ms": int64(10)}},
+		// No tool name at all.
+		{Name: NameGrokBotToolResult, EventID: "ev-t6", ConversationID: testConversation,
+			Timestamp: base.Add(7 * time.Second), Resource: testResourceRaw(),
+			Attrs: map[string]any{"cursor.grok_bot.tool_result.outcome": "success"}},
+	}
+	return &burstState{
+		conversationID: testConversation, events: events, seen: map[string]struct{}{},
+		resource: testResourceRaw(), first: base, last: base.Add(7 * time.Second), lastSeen: base.Add(7 * time.Second),
+	}
+}
+
+func TestBuildTraceEmitsGrokBotToolSpans(t *testing.T) {
+	traces := mustBuildTrace(t, grokBotBurst(), "quiet")
+	byName := spansByName(traces)
+	root := byName["invoke_agent cursor"][0]
+
+	shells := byName["execute_tool shell"]
+	require.Len(t, shells, 2, "a re-run after a stream failure is its own span")
+	require.NotEqual(t, shells[0].SpanID(), shells[1].SpanID())
+	errored := shells[0]
+	require.Equal(t, root.SpanID(), errored.ParentSpanID())
+	require.Equal(t, root.TraceID(), errored.TraceID())
+	require.Equal(t, ptrace.SpanKindInternal, errored.Kind())
+	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
+	require.Equal(t, pcommon.NewTimestampFromTime(base.Add(2*time.Second-1500*time.Millisecond)), errored.StartTimestamp())
+	require.Equal(t, pcommon.NewTimestampFromTime(base.Add(2*time.Second)), errored.EndTimestamp())
+	require.Equal(t, "execute_tool", stringAttrOn(t, errored, "gen_ai.operation.name"))
+	require.Equal(t, "shell", stringAttrOn(t, errored, "gen_ai.tool.name"))
+	require.Equal(t, "call-1", stringAttrOn(t, errored, "gen_ai.tool.call.id"))
+	require.Equal(t, "builtin", stringAttrOn(t, errored, "gen_ai.tool.type"))
+	require.Equal(t, "normalized", stringAttrOn(t, errored, "coding_agent.source"))
+	require.Equal(t, "cursor", stringAttrOn(t, errored, "coding_agent.client.name"))
+	require.Equal(t, NameGrokBotToolResult, stringAttrOn(t, errored, "coding_agent.source.event"))
+	require.Equal(t, ptrace.StatusCodeError, errored.Status().Code())
+	require.Equal(t, "tool execution failed", errored.Status().Message())
+	for _, raw := range []string{"cursor.tool.name", "cursor.grok_bot.tool_call.id", "cursor.grok_bot.tool_result.outcome",
+		"cursor.grok_bot.tool_result.duration_ms", "cursor.grok_bot.tool_result.error_category", "cursor.grok_bot.turn.id"} {
+		_, ok := errored.Attributes().Get(raw)
+		require.False(t, ok, "%s must not reach canonical output", raw)
+	}
+	require.Equal(t, ptrace.StatusCodeUnset, shells[1].Status().Code(), "a success re-run has no error status")
+
+	mcp := byName["execute_tool search_issues"][0]
+	require.Equal(t, "mcp", stringAttrOn(t, mcp, "gen_ai.tool.type"))
+	require.Equal(t, "call-2", stringAttrOn(t, mcp, "gen_ai.tool.call.id"))
+	require.Equal(t, NameGrokBotMCPToolCall, stringAttrOn(t, mcp, "coding_agent.source.event"))
+	require.Equal(t, pcommon.NewTimestampFromTime(base.Add(3*time.Second-250*time.Millisecond)), mcp.StartTimestamp())
+	require.Equal(t, ptrace.StatusCodeUnset, mcp.Status().Code())
+	_, ok := mcp.Attributes().Get("cursor.mcp.server.name")
+	require.False(t, ok)
+
+	denied := byName["execute_tool read"][0]
+	require.Equal(t, denied.StartTimestamp(), denied.EndTimestamp(), "no duration: zero-length span")
+	require.Equal(t, ptrace.StatusCodeUnset, denied.Status().Code(), "denied is not a failure")
+	_, ok = denied.Attributes().Get("gen_ai.tool.call.id")
+	require.False(t, ok, "no call id on the wire, no key")
+
+	failedMCP := byName["execute_tool create_pr"][0]
+	require.Equal(t, ptrace.StatusCodeError, failedMCP.Status().Code())
+
+	bare := byName["execute_tool"]
+	require.Len(t, bare, 1, "a row without a tool name still produces a span")
+	_, ok = bare[0].Attributes().Get("gen_ai.tool.name")
+	require.False(t, ok)
+}
+
+func TestToolSpanIDsAreDeterministic(t *testing.T) {
+	first := spansByName(mustBuildTrace(t, grokBotBurst(), "quiet"))["execute_tool shell"]
+	second := spansByName(mustBuildTrace(t, grokBotBurst(), "quiet"))["execute_tool shell"]
+	require.Equal(t, first[0].SpanID(), second[0].SpanID())
+	require.Equal(t, first[1].SpanID(), second[1].SpanID())
+}
+
+// TestToolRowsAreNotRootEvents pins that a record which became a span does
+// not also land on the root as a name-only event.
+func TestToolRowsAreNotRootEvents(t *testing.T) {
+	root := spansByName(mustBuildTrace(t, grokBotBurst(), "quiet"))["invoke_agent cursor"][0]
+	for i := 0; i < root.Events().Len(); i++ {
+		name := root.Events().At(i).Name()
+		require.False(t, IsToolEvent(name), "tool row %q must not be a root event", name)
+	}
 }

@@ -175,6 +175,8 @@ The connector writes these itself rather than remapping them from raw keys:
 | `gen_ai.conversation.id` on chat/execute_tool spans | not mapped (parent carries it) |
 | `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
 | `server.address` / `server.port` | not provided |
+| `coding_agent.usage.cost` | not provided (the AI SDK spans carry no cost) |
+| `coding_agent.agent.parent_id` | not provided (the AI SDK spans name no agent) |
 
 ## Logs
 
