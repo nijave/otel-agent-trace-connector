@@ -48,6 +48,7 @@ var canonicalAttributeKeys = []string{
 	"exception.escaped",
 	"exception.stacktrace",
 	"coding_agent.request.service_tier",
+	"coding_agent.usage.cost",
 	"coding_agent.source",
 	"coding_agent.source.scope",
 	"coding_agent.source.event",

@@ -33,6 +33,9 @@ const (
 	attrToolCallID = attrMetadata + "tool_call_id"
 	attrIsDelegate = attrMetadata + "is_delegate"
 
+	wireCost      = "gen_ai.usage.cost"
+	canonicalCost = "coding_agent.usage.cost"
+
 	syntheticRootDiscriminator = ":synthetic-root"
 )
 
@@ -356,7 +359,8 @@ func foldLLMWrappers(children []kept) ([]kept, map[pcommon.SpanID]ptrace.Span) {
 // foldUsage carries the folded wrapper's usage counters onto the canonical chat
 // span, leaving every counter the inner span already reported intact: the inner
 // span is the per-call record, while the wrapper only fills the gaps the
-// provider did not report to lmnr (the cache counters).
+// provider did not report to lmnr (the cache counters) and the SDK's per-request
+// cost estimate.
 func foldUsage(wrapper, span ptrace.Span) {
 	attrs := span.Attributes()
 	for _, pair := range usageKeys {
@@ -365,6 +369,11 @@ func foldUsage(wrapper, span ptrace.Span) {
 		}
 		if value, ok := wrapper.Attributes().Get(pair[0]); ok && value.Type() == pcommon.ValueTypeInt {
 			attrs.PutInt(pair[1], value.Int())
+		}
+	}
+	if _, exists := attrs.Get(canonicalCost); !exists {
+		if cost, ok := wrapper.Attributes().Get(wireCost); ok && cost.Type() == pcommon.ValueTypeDouble {
+			attrs.PutDouble(canonicalCost, cost.Double())
 		}
 	}
 }
@@ -468,6 +477,9 @@ func normalizeChat(wire, span ptrace.Span) {
 		if v, ok := wire.Attributes().Get(pair[0]); ok && v.Type() == pcommon.ValueTypeInt {
 			attrs.PutInt(pair[1], v.Int())
 		}
+	}
+	if cost, ok := wireAttrs.Get(wireCost); ok && cost.Type() == pcommon.ValueTypeDouble {
+		attrs.PutDouble(canonicalCost, cost.Double())
 	}
 }
 

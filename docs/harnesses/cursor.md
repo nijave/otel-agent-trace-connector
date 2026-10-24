@@ -253,6 +253,7 @@ they appear on every emitted span except where noted:
 | `gen_ai.request.reasoning.level` / `coding_agent.request.service_tier` | not provided |
 | `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
 | `coding_agent.terminal.type` | not provided |
+| `coding_agent.usage.cost` | not provided (`cursor.cost.usage` is a metric with no conversation id; the logs carry no cost) |
 | `gen_ai.tool.*` / `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
 | `server.address` / `server.port` | not provided |
 | `exception.*` | not provided (errors surface as chat span Status Error) |

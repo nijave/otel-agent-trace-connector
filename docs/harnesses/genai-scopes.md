@@ -205,7 +205,8 @@ vocabulary, so they drop.
 | `gen_ai.tool.call.id` / `gen_ai.tool.name` / `gen_ai.tool.type` | execute_tool | same | kept |
 | `gen_ai.tool.description` | execute_tool | — | dropped |
 | `server.address` / `server.port` | chat, invoke_agent | same | kept (Copilot CLI omits both on subagent `invoke_agent` spans; VS Code Copilot Chat sends only `server.address`, on `chat`) |
-| `github.copilot.cost` | chat, invoke_agent | — | dropped |
+| `github.copilot.cost` | chat | `coding_agent.usage.cost` | mapped (USD double, Copilot's own estimate; the pinned 1.0.100 BYOK capture reports `0`; absent when the span carries no numeric cost) |
+| `github.copilot.cost` | invoke_agent | — | dropped (session rollup of the chat costs) |
 | `github.copilot.nano_aiu` | chat, invoke_agent | — | dropped |
 | `github.copilot.turn_id` / `interaction_id` | chat | — | dropped |
 | `github.copilot.server_duration` | chat | — | dropped |
@@ -232,6 +233,7 @@ Across all four emitters there is no raw source for:
 | `gen_ai.usage.cache_write.input_tokens` | openai_v2 | not provided (util-genai and Copilot can emit the pre-rename `cache_creation` spelling, which maps; Strands provides the underscore variant; the pinned Copilot capture carries none) |
 | `gen_ai.usage.reasoning.output_tokens` | openai_v2, strands | not provided (Copilot provides it — directly, or via the legacy `reasoning_tokens` spelling this edge maps; util-genai can when the instrumentation sets it) |
 | `gen_ai.response.time_to_first_chunk` | openai_v2 | not provided (openai-v2 2.4b0 records no TTFT); util-genai provides it through its shared stream wrappers; Strands provides it via the mapped legacy server key; Copilot CLI provides it directly (seconds, double) and VS Code Copilot Chat via the mapped `copilot_chat.time_to_first_token` key |
+| `coding_agent.usage.cost` | openai_v2, util-genai, strands | not provided (Copilot provides it) |
 
 #### Connector-written attributes
 
