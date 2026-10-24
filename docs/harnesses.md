@@ -30,7 +30,7 @@ Claude Code, whose native logs signal falls outside this file's scope.
 | Harness | Signal | Token usage in OTel | Project/repo identity in OTel | OTel metrics | Connector today |
 | --- | --- | --- | --- | --- | --- |
 | **Claude Code** | native traces (beta) + native logs (see [docs/otel-signals.md](otel-signals.md)) | yes (`gen_ai.usage.*`) | no repo identity; not the focus here | yes (native) | yes (traces edge) |
-| **Codex** | structured logs; native traces opt-in (`otel.trace_exporter`, 0.163.0) | provider-dependent (`response.completed` relays what the provider returns) | conversation ID, no repo path | yes (native) | yes (logs edge) |
+| **Codex** | structured logs; native traces opt-in (`otel.trace_exporter`, 0.163.0) | provider-dependent (`response.completed` relays what the provider returns) | conversation ID, no repo path | yes (native) | yes (logs edge and traces edge) |
 | **Cline** | metrics + logs (no traces) | yes (log events) | partial, **hashed** | yes (native) | no |
 | **Pi** | traces (via extensions) | yes | **yes, real `cwd` path** | via extensions | yes (traces edge, `@amaster.ai/pi-telemetry`) |
 | **Kilo** | traces + logs | thin (removed from AI SDK spans) | no (SQLite only) | no | no |

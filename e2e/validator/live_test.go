@@ -53,6 +53,9 @@ func TestLiveE2ETraces(t *testing.T) {
 		if lastErr == nil && agent == "openhands" {
 			lastErr = validateOpenHandsRawFile(rawPath, runID)
 		}
+		if lastErr == nil && agent == "codex" {
+			lastErr = validateCodexNativeFile(path, runID)
+		}
 		if lastErr == nil {
 			return
 		}

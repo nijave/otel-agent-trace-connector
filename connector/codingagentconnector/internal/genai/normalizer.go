@@ -81,6 +81,8 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		if openhands.ContainsOpenHandsSpans(inputResourceSpans) {
 			continue
 		}
+		// The Codex native edge claims scope==service.name groups, which no
+		// GenAI scope prefix can ever equal, so it needs no defer check.
 		if !containsGenAIScopes(inputResourceSpans) {
 			continue
 		}

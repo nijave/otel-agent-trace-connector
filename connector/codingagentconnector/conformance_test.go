@@ -31,6 +31,7 @@ import (
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codextraces"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/cursor"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/genai"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/opencode"
@@ -276,6 +277,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "model_reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
 				{RawKey: "service_tier", CanonicalKey: "coding_agent.request.service_tier", Kind: canonical.Presence},
 				{RawKey: "agent_name", CanonicalKey: "gen_ai.agent.id", Kind: canonical.Presence},
+				{RawKey: "call_id", CanonicalKey: "gen_ai.tool.call.id", Kind: canonical.Presence},
 			},
 		}},
 		{wired: "cursor", edge: canonical.Edge{
@@ -388,6 +390,19 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "gen_ai.usage.cost", CanonicalKey: "coding_agent.usage.cost", Kind: canonical.Presence},
 			},
 		}},
+		{wired: "codextraces", edge: canonical.Edge{
+			Name: "codextraces",
+			LoadRaw: func() (canonical.RawInput, error) {
+				return conformanceLoadJSONLTraces("internal/codextraces/testdata/codex-native-traces.json")
+			},
+			Normalize: conformanceConsumeTraces(codextraces.New),
+			Signals: []canonical.Signal{
+				{RawKey: "gen_ai.usage.input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Presence},
+				{RawKey: "codex.usage.total_tokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Presence},
+				{RawKey: "codex.turn.reasoning_effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+				{RawKey: "thread.id", CanonicalKey: "gen_ai.conversation.id", Kind: canonical.Presence},
+			},
+		}},
 		{wired: "pi", edge: canonical.Edge{
 			Name: "pi",
 			LoadRaw: func() (canonical.RawInput, error) {
@@ -414,7 +429,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 	// Named mirror of the edges newTracesRouter and newLogsRouter construct,
 	// in construction order. The count assertion below keeps this list tied to
 	// the real routers; coverage is asserted by identity, not count.
-	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codex", "cursor"}
+	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codextraces", "codex", "cursor"}
 	tracesWired := len(newTracesRouter(createDefaultConfig(), &conformanceSink{}).(*tracesRouter).edges)
 	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
 	logsEdge, err := newLogsRouter(createDefaultConfig(), set, &conformanceSink{})
@@ -441,8 +456,8 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 }
 
 // TestFixtureCoverageAcceptsMultiEdgeFixtures pins the coverage assertion to
-// identity rather than counts. The real registry holds nine fixture edges over
-// seven wired pipelines (the GenAI pipeline serves three fixtures), so any
+// identity rather than counts. The real registry holds ten fixture edges over
+// eight wired pipelines (the GenAI pipeline serves three fixtures), so any
 // comparison between a wired-edge count and an entry or fixture count holds
 // only by coincidence and breaks under harmless reshuffles; matching pipeline
 // names in both directions does not.

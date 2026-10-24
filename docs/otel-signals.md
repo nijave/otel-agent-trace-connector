@@ -33,7 +33,7 @@ Code, OpenCode, and Pi findings below now reflect those audits (checked
 | Harness | Traces | Logs | Metrics | Connector edge |
 | --- | --- | --- | --- | --- |
 | **Claude Code** | native (beta, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`) | native (`OTEL_LOGS_EXPORTER`) | native (8 counters) | traces |
-| **Codex** | native, opt-in (`otel.trace_exporter`, 0.163.0) | native (`codex.*` events) | native (counters + histograms) | logs (synthesizes traces) |
+| **Codex** | native, opt-in (`otel.trace_exporter`, 0.163.0) | native (`codex.*` events) | native (counters + histograms) | logs (synthesizes traces) and traces (native edge) |
 | **Cursor** | none native (hook tooling only) | native (Enterprise beta) | native (Enterprise beta, 3 delta sums) | logs (synthesizes traces) |
 | **GitHub Copilot** (CLI + VS Code Chat) | native | VS Code Chat only, as unbadged "events"; CLI: none | native (both surfaces) | traces (GenAI edge) |
 | **OpenCode** | native since v1.4.5 (2026-04-15) | native (Effect logs) | none native (plugins only) | traces |

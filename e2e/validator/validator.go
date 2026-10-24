@@ -26,6 +26,56 @@ func validateClaudeRawFile(path, runID string) error {
 	return validateTraceFile(path, runID, validateClaudeRawTraces)
 }
 
+// validateCodexNativeFile asserts the Codex traces edge produced a canonical
+// trace beside the logs edge's: the e2e stack exports both signals, so a run
+// carries two invoke_agent codex roots per turn, one per edge.
+func validateCodexNativeFile(path, runID string) error {
+	return validateTraceFile(path, runID, validateCodexNativeTraces)
+}
+
+// validateCodexNativeTraces checks the run holds a native root with a
+// conversation id plus a native chat span with usage and a native
+// execute_tool span. The children are checked run-wide, not as direct
+// children of the root: Codex exports a span when it ends, the stateless edge
+// reparents orphans only within one export batch, and a tool Codex ran under a
+// detached task carries its own trace id, so parent linkage in a live run is
+// best-effort (the edge's unit tests pin it per batch).
+func validateCodexNativeTraces(traces ptrace.Traces, runID string) error {
+	spans := collectRunSpans(traces, runID)
+	if err := firstValidRoot(spans, "invoke_agent codex", "native codex root was not found", func(root ptrace.Span) error {
+		if stringAttr(root, "coding_agent.source") != "native" {
+			return errors.New("codex root is not from the native traces edge")
+		}
+		if stringAttr(root, "gen_ai.conversation.id") == "" {
+			return errors.New("native codex root has no conversation id")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	chat, tool := false, false
+	for _, span := range spans {
+		if stringAttr(span, "coding_agent.source") != "native" || stringAttr(span, "coding_agent.client.name") != "codex" {
+			continue
+		}
+		switch stringAttr(span, "gen_ai.operation.name") {
+		case "chat":
+			if _, ok := span.Attributes().Get("gen_ai.usage.input_tokens"); ok {
+				chat = true
+			}
+		case "execute_tool":
+			tool = true
+		}
+	}
+	if !chat {
+		return errors.New("native codex run has no chat span with usage")
+	}
+	if !tool {
+		return errors.New("native codex run has no execute_tool span")
+	}
+	return nil
+}
+
 func validateTraceFile(path, runID string, validate func(ptrace.Traces, string) error) error {
 	file, err := os.Open(path)
 	if err != nil {

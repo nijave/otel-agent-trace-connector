@@ -830,3 +830,69 @@ func TestRoutingHomes(t *testing.T) {
 		t.Fatalf("expected root and chat, got %+v", home)
 	}
 }
+
+// TestValidateCodexNativeTracesRequiresNativeRoot pins the live-run check for
+// the Codex traces edge: a run must hold an invoke_agent codex root with
+// coding_agent.source=native, a native chat span with usage, and a native
+// execute_tool span; the logs edge's normalized trace alone does not satisfy
+// it, and the children count wherever they parent.
+func TestValidateCodexNativeTracesRequiresNativeRoot(t *testing.T) {
+	runID := "codex-otel-test"
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("e2e.run.id", runID)
+	spans := rs.ScopeSpans().AppendEmpty().Spans()
+
+	addRoot := func(source string, id byte) ptrace.Span {
+		root := spans.AppendEmpty()
+		root.SetName("invoke_agent codex")
+		root.SetTraceID(pcommon.TraceID([16]byte{id}))
+		root.SetSpanID(pcommon.SpanID([8]byte{id}))
+		root.Attributes().PutStr("gen_ai.operation.name", "invoke_agent")
+		root.Attributes().PutStr("gen_ai.conversation.id", "conv")
+		root.Attributes().PutStr("coding_agent.source", source)
+		root.Attributes().PutStr("coding_agent.client.name", "codex")
+		return root
+	}
+	addChild := func(root ptrace.Span, source, operation string, id byte) ptrace.Span {
+		child := spans.AppendEmpty()
+		child.SetName(operation)
+		child.SetTraceID(root.TraceID())
+		child.SetSpanID(pcommon.SpanID([8]byte{id}))
+		child.SetParentSpanID(root.SpanID())
+		child.Attributes().PutStr("gen_ai.operation.name", operation)
+		child.Attributes().PutStr("coding_agent.source", source)
+		child.Attributes().PutStr("coding_agent.client.name", "codex")
+		return child
+	}
+
+	normalized := addRoot("normalized", 1)
+	addChild(normalized, "normalized", "chat", 2).Attributes().PutInt("gen_ai.usage.input_tokens", 1)
+	addChild(normalized, "normalized", "execute_tool", 3)
+	require.ErrorContains(t, validateCodexNativeTraces(traces, runID), "native")
+
+	native := addRoot("native", 4)
+	require.ErrorContains(t, validateCodexNativeTraces(traces, runID), "chat")
+	addChild(native, "native", "chat", 5).Attributes().PutInt("gen_ai.usage.input_tokens", 1)
+	require.ErrorContains(t, validateCodexNativeTraces(traces, runID), "execute_tool")
+	// A tool Codex ran under a detached task: its own trace id, no root above
+	// it. It still counts.
+	detached := spans.AppendEmpty()
+	detached.SetName("execute_tool exec_command")
+	detached.SetTraceID(pcommon.TraceID([16]byte{9}))
+	detached.SetSpanID(pcommon.SpanID([8]byte{9}))
+	detached.SetParentSpanID(pcommon.SpanID([8]byte{8}))
+	detached.Attributes().PutStr("gen_ai.operation.name", "execute_tool")
+	detached.Attributes().PutStr("coding_agent.source", "native")
+	detached.Attributes().PutStr("coding_agent.client.name", "codex")
+	require.NoError(t, validateCodexNativeTraces(traces, runID))
+
+	// The file wrapper the live test calls: same rule over a JSONL export,
+	// scoped to the run id.
+	encoded, err := (&ptrace.JSONMarshaler{}).MarshalTraces(traces)
+	require.NoError(t, err)
+	path := t.TempDir() + "/canonical.json"
+	require.NoError(t, os.WriteFile(path, append(encoded, '\n'), 0o600))
+	require.NoError(t, validateCodexNativeFile(path, runID))
+	require.Error(t, validateCodexNativeFile(path, "different-run"))
+}

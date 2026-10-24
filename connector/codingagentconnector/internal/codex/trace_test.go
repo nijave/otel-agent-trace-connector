@@ -513,3 +513,20 @@ func attrDouble(t *testing.T, span ptrace.Span, key string) float64 {
 	require.Equal(t, pcommon.ValueTypeDouble, value.Type(), "%s must be a double", key)
 	return value.Double()
 }
+
+func TestToolSpanCarriesCallID(t *testing.T) {
+	base := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+	turn := &turnState{
+		conversationID: "conversation-1", first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		resource: map[string]any{"service.name": "codex_cli_rs"},
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.tool_result", base.Add(time.Second), map[string]any{"tool_name": "shell", "call_id": "call-1"}),
+			testEvent("codex.tool_result", base.Add(2*time.Second), map[string]any{"tool_name": "read_file"}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, "call-1", attrString(t, findSpan(t, spans, "execute_tool shell"), "gen_ai.tool.call.id"))
+	_, ok := findSpan(t, spans, "execute_tool read_file").Attributes().Get("gen_ai.tool.call.id")
+	require.False(t, ok, "no call_id on the wire, no key")
+}
