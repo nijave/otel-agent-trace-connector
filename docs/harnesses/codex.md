@@ -107,7 +107,7 @@ runs both on purpose and its validator requires both roots.
 | `codex.usage.reasoning_output_tokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider reports none) |
 | `codex.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (same) |
 | `codex.request.reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when no effort applies) |
-| (turn span's `model`) | `gen_ai.request.model` | mapped (absent, and the span named bare `chat`, when the export carries no turn span) |
+| (turn span's `model`) | `gen_ai.request.model` | mapped from the earliest turn span carrying the same trace ID in this export (absent, and the span named bare `chat`, when that trace has no model-bearing turn span in the export; turns in other traces or resource groups never supply the model) |
 | `from`, `tool_name` | — | dropped |
 
 ##### mcp.tools.call → execute_tool

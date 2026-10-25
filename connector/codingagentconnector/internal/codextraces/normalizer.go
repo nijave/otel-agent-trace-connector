@@ -111,8 +111,9 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 	output := ptrace.NewTraces()
 	// The turn can export in a different resource group than the response
 	// spans it models (one export carries several groups), so the model is
-	// looked up across the batch's claimed groups rather than per group.
-	model := batchTurnModel(input)
+	// looked up across the batch's claimed groups rather than per group,
+	// scoped by trace id: other traces in the batch are unrelated.
+	models := batchTurnModels(input)
 	kinds := make(map[spanKey]spanKind, input.SpanCount())
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputRS := input.ResourceSpans().At(i)
@@ -127,7 +128,7 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 			spans := rs.ScopeSpans().At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				kinds[keyOf(span)] = normalizeSpan(span, version, model)
+				kinds[keyOf(span)] = normalizeSpan(span, version, models[span.TraceID()])
 			}
 			spans.RemoveIf(func(s ptrace.Span) bool { return kinds[keyOf(s)] == kindDrop })
 		}
@@ -172,12 +173,12 @@ func ContainsCodexSpans(rs ptrace.ResourceSpans) bool {
 	return false
 }
 
-// batchTurnModel returns the model of the input batch's earliest turn span,
-// which the response spans inherit; the response span itself names no model.
-// Only claimed groups contribute.
-func batchTurnModel(input ptrace.Traces) string {
-	model := ""
-	var earliest pcommon.Timestamp
+// batchTurnModels returns each trace's earliest turn model. Response spans
+// inherit only the model from their own trace; other turns in the OTLP batch
+// are unrelated. Only claimed groups contribute.
+func batchTurnModels(input ptrace.Traces) map[pcommon.TraceID]string {
+	models := make(map[pcommon.TraceID]string)
+	earliest := make(map[pcommon.TraceID]pcommon.Timestamp)
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		rs := input.ResourceSpans().At(i)
 		if !ContainsCodexSpans(rs) {
@@ -190,13 +191,19 @@ func batchTurnModel(input ptrace.Traces) string {
 				if !turnSpanNames[span.Name()] {
 					continue
 				}
-				if m := firstString(span.Attributes(), "model"); m != "" && (model == "" || span.StartTimestamp() < earliest) {
-					model, earliest = m, span.StartTimestamp()
+				model := firstString(span.Attributes(), "model")
+				if model == "" {
+					continue
+				}
+				traceID := span.TraceID()
+				if _, exists := models[traceID]; !exists || span.StartTimestamp() < earliest[traceID] {
+					models[traceID] = model
+					earliest[traceID] = span.StartTimestamp()
 				}
 			}
 		}
 	}
-	return model
+	return models
 }
 
 // normalizeSpan classifies one wire span and, for kept kinds, replaces its
