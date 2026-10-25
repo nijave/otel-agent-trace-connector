@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 )
 
 const (
@@ -128,7 +129,11 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 			spans := rs.ScopeSpans().At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				kinds[keyOf(span)] = normalizeSpan(span, version, models[span.TraceID()])
+				kind := normalizeSpan(span, version, models[span.TraceID()])
+				if kind != kindDrop {
+					content.Strip(span)
+				}
+				kinds[keyOf(span)] = kind
 			}
 			spans.RemoveIf(func(s ptrace.Span) bool { return kinds[keyOf(s)] == kindDrop })
 		}

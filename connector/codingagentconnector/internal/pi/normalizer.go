@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/content"
 )
 
 const (
@@ -75,6 +76,7 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 					foreign[span.SpanID()] = true
 					continue
 				}
+				content.Strip(span)
 				if child {
 					children[span.SpanID()] = true
 				}

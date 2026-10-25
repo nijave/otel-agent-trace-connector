@@ -133,6 +133,15 @@ server, so the capture carries none of these spans.
 | `success` = false (bool or string) | span Status = Error, message `tool execution failed` | mapped to status |
 | `duration_ms`, `tool_namespace`, `tool_result_seq`, `output_truncated`, `arguments_length`, `output_length`, `output_line_count`, `tool_origin`, `mcp_tool`, `product_sku`, `slug`, `originator`, `terminal.type`, `model`, `conversation.id`, `app.version` | — | dropped (the whole event drops) |
 
+#### Span events
+
+Kept spans use the shared canonical event policy. Known GenAI content events
+are removed whole. Other operational events keep their names and timestamps,
+but their attributes are reduced to the canonical allowlist. The
+`codex.tool_result` event used to construct a builtin tool span is removed
+whole after its tool identity and outcome are mapped. Raw events remain
+unchanged in the raw pipeline.
+
 #### Connector-written attributes
 
 - `coding_agent.source` = `native`

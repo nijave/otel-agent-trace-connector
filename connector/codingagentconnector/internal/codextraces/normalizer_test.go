@@ -569,3 +569,29 @@ func TestResourceIsFiltered(t *testing.T) {
 	_, hasService := resource.Get("service.name")
 	require.True(t, hasService)
 }
+
+func TestKeptSpanEventsUseCanonicalPolicy(t *testing.T) {
+	input := ptrace.NewTraces()
+	turn := addTurn(newCodexGroup(input))
+	contentEvent := turn.Events().AppendEmpty()
+	contentEvent.SetName("gen_ai.user.message")
+	contentEvent.Attributes().PutStr("content", "sensitive prompt")
+	operational := turn.Events().AppendEmpty()
+	operational.SetName("codex.turn.status")
+	operational.SetTimestamp(turn.StartTimestamp())
+	operational.Attributes().PutStr("prompt", "sensitive prompt")
+	operational.Attributes().PutStr("exception.type", "TurnError")
+
+	root := findSpan(t, normalizeOne(t, input), "invoke_agent codex")
+	require.Equal(t, 1, root.Events().Len())
+	event := root.Events().At(0)
+	require.Equal(t, "codex.turn.status", event.Name())
+	_, hasPrompt := event.Attributes().Get("prompt")
+	require.False(t, hasPrompt)
+	exception, ok := event.Attributes().Get("exception.type")
+	require.True(t, ok)
+	require.Equal(t, "TurnError", exception.Str())
+	require.Equal(t, 2, turn.Events().Len(), "raw input is unchanged")
+	_, rawPrompt := turn.Events().At(1).Attributes().Get("prompt")
+	require.True(t, rawPrompt)
+}
