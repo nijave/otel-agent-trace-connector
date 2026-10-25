@@ -305,11 +305,17 @@ the same complete event set idempotent. It does not deduplicate exports by
 itself, and an orphan turn without a prompt may derive a different ID if its
 earliest observed event changes across replay boundaries.
 
-Within a live turn, redelivered events deduplicate by a content
+Within a live turn, redelivered retained events deduplicate by a content
 fingerprint (event name, timestamp, and retained attributes). OTLP delivery is
 at-least-once, so without this a resent batch would double-count token usage,
 duplicate `chat`/`execute_tool` spans, and let a redelivered prompt falsely
-supersede its own turn. The fingerprint set bounds at `max_events_per_turn`.
+supersede its own turn. The event slice and fingerprint set both bound at
+`max_events_per_turn`. Once the turn is full, overflow events are discarded
+without retaining their fingerprints or changing timestamps, completion state,
+or finalization clocks. A redelivered overflow event may be examined again,
+but remains side-effect free; duplicate retained events still deduplicate
+exactly. This preserves a hard per-turn memory bound during at-least-once
+delivery storms.
 
 ### Bounds
 
@@ -345,10 +351,13 @@ Finalization reasons:
 
 ### Dedupe and replay
 
-Within a live burst, redelivered records dedupe exactly on `cursor.event.id`,
-the wire's own dedupe key — simpler and stronger than the Codex content
-fingerprint. The id set bounds at `max_events_per_turn` with the rest of the
-burst state.
+Within a live burst, redelivered retained records deduplicate exactly on
+`cursor.event.id`, the wire's own dedupe key — simpler and stronger than the
+Codex content fingerprint. The event slice and ID set both bound at
+`max_events_per_turn`. Once the burst is full, overflow records are discarded
+without retaining their IDs or changing timestamps or finalization clocks.
+A redelivered overflow record may be examined again, but remains side-effect
+free; duplicate retained records still deduplicate exactly.
 
 Trace IDs derive from SHA-256 of the provider marker `cursor`, the
 conversation id, and the burst's first `cursor.event.id`; span IDs add a

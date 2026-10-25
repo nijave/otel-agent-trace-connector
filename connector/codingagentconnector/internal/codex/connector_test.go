@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -180,8 +181,8 @@ func TestTruncatedTurnStillFinalizesUnderRedeliveryStorm(t *testing.T) {
 // after truncation leaves no trace in turn state: a response.completed that is
 // dropped must not flip completeSeen (which would finalize the turn as
 // "completed" with the completion absent from the emitted trace) nor refresh
-// first/last/lastSeen -- but its fingerprint must be recorded so redeliveries
-// deduplicate exactly.
+// first/last/lastSeen. Overflow fingerprints are not retained, so overflow
+// redeliveries are re-examined, but they remain side-effect free.
 func TestPostTruncationCompletionDoesNotMutateTurnState(t *testing.T) {
 	cfg := NewDefaultConfig()
 	base := time.Unix(100, 0)
@@ -195,7 +196,7 @@ func TestPostTruncationCompletionDoesNotMutateTurnState(t *testing.T) {
 	turn.add(completion, now.Add(time.Hour), 2)
 	require.True(t, turn.truncated)
 	require.Len(t, turn.events, 2)
-	require.True(t, turn.seenEvent(completion))
+	require.False(t, turn.seenEvent(completion), "overflow fingerprints are not retained")
 	require.False(t, turn.completeSeen)
 	require.True(t, turn.completionAt.IsZero())
 	require.True(t, turn.lastSeen.Equal(now))
@@ -209,6 +210,16 @@ func TestPostTruncationCompletionDoesNotMutateTurnState(t *testing.T) {
 	finalized := instance.collectReady(now.Add(cfg.TurnTimeout))
 	require.Len(t, finalized, 1)
 	require.Equal(t, "timeout", finalized[0].reason)
+}
+
+func TestTruncationBoundsEventsAndFingerprints(t *testing.T) {
+	turn := &turnState{}
+	base := time.Now()
+	for i := 0; i < 100; i++ {
+		turn.add(testEvent("codex.api_request", base.Add(time.Duration(i)*time.Second), map[string]any{"sequence": fmt.Sprint(i)}), base, 1)
+	}
+	require.Len(t, turn.events, 1)
+	require.Len(t, turn.seen, 1)
 }
 
 func TestZeroReorderWindowFinalizesPromptly(t *testing.T) {
