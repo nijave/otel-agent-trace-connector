@@ -58,7 +58,9 @@ func TestGenAINormalizerClaimsKnownScopes(t *testing.T) {
 		"github.copilot",
 	} {
 		input := ptrace.NewTraces()
-		newGroup(input, scope, "chat glm-4.7")
+		span := newGroup(input, scope, "chat glm-4.7")
+		span.Attributes().PutStr("gen_ai.operation.name", "chat")
+		span.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
 		sink := &traceSink{}
 		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
 		require.Len(t, sink.all(), 1, "scope %q must be claimed", scope)
@@ -189,7 +191,10 @@ func TestGenAINormalizerDropsUnmatchedScopesInClaimedGroups(t *testing.T) {
 	appSpan.SetName("run")
 	genaiScope := rs.ScopeSpans().AppendEmpty()
 	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
-	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+	genaiSpan := genaiScope.Spans().AppendEmpty()
+	genaiSpan.SetName("chat glm-4.7")
+	genaiSpan.Attributes().PutStr("gen_ai.operation.name", "chat")
+	genaiSpan.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
@@ -645,16 +650,38 @@ func TestGenAINormalizerCapturesIdentity(t *testing.T) {
 	require.False(t, hasUser, "coding_agent.user.id must be gated behind captureIdentity")
 }
 
-func TestGenAINormalizerLeavesSpansWithoutOperationName(t *testing.T) {
+func TestGenAINormalizerDropsSpansWithoutOperationName(t *testing.T) {
 	input := ptrace.NewTraces()
 	newGroup(input, "opentelemetry.instrumentation.openai_v2", "run")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
-	out := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
-	require.Equal(t, "run", out.Name())
-	_, tagged := out.Attributes().Get("coding_agent.source")
-	require.False(t, tagged, "spans without an operation name stay untouched")
+	require.Empty(t, sink.all(), "an unclassified group emits no canonical batch")
+}
+
+func TestGenAINormalizerDropsOnlySpansWithoutOperationName(t *testing.T) {
+	input := ptrace.NewTraces()
+	newGroup(input, "opentelemetry.util.genai.handler", "unclassified-only")
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "adhoc-agent")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("opentelemetry.util.genai.handler")
+	valid := ss.Spans().AppendEmpty()
+	valid.SetName("chat")
+	valid.Attributes().PutStr("gen_ai.operation.name", "chat")
+	valid.Attributes().PutStr("gen_ai.request.model", "m")
+	invalid := ss.Spans().AppendEmpty()
+	invalid.SetName("application-work")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.all(), 1)
+	require.Equal(t, 1, sink.all()[0].ResourceSpans().Len())
+	require.Equal(t, 1, sink.all()[0].ResourceSpans().At(0).ScopeSpans().Len())
+	spans := sink.all()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 1, spans.Len())
+	require.Equal(t, "chat m", spans.At(0).Name())
+	require.Equal(t, "native", attrString(t, spans.At(0), "coding_agent.source"))
 }
 
 func TestGenAINormalizerPassesThroughInvokeWorkflow(t *testing.T) {
@@ -767,7 +794,10 @@ func TestGenAINormalizerDropsUnmatchedScopesWithContent(t *testing.T) {
 	appSpan.Attributes().PutStr("gen_ai.input.messages", "SENSITIVE")
 	genaiScope := rs.ScopeSpans().AppendEmpty()
 	genaiScope.Scope().SetName("opentelemetry.instrumentation.openai_v2")
-	genaiScope.Spans().AppendEmpty().SetName("chat glm-4.7")
+	genaiSpan := genaiScope.Spans().AppendEmpty()
+	genaiSpan.SetName("chat glm-4.7")
+	genaiSpan.Attributes().PutStr("gen_ai.operation.name", "chat")
+	genaiSpan.Attributes().PutStr("gen_ai.request.model", "glm-4.7")
 
 	sink := &traceSink{}
 	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))

@@ -238,9 +238,12 @@ Across all four emitters there is no raw source for:
 
 #### Connector-written attributes
 
-The connector writes these itself on every claimed span that carries
-`gen_ai.operation.name`; a matched-scope span without that key passes
-through with content stripped but gains no canonical keys:
+The connector writes these itself on every claimed span. A matched-scope
+span without `gen_ai.operation.name` drops from canonical output: it cannot
+be classified as a GenAI operation or carry the required canonical operation
+key. The edge does not infer an operation from an arbitrary span name. Empty
+scope and resource groups are omitted. Every surviving span receives the
+connector-written provenance keys below:
 
 - `coding_agent.source` = `native`
 - `coding_agent.source.scope` = original scope name

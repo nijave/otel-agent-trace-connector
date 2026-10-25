@@ -468,10 +468,13 @@ to at most one normalizer:
    available in the parallel raw pipeline.
 
 Claude-first claiming means a resource group never emits twice and
-existing Claude deployments see no behavior change. Like the Claude edge,
-the GenAI normalizer copies the whole claimed resource group, including
-spans from the application's own tracer scopes, so an ad-hoc agent's manual
-parent spans keep their children and trace parentage stays intact.
+existing Claude deployments see no behavior change. The GenAI normalizer
+copies each claimed resource group before modification, then retains only
+spans from matched GenAI scopes that carry `gen_ai.operation.name`.
+Application spans on unmatched scopes and unclassified matched-scope spans
+drop from canonical output; the raw pipeline preserves them. Hierarchy, IDs,
+links, kind, and status of surviving spans pass through without synthesized
+roots or replacement parents.
 
 ### Detection
 
@@ -483,10 +486,10 @@ Scope-name matching, evaluated per scope-spans block:
 | `opentelemetry.util.genai` (prefix) | openai-v2 experimental mode and direct util-genai users |
 | `strands.telemetry` (prefix) | Strands Agents SDK built-in tracer |
 
-Within a claimed group, the normalizer rewrites a span only when its scope
-matched and it carries `gen_ai.operation.name`. Everything else in the group
-passes through untouched, mirroring how the Claude edge leaves
-`claude_code.tool.execution` and hook spans alone.
+Within a claimed group, the normalizer retains only spans from matched GenAI
+scopes that carry `gen_ai.operation.name`; unclassified matched-scope spans
+and application spans on unmatched scopes drop from canonical output and the
+raw pipeline preserves them.
 
 ### Name normalization
 
