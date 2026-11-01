@@ -351,7 +351,7 @@ func TestTelemetryCountsRetainedDuplicateAfterTruncation(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	set := testSettings()
-	set.TelemetrySettings.MeterProvider = provider
+	set.MeterProvider = provider
 	edge, err := New(cfg, set, &traceSink{})
 	require.NoError(t, err)
 	instance := edge.(*cursorConnector)
