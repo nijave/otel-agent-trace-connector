@@ -46,11 +46,13 @@ changes", "Remaining caveats", "Recovery property"):
   routes, where R is the route count and N the replica count. Any turn whose
   events span the change splits across the old and new replica and produces
   the fragment traces the spec describes.
-- A rolling restart of a tier-2 replica truncates its active turns
-  immediately; each ends with `finish_reason=shutdown` instead of its normal
-  completion reason.
-- Recovery: the raw pipelines keep source logs and traces independently of
-  the canonical pipeline, and trace IDs derive deterministically from the
-  complete event set, so you can rebuild canonical output after any topology
-  churn by replaying the raw logs through a single instance. Downstream
-  consumers dedupe on trace ID.
+- A rolling restart of a tier-2 replica drains its active turns immediately;
+  the `otelcol_coding_agent_turns_emitted` self-metric records these with
+  `finish_reason=shutdown`. This is a metric label, not a canonical span
+  attribute.
+- This minimal example exports canonical traces only; it has no raw log or
+  raw trace exporter and cannot replay source telemetry by itself. Raw replay
+  requires adding a separate raw-preservation branch before the connector.
+  `examples/otelcol-s3.yaml` shows that pattern. With raw telemetry preserved,
+  replaying the complete event set through one instance rebuilds deterministic
+  canonical IDs, and downstream consumers can dedupe on trace ID.
