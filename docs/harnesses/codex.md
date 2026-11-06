@@ -107,7 +107,7 @@ runs both on purpose and its validator requires both roots.
 | `codex.usage.reasoning_output_tokens` | `gen_ai.usage.reasoning.output_tokens` | mapped (absent when the provider reports none) |
 | `codex.usage.total_tokens` | `gen_ai.usage.total_tokens` | mapped (same) |
 | `codex.request.reasoning_effort` | `gen_ai.request.reasoning.level` | mapped (absent when no effort applies) |
-| (turn span's `model`) | `gen_ai.request.model` | mapped (absent, and the span named bare `chat`, when the export carries no turn span) |
+| (turn span's `model`) | `gen_ai.request.model` | mapped from the earliest turn span carrying the same trace ID in this export (absent, and the span named bare `chat`, when that trace has no model-bearing turn span in the export; turns in other traces never supply the model) |
 | `from`, `tool_name` | — | dropped |
 
 ##### mcp.tools.call → execute_tool
@@ -132,6 +132,15 @@ server, so the capture carries none of these spans.
 | record kind | `gen_ai.tool.type` = `builtin` | mapped |
 | `success` = false (bool or string) | span Status = Error, message `tool execution failed` | mapped to status |
 | `duration_ms`, `tool_namespace`, `tool_result_seq`, `output_truncated`, `arguments_length`, `output_length`, `output_line_count`, `tool_origin`, `mcp_tool`, `product_sku`, `slug`, `originator`, `terminal.type`, `model`, `conversation.id`, `app.version` | — | dropped (the whole event drops) |
+
+#### Span events
+
+Kept spans use the shared canonical event policy. Known GenAI content events
+are removed whole. Other operational events keep their names and timestamps,
+but their attributes are reduced to the canonical allowlist. The
+`codex.tool_result` event used to construct a builtin tool span is removed
+whole after its tool identity and outcome are mapped. Raw events remain
+unchanged in the raw pipeline.
 
 #### Connector-written attributes
 

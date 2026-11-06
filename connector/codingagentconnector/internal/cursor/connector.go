@@ -174,17 +174,11 @@ func (c *cursorConnector) ConsumeLogs(ctx context.Context, logs plog.Logs) error
 
 func (b *burstState) add(event Event, now time.Time, maxEvents int) {
 	if len(b.events) >= maxEvents {
-		// The burst is full: record the EventID so at-least-once redeliveries
-		// of this record stay deduplicated, flag the burst, and stop.
-		// first/last/lastSeen must track stored records only -- otherwise
-		// records missing from the emitted trace keep refreshing lastSeen and
-		// defer the quiet-window close until only turn_timeout can fire,
-		// skewing finish_reason to "timeout".
+		// Overflow is discarded without changing finalization state. Its ID
+		// is deliberately not retained: seen shares the same maxEvents bound
+		// as events. A redelivery may re-enter this branch, but it remains
+		// side-effect free.
 		b.truncated = true
-		if b.seen == nil {
-			b.seen = make(map[string]struct{})
-		}
-		b.seen[event.EventID] = struct{}{}
 		return
 	}
 	if event.Timestamp.Before(b.first) {

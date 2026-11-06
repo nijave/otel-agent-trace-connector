@@ -119,6 +119,14 @@ than normalizing it, and derives one from `model` only in the exact
 comes from the generation span's `completion_start_time` (mapped, see the
 llm-generation table).
 
+#### Span events
+
+Recognized spans use the shared canonical event policy in addition to
+rebuilding their span attributes. Known content events drop whole; surviving
+operational events keep only canonical attributes. This includes future or
+extension-specific event attributes: they cannot bypass the canonical
+allowlist. Raw events remain unchanged in the raw pipeline.
+
 ##### tool span → execute_tool
 
 | Raw key | Canonical key | Status |

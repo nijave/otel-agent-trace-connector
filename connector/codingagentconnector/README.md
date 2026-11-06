@@ -43,9 +43,10 @@ trace vocabulary. It exposes two edges under a single component type,
   instrumentation scope is exactly named `opencode`.
 - **GitHub Copilot (traces → traces):** claims instrumentation scope
   `github.copilot` through the shared GenAI-semconv edge; spans rename via
-  the standard operation table, capture-gated content never reaches output,
-  and vendor extras (`github.copilot.cost`, `.aiu`, `.turn_id`) pass through
-  untouched.
+  the standard operation table, and capture-gated content never reaches
+  output. Per-request `github.copilot.cost` maps to `coding_agent.usage.cost`
+  on chat spans. Other vendor attributes drop under the closed canonical
+  vocabulary.
 - **Claude Code (traces → traces):** preserves Claude Code's native span
   hierarchy and normalizes the interaction, LLM, and tool span names and
   attributes into the same vocabulary.
@@ -80,76 +81,57 @@ invoke_agent <agent>
 ```
 
 Normalization never copies prompt text, tool arguments, or tool output into
-generated Codex spans.
+canonical output on any edge. Raw vendor telemetry remains available only in
+the separately configured raw pipelines.
 
-## Canonical span attributes
+## Canonical attributes
 
-Every emitted span carries the provenance attributes below. The normalizers then
-add operation-specific attributes. All attributes and events pass through one
-allowlist (`internal/content`), so an attribute outside these tables never
-reaches canonical output.
+Every emitted span carries `gen_ai.operation.name`, `coding_agent.source`,
+and `coding_agent.client.name`. `coding_agent.client.version` is present when
+the source reports a version. GenAI spans carry `coding_agent.source.scope`;
+OpenHands roots carry it as well. Event-derived spans carry
+`coding_agent.source.event`. Resources retain only the canonical identity
+keys listed in [the canonical vocabulary](../../docs/canonical-attributes.md).
 
-Provenance attributes, present on every span:
+Roots use `gen_ai.operation.name=invoke_agent` and carry source-backed agent
+and conversation identifiers. Logs-edge usage lives on chat spans, not as an
+aggregate on the root. Native edges keep only source-backed canonical usage;
+they do not invent totals. Logs-edge timeout finalization sets root Error
+status. Close reasons and truncation are reported through connector
+self-metrics, not `coding_agent.turn` span attributes.
 
-| Attribute | Value |
-| --- | --- |
-| `coding_agent.source` | `native` (traces edges) or `normalized` (Codex and Cursor logs edge). |
-| `coding_agent.client.name` | The agent name, for example `claude_code`. |
-| `coding_agent.client.version` | Client version, when the source reports one. |
-| `coding_agent.source.scope` | Instrumentation scope name, on scope-claimed groups. |
-| `coding_agent.source.event` | Original log body or span name, on event-derived spans. |
+Chat spans carry the request model when known, source-backed provider and
+response metadata, canonical token counters, TTFT in seconds as a double, and
+`coding_agent.usage.cost` only when the harness reports a per-request estimate.
+Tool spans carry the tool name and call id when known. Tool failure maps to
+OTel Error status; no vendor success boolean is emitted.
 
-Attributes on the `invoke_agent <agent>` root:
+Codex `provider_name` is an operator-authored display label and drops;
+`gen_ai.provider.name=openai` describes the wire protocol. Cursor billing
+flags and vendor resource detail drop. Copilot's per-chat
+`github.copilot.cost` maps to `coding_agent.usage.cost`; other
+`github.copilot.*` attributes drop.
 
-| Attribute | Notes |
-| --- | --- |
-| `gen_ai.operation.name` | Always `invoke_agent`. |
-| `gen_ai.agent.name` | Agent identifier: `codex`, `cursor`, `claude_code`, `pi`, `opencode`, or `openhands`. |
-| `gen_ai.conversation.id` | Session or burst identifier, when available. |
-| `gen_ai.provider.name` | Codex sets `openai`; Claude Code sets `anthropic`. Cursor omits it because its wire never names a provider. |
-| `gen_ai.request.model` | Last model seen in the turn (Codex). |
-| `coding_agent.turn.finish_reason` | `completed` or `timeout`; roots built by the logs edge. |
-| `coding_agent.turn.complete` | True when the turn finished cleanly (Codex). |
-| `coding_agent.turn.prompt_observed` | True when a `codex.user_prompt` arrived in the turn (Codex). |
-| `coding_agent.turn.events_truncated` | True when the turn or burst hit `max_events_per_turn`. |
-| `coding_agent.model_provider` | Display label from the Codex provider config; not an identifier. |
-| `gen_ai.usage.*` | Aggregate token totals across all calls in the turn or burst (Codex and Cursor roots only). |
-| `coding_agent.cursor.*` | Cursor surface, entrypoint, team id, and user id, copied from the resource. |
+Span events are removed whole when they are known content events. Surviving
+operational events keep only canonical attributes. Turn bookkeeping,
+truncation flags, display labels, and unrestricted vendor namespaces are not
+part of canonical output.
 
-Attributes on a `chat <model>` span:
-
-| Attribute | Notes |
-| --- | --- |
-| `gen_ai.operation.name` | Always `chat`. |
-| `gen_ai.request.model` | Model name; it also forms the `<model>` part of the span name. |
-| `gen_ai.provider.name` | Set when the source names the provider (`anthropic` for Claude Code, `openai` for Codex). |
-| `gen_ai.response.*` (including `time_to_first_chunk`, seconds as a double) | Response metadata, copied when the source reports it. |
-| `gen_ai.usage.*` | Token counts for this call. |
-| `coding_agent.cursor.billable` | Cursor billing flag for the request. |
-
-Attributes on an `execute_tool <tool>` span:
-
-| Attribute | Notes |
-| --- | --- |
-| `gen_ai.operation.name` | Always `execute_tool`. |
-| `gen_ai.tool.name` | Tool name; it also forms the `<tool>` part of the span name. |
-| `gen_ai.tool.call.id` | Call identifier, when the source carries one. Codex uses `coding_agent.tool.call_id`. |
-| `gen_ai.tool.type`, `gen_ai.tool.status` | Copied when the source reports them. |
-| `coding_agent.tool.success` | Codex tool outcome; `false` sets the span status to `Error`. |
-
-GenAI-semconv sources keep benign request and response attributes that pass the
-allowlist, and GitHub Copilot spans keep their `github.copilot.*` operational
-counters. Content-bearing span events are removed entirely before export.
+Keep [the canonical vocabulary](../../docs/canonical-attributes.md) and
+[the per-harness matrices](../../docs/harnesses/) as the complete key-level
+references.
 
 ## Configuration
 
 <!-- vale off -->
 | Setting | Default | Description |
 | --- | --- | --- |
-| `turn_timeout` | `10m` | Finalize a turn with no completion after this idle period. |
-| `reorder_window` | `30s` | Quiet period after the last event before a completed turn is finalized; also the cross-batch late-arrival window. Must be less than `turn_timeout`. |
-| `max_active_turns` | `10000` | Bound on concurrently correlated turns; the least-recently-seen turn is emitted when the bound is exceeded. |
-| `max_events_per_turn` | `1000` | Bound on retained events per turn; excess events set `coding_agent.turn.events_truncated=true`. |
+| `turn_timeout` | `10m` | Codex idle timeout without completion; Cursor maximum burst age measured from its first record. Timeout roots have Error status. |
+| `reorder_window` | `30s` | Quiet period after the last event before a completed Codex turn or any Cursor burst finalizes. Must be less than `turn_timeout`; zero is allowed. |
+| `max_active_turns` | `10000` | Bound on concurrently correlated Codex turns or Cursor bursts per edge; the least-recently-seen state emits before admitting a new one. |
+| `max_events_per_turn` | `1000` | Bound on retained events and dedupe keys per turn/burst. Overflow is discarded without changing finalization state; truncation is reported by `otelcol_coding_agent_turns_truncated`. |
+| `capture_identity` | `true` | Controls `coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id`, and resource `host.name`. Set `false` to suppress identity. |
+| `signals` | `[logs, traces]` | Input signals this instance consumes. A disabled input edge emits nothing; pipeline wiring is the other way to select signals. |
 <!-- vale on -->
 
 Example (both edges bridging into a canonical traces pipeline):
@@ -161,6 +143,8 @@ connectors:
     reorder_window: 30s
     max_active_turns: 10000
     max_events_per_turn: 1000
+    capture_identity: true
+    signals: [logs, traces]
   coding_agent/claude:
 
 service:
@@ -181,12 +165,13 @@ instance name is historical.
 
 ## Delivery semantics
 
-Redelivered records deduplicate only while their turn (Codex) or burst
-(Cursor) is still open. A record that arrives after its turn finalized starts
-a new turn and can produce a second, smaller trace. Trace and span IDs are
-deterministic, so a full replay merges idempotently downstream; consumers
-needing replay-proof reads deduplicate on trace ID. See
-[docs/design.md](../../docs/design.md) for details.
+Redelivered retained records deduplicate while their Codex turn or Cursor
+burst is open. Once the retained-event bound is reached, overflow records and
+their dedupe keys are discarded without changing finalization state; overflow
+redeliveries remain side-effect free. A record arriving after finalization can
+start a new fragment trace. Trace and span IDs are deterministic for a full
+replay, but the connector does not deduplicate separate exports or across
+logs/traces edges. See [docs/design.md](../../docs/design.md) for details.
 
 ## Self-observability
 

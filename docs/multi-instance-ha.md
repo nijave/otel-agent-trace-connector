@@ -16,13 +16,13 @@ and source at Collector v0.163.0, the version pinned in
 
 ## Current state
 
-Every artifact in the repository assumes one instance per deployment:
-
-- `collector-config.yaml`, `examples/otelcol-s3.yaml`, and the bundled image
-  config expose OTLP on fixed ports and export to local files or S3.
-- The e2e Compose stack runs a single `collector` service writing all output
-  files into one shared volume path.
-- No Kubernetes manifests exist in the repository.
+The bundled `collector-config.yaml` and `examples/otelcol-s3.yaml` run one
+Collector per deployment. Multi-instance artifacts now exist in two forms:
+`compose.e2e-routing.yaml` proves the two-tier consistent-hash topology
+locally, and `examples/k8s-ha/` provides the Kubernetes tier-1 gateway and
+tier-2 Collector manifests with the k8s resolver and RBAC. The Kubernetes
+example exports canonical traces only; raw preservation is a separate
+configuration choice shown by `examples/otelcol-s3.yaml`.
 
 The connector itself has three paths with different statefulness:
 
@@ -151,12 +151,14 @@ dependency. Only worth revisiting if a broker already sits in the path.
 
 ## Recovery property worth keeping in mind
 
-Because raw pipelines preserve source logs and traces independently, and
-because trace IDs are deterministic given the complete event set, canonical
-output can be rebuilt after any topology churn or incident by replaying raw
-logs through a single instance. Downstream consumers dedupe on trace ID. This
-works today and is the safety net that makes option B's remap caveat
-acceptable.
+When a deployment configures raw-preservation branches, source logs and traces
+remain available independently of canonical output. Because trace IDs are
+deterministic given the complete event set, canonical output can then be
+rebuilt after topology churn or an incident by replaying raw logs through a
+single instance. Downstream consumers dedupe on trace ID. The S3 example shows
+the required raw branches; the minimal Kubernetes HA example does not include
+them, so this recovery path is unavailable there unless the operator adds raw
+exporters and storage.
 
 ## Recommendation
 

@@ -6,6 +6,7 @@ package cursor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/otel/attribute"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
 	"go.uber.org/zap"
 
@@ -298,10 +300,21 @@ func TestTruncatedBurstStillClosesQuietUnderRedeliveryStorm(t *testing.T) {
 		"a storm-deferred burst must close quiet, not timeout")
 }
 
+func TestTruncationBoundsEventsAndIDs(t *testing.T) {
+	burst := &burstState{}
+	base := time.Now()
+	for i := 0; i < 100; i++ {
+		burst.add(Event{Name: NameAPIRequest, EventID: fmt.Sprint(i), Timestamp: base.Add(time.Duration(i) * time.Second)}, base, 1)
+	}
+	require.Len(t, burst.events, 1)
+	require.Len(t, burst.seen, 1)
+}
+
 // TestPostTruncationRecordDoesNotMutateBurstState pins that a record arriving
 // after truncation leaves no trace in burst state: it must not refresh
-// first/last/lastSeen (which decide the quiet window) -- but its EventID must be
-// recorded so redeliveries deduplicate exactly.
+// first/last/lastSeen (which decide the quiet window). Overflow IDs are not
+// retained, so overflow redeliveries are re-examined, but they remain
+// side-effect free.
 func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
 	cfg := codex.NewDefaultConfig()
 	cfg.ReorderWindow = 5 * time.Millisecond
@@ -316,7 +329,7 @@ func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
 	burst.add(overflow, now.Add(time.Hour), 2)
 	require.True(t, burst.truncated)
 	require.Len(t, burst.events, 2)
-	require.Contains(t, burst.seen, "ev-c")
+	require.NotContains(t, burst.seen, "ev-c", "overflow IDs are not retained")
 	require.True(t, burst.lastSeen.Equal(now))
 	require.Equal(t, base, burst.first)
 	require.True(t, burst.last.Equal(base.Add(time.Millisecond)))
@@ -330,6 +343,46 @@ func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
 	finalized := instance.collectReady(now.Add(cfg.ReorderWindow))
 	require.Len(t, finalized, 1)
 	require.Equal(t, "quiet", finalized[0].reason)
+}
+
+func TestTelemetryCountsRetainedDuplicateAfterTruncation(t *testing.T) {
+	cfg := codex.NewDefaultConfig()
+	cfg.MaxEvents = 1
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	set := testSettings()
+	set.MeterProvider = provider
+	edge, err := New(cfg, set, &traceSink{})
+	require.NoError(t, err)
+	instance := edge.(*cursorConnector)
+	t.Cleanup(func() {
+		require.NoError(t, instance.Shutdown(context.Background()))
+		require.NoError(t, provider.Shutdown(context.Background()))
+	})
+
+	base := time.Now()
+	retained := makeCursorLogs(apiRequest(base, "a", "m", 1, 1))
+	overflow := makeCursorLogs(apiRequest(base.Add(time.Second), "b", "m", 1, 1))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), retained))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), overflow))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), retained))
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(context.Background(), &rm))
+	var dropped int64
+	for _, sm := range rm.ScopeMetrics {
+		for _, metric := range sm.Metrics {
+			if metric.Name != "otelcol_coding_agent_events_dropped" {
+				continue
+			}
+			sum, ok := metric.Data.(metricdata.Sum[int64])
+			require.True(t, ok)
+			for _, point := range sum.DataPoints {
+				dropped += point.Value
+			}
+		}
+	}
+	require.Equal(t, int64(1), dropped)
 }
 
 func TestIgnoresForeignAndScopelessRecords(t *testing.T) {
@@ -388,7 +441,7 @@ func TestEmittedTurnMetricSkipsFailedDelivery(t *testing.T) {
 
 	require.Error(t, instance.Shutdown(context.Background()))
 
-	var rm sdkmetric.ResourceMetrics
+	var rm metricdata.ResourceMetrics
 	require.NoError(t, testTel.Reader.Collect(context.Background(), &rm))
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
@@ -414,7 +467,7 @@ func TestEmittedTurnMetricCountsSuccessfulDelivery(t *testing.T) {
 	require.NoError(t, instance.Shutdown(context.Background()))
 
 	metadatatest.AssertEqualCodingAgentTurnsEmitted(t, testTel,
-		[]sdkmetric.DataPoint[int64]{{
+		[]metricdata.DataPoint[int64]{{
 			Attributes: attribute.NewSet(attribute.String("finish_reason", "shutdown")),
 			Value:      1,
 		}},

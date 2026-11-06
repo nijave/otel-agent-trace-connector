@@ -322,6 +322,59 @@ func TestResponseWithoutTurnStaysBareChat(t *testing.T) {
 	require.Equal(t, pcommon.SpanID([8]byte{7}), chat.ParentSpanID(), "no root in the batch: the wire parent stays for the backend to reattach")
 }
 
+func TestResponseModelIsScopedToTrace(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := newCodexGroup(input)
+
+	firstTurn := addTurn(spans)
+	firstTurn.Attributes().PutStr("model", "model-a")
+	addResponse(spans, "response.completed", 3, 1)
+
+	traceTwo := pcommon.TraceID([16]byte{2})
+	secondTurn := addTurn(spans)
+	secondTurn.SetTraceID(traceTwo)
+	secondTurn.SetSpanID(pcommon.SpanID([8]byte{11}))
+	secondTurn.SetStartTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(20 * time.Second)))
+	secondTurn.SetEndTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(30 * time.Second)))
+	secondTurn.Attributes().PutStr("model", "model-b")
+	secondResponse := addResponse(spans, "response.completed", 3, 1)
+	secondResponse.SetTraceID(traceTwo)
+	secondResponse.SetStartTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(22 * time.Second)))
+	secondResponse.SetEndTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(26 * time.Second)))
+
+	out := normalizeOne(t, input)
+	require.Equal(t, "model-a", attrString(t, findSpan(t, out, "chat model-a"), "gen_ai.request.model"))
+	require.Equal(t, "model-b", attrString(t, findSpan(t, out, "chat model-b"), "gen_ai.request.model"))
+}
+
+func TestBatchTurnModelsUsesEarliestTurnPerTrace(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := newCodexGroup(input)
+	late := addTurn(spans)
+	late.SetSpanID(pcommon.SpanID([8]byte{11}))
+	late.SetStartTimestamp(pcommon.NewTimestampFromTime(baseTime.Add(20 * time.Second)))
+	late.Attributes().PutStr("model", "late-model")
+	early := addTurn(spans)
+	early.Attributes().PutStr("model", "early-model")
+
+	models := batchTurnModels(input)
+	require.Equal(t, "early-model", models[traceOne])
+}
+
+func TestResponseModelDoesNotCrossResourceGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	turn := addTurn(newCodexGroup(input))
+	turn.Attributes().PutStr("model", "resource-model")
+	children := newCodexGroup(input)
+	response := addResponse(children, "response.completed", 3, 1)
+	response.SetTraceID(pcommon.TraceID([16]byte{2}))
+
+	out := normalizeOne(t, input)
+	chat := findSpan(t, out, "chat")
+	_, hasModel := chat.Attributes().Get("gen_ai.request.model")
+	require.False(t, hasModel)
+}
+
 func TestResponseUsageCoercesStrings(t *testing.T) {
 	input := ptrace.NewTraces()
 	spans := newCodexGroup(input)
@@ -515,4 +568,30 @@ func TestResourceIsFiltered(t *testing.T) {
 	require.False(t, hasEnv, "non-canonical resource keys drop")
 	_, hasService := resource.Get("service.name")
 	require.True(t, hasService)
+}
+
+func TestKeptSpanEventsUseCanonicalPolicy(t *testing.T) {
+	input := ptrace.NewTraces()
+	turn := addTurn(newCodexGroup(input))
+	contentEvent := turn.Events().AppendEmpty()
+	contentEvent.SetName("gen_ai.user.message")
+	contentEvent.Attributes().PutStr("content", "sensitive prompt")
+	operational := turn.Events().AppendEmpty()
+	operational.SetName("codex.turn.status")
+	operational.SetTimestamp(turn.StartTimestamp())
+	operational.Attributes().PutStr("prompt", "sensitive prompt")
+	operational.Attributes().PutStr("exception.type", "TurnError")
+
+	root := findSpan(t, normalizeOne(t, input), "invoke_agent codex")
+	require.Equal(t, 1, root.Events().Len())
+	event := root.Events().At(0)
+	require.Equal(t, "codex.turn.status", event.Name())
+	_, hasPrompt := event.Attributes().Get("prompt")
+	require.False(t, hasPrompt)
+	exception, ok := event.Attributes().Get("exception.type")
+	require.True(t, ok)
+	require.Equal(t, "TurnError", exception.Str())
+	require.Equal(t, 2, turn.Events().Len(), "raw input is unchanged")
+	_, rawPrompt := turn.Events().At(1).Attributes().Get("prompt")
+	require.True(t, rawPrompt)
 }

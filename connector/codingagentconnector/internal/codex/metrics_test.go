@@ -30,6 +30,21 @@ func newMeteredConnector(t *testing.T, cfg *Config, next consumer.Traces) (*codi
 	return instance, reader
 }
 
+func TestTelemetryCountsRetainedDuplicateAfterTruncation(t *testing.T) {
+	cfg := NewDefaultConfig()
+	cfg.MaxEvents = 1
+	instance, reader := newMeteredConnector(t, cfg, &traceSink{})
+	base := time.Now()
+	retained := makeLogs(testEvent("codex.user_prompt", base, map[string]any{"model": "gpt-test"}))
+	overflow := makeLogs(testEvent("codex.api_request", base.Add(time.Second), map[string]any{"duration_ms": int64(10)}))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), retained))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), overflow))
+	require.NoError(t, instance.ConsumeLogs(context.Background(), retained))
+
+	rm := collectMetrics(t, reader)
+	require.Equal(t, int64(1), counterValue(t, rm, "otelcol_coding_agent_events_dropped"))
+}
+
 func collectMetrics(t *testing.T, reader *sdkmetric.ManualReader) metricdata.ResourceMetrics {
 	t.Helper()
 	var rm metricdata.ResourceMetrics

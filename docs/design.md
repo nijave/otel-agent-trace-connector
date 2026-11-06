@@ -305,11 +305,17 @@ the same complete event set idempotent. It does not deduplicate exports by
 itself, and an orphan turn without a prompt may derive a different ID if its
 earliest observed event changes across replay boundaries.
 
-Within a live turn, redelivered events deduplicate by a content
+Within a live turn, redelivered retained events deduplicate by a content
 fingerprint (event name, timestamp, and retained attributes). OTLP delivery is
 at-least-once, so without this a resent batch would double-count token usage,
 duplicate `chat`/`execute_tool` spans, and let a redelivered prompt falsely
-supersede its own turn. The fingerprint set bounds at `max_events_per_turn`.
+supersede its own turn. The event slice and fingerprint set both bound at
+`max_events_per_turn`. Once the turn is full, overflow events are discarded
+without retaining their fingerprints or changing timestamps, completion state,
+or finalization clocks. A redelivered overflow event may be examined again,
+but remains side-effect free; duplicate retained events still deduplicate
+exactly. This preserves a hard per-turn memory bound during at-least-once
+delivery storms.
 
 ### Bounds
 
@@ -345,10 +351,13 @@ Finalization reasons:
 
 ### Dedupe and replay
 
-Within a live burst, redelivered records dedupe exactly on `cursor.event.id`,
-the wire's own dedupe key — simpler and stronger than the Codex content
-fingerprint. The id set bounds at `max_events_per_turn` with the rest of the
-burst state.
+Within a live burst, redelivered retained records deduplicate exactly on
+`cursor.event.id`, the wire's own dedupe key — simpler and stronger than the
+Codex content fingerprint. The event slice and ID set both bound at
+`max_events_per_turn`. Once the burst is full, overflow records are discarded
+without retaining their IDs or changing timestamps or finalization clocks.
+A redelivered overflow record may be examined again, but remains side-effect
+free; duplicate retained records still deduplicate exactly.
 
 Trace IDs derive from SHA-256 of the provider marker `cursor`, the
 conversation id, and the burst's first `cursor.event.id`; span IDs add a
@@ -459,10 +468,13 @@ to at most one normalizer:
    available in the parallel raw pipeline.
 
 Claude-first claiming means a resource group never emits twice and
-existing Claude deployments see no behavior change. Like the Claude edge,
-the GenAI normalizer copies the whole claimed resource group, including
-spans from the application's own tracer scopes, so an ad-hoc agent's manual
-parent spans keep their children and trace parentage stays intact.
+existing Claude deployments see no behavior change. The GenAI normalizer
+copies each claimed resource group before modification, then retains only
+spans from matched GenAI scopes that carry `gen_ai.operation.name`.
+Application spans on unmatched scopes and unclassified matched-scope spans
+drop from canonical output; the raw pipeline preserves them. Hierarchy, IDs,
+links, kind, and status of surviving spans pass through without synthesized
+roots or replacement parents.
 
 ### Detection
 
@@ -474,10 +486,10 @@ Scope-name matching, evaluated per scope-spans block:
 | `opentelemetry.util.genai` (prefix) | openai-v2 experimental mode and direct util-genai users |
 | `strands.telemetry` (prefix) | Strands Agents SDK built-in tracer |
 
-Within a claimed group, the normalizer rewrites a span only when its scope
-matched and it carries `gen_ai.operation.name`. Everything else in the group
-passes through untouched, mirroring how the Claude edge leaves
-`claude_code.tool.execution` and hook spans alone.
+Within a claimed group, the normalizer retains only spans from matched GenAI
+scopes that carry `gen_ai.operation.name`; unclassified matched-scope spans
+and application spans on unmatched scopes drop from canonical output and the
+raw pipeline preserves them.
 
 ### Name normalization
 

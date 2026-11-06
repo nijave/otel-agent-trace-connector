@@ -100,13 +100,27 @@ func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {
 			ss := rs.ScopeSpans().At(j)
 			spans := ss.Spans()
+			// Canonical output requires gen_ai.operation.name: without it a
+			// matched-scope span cannot be classified, so it drops here (the
+			// raw pipelines preserve it). No operation is inferred from the
+			// span name.
+			spans.RemoveIf(func(span ptrace.Span) bool {
+				_, ok := span.Attributes().Get("gen_ai.operation.name")
+				return !ok
+			})
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
 				normalizeSpan(span, ss.Scope().Name(), serviceName, serviceVersion, n.captureIdentity)
 				content.Strip(span)
 			}
 		}
+		rs.ScopeSpans().RemoveIf(func(ss ptrace.ScopeSpans) bool {
+			return ss.Spans().Len() == 0
+		})
 	}
+	output.ResourceSpans().RemoveIf(func(rs ptrace.ResourceSpans) bool {
+		return rs.ScopeSpans().Len() == 0
+	})
 	if output.SpanCount() == 0 {
 		return nil
 	}

@@ -1047,3 +1047,34 @@ func TestPiTraceNormalizerMapsCost(t *testing.T) {
 		})
 	}
 }
+
+func TestPiKeptSpanEventsUseCanonicalPolicy(t *testing.T) {
+	input := ptrace.NewTraces()
+	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName(scopePrefix)
+	turn := scope.Spans().AppendEmpty()
+	turn.SetName(turnSpanName)
+	contentEvent := turn.Events().AppendEmpty()
+	contentEvent.SetName("gen_ai.user.message")
+	contentEvent.Attributes().PutStr("content", "sensitive prompt")
+	operational := turn.Events().AppendEmpty()
+	operational.SetName("llm.status")
+	operational.SetTimestamp(turn.StartTimestamp())
+	operational.Attributes().PutStr("langfuse.observation.output", "sensitive output")
+	operational.Attributes().PutStr("exception.type", "GenerationError")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	root := findSpan(t, reassemble(sink), "invoke_agent pi")
+	require.Equal(t, 1, root.Events().Len())
+	event := root.Events().At(0)
+	require.Equal(t, "llm.status", event.Name())
+	_, hasOutput := event.Attributes().Get("langfuse.observation.output")
+	require.False(t, hasOutput)
+	exception, ok := event.Attributes().Get("exception.type")
+	require.True(t, ok)
+	require.Equal(t, "GenerationError", exception.Str())
+	require.Equal(t, 2, turn.Events().Len(), "raw input is unchanged")
+	_, rawOutput := turn.Events().At(1).Attributes().Get("langfuse.observation.output")
+	require.True(t, rawOutput)
+}
