@@ -276,6 +276,30 @@ func addResponse(spans ptrace.SpanSlice, name string, id, parent byte) ptrace.Sp
 	return span
 }
 
+// TestFailureStatusPassesThrough pins that the edge never invents or clears
+// span status: a wire Error on the turn or the response span reaches the
+// canonical root and chat span unchanged. The pinned capture carries no failed
+// span, so this synthetic shape is the only coverage of a failed native call.
+func TestFailureStatusPassesThrough(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := newCodexGroup(input)
+	turn := addTurn(spans)
+	turn.Status().SetCode(ptrace.StatusCodeError)
+	turn.Status().SetMessage("turn failed")
+	response := addResponse(spans, "handle_responses", 3, 1)
+	response.Status().SetCode(ptrace.StatusCodeError)
+	response.Status().SetMessage("provider error")
+
+	out := normalizeOne(t, input)
+	require.Equal(t, 2, out.Len())
+	root := findSpan(t, out, "invoke_agent codex")
+	require.Equal(t, ptrace.StatusCodeError, root.Status().Code())
+	require.Equal(t, "turn failed", root.Status().Message())
+	chat := findSpan(t, out, "chat gpt-5.6-luna")
+	require.Equal(t, ptrace.StatusCodeError, chat.Status().Code())
+	require.Equal(t, "provider error", chat.Status().Message())
+}
+
 // TestResponseSpanBecomesChat pins the chat mapping: classification is by
 // the gen_ai.usage.input_tokens attribute, whatever the wire name (Codex
 // renames the span to the response event type), the model comes from the

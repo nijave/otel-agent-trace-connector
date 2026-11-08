@@ -190,6 +190,10 @@ func appendChatSpans(spans ptrace.SpanSlice, traceID pcommon.TraceID, parentID p
 			// Wire units are integer milliseconds; canonical stores seconds.
 			span.Attributes().PutDouble("gen_ai.response.time_to_first_chunk", float64(ms)/1000)
 		}
+		if message := stringValue(event.attrs["error.message"]); message != "" {
+			span.Status().SetCode(ptrace.StatusCodeError)
+			span.Status().SetMessage(message)
+		}
 		completionIndex++
 	}
 }
@@ -335,17 +339,19 @@ func duplicateFrameCompletions(events []agentEvent) map[int]struct{} {
 }
 
 // describesModelCall reports whether a response.completed record describes a
-// model call. A failed completion reports only error.message, names no call, and
-// stays dropped.
+// model call. A failed completion carries only error.message, but it still ends
+// one call (Codex logs it once per failed stream), so it keeps that call's chat
+// span and reports the failure through its status.
 func describesModelCall(attrs map[string]any) bool {
-	return completionReportsCall(attrs) || isFrameCompletion(attrs)
+	return completionReportsCall(attrs) || isFrameCompletion(attrs) || stringValue(attrs["error.message"]) != ""
 }
 
 // isFrameCompletion reports whether a response.completed record is the SSE frame
 // poll record: it carries the frame's Codex-measured duration and nothing the
-// provider reported.
+// provider reported. A record reporting a failure is never a frame record: it
+// must not be paired away as the duplicate of a later completion.
 func isFrameCompletion(attrs map[string]any) bool {
-	if completionReportsCall(attrs) {
+	if completionReportsCall(attrs) || stringValue(attrs["error.message"]) != "" {
 		return false
 	}
 	_, ok := int64Value(attrs["duration_ms"])
