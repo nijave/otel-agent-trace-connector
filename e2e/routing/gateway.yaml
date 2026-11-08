@@ -1,7 +1,12 @@
-# Tier-1 gateway for the routing e2e: stock otelcol-contrib. Routes each
-# record by conversation attribute so every event of one conversation reaches
-# the same tier-2 replica. The static resolver stands in for the k8s resolver
-# the examples/k8s-ha manifests use; the routing semantics are identical.
+# Tier-1 gateway for the routing e2e: stock otelcol-contrib. Routes stateless
+# telemetry by trace ID so load spreads across tier-2 replicas, and keeps
+# Codex/Cursor records that carry a conversation attribute on the
+# conversation route so one turn's records stay on one replica. The routing
+# connector reads log-record attributes (Codex sets conversation.id on the
+# record, not the resource) and moves matched records out of the batch;
+# records without a conversation attribute fall to the default traceID
+# pipeline. The static resolver stands in for the k8s resolver the
+# examples/k8s-ha manifests use; the routing semantics are identical.
 receivers:
   otlp:
     protocols:
@@ -11,7 +16,7 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 exporters:
-  load_balancing:
+  load_balancing/conversation:
     routing_key: attributes
     routing_attributes:
       - conversation.id
@@ -29,12 +34,40 @@ exporters:
         hostnames:
           - collector-a:4317
           - collector-b:4317
+  load_balancing/trace:
+    routing_key: traceID
+    protocol:
+      otlp:
+        tls:
+          insecure: true
+        retry_on_failure:
+          enabled: true
+        sending_queue:
+          enabled: true
+    resolver:
+      static:
+        hostnames:
+          - collector-a:4317
+          - collector-b:4317
+
+connectors:
+  routing:
+    default_pipelines: [logs/trace]
+    table:
+      - condition: log.attributes["conversation.id"] != nil or log.attributes["cursor.conversation.id"] != nil
+        pipelines: [logs/conversation]
 
 service:
   pipelines:
-    logs:
+    logs/in:
       receivers: [otlp]
-      exporters: [load_balancing]
+      exporters: [routing]
+    logs/conversation:
+      receivers: [routing]
+      exporters: [load_balancing/conversation]
+    logs/trace:
+      receivers: [routing]
+      exporters: [load_balancing/trace]
     traces:
       receivers: [otlp]
-      exporters: [load_balancing]
+      exporters: [load_balancing/trace]
