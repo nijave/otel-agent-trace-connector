@@ -1,0 +1,48 @@
+# Metrics reference configuration: delta-to-cumulative before Prometheus
+# remote write. Claude Code (and Cursor's Enterprise-beta export) emit delta
+# temporality by default, and the prometheus_remote_write exporter drops
+# non-cumulative monotonic sums and histograms, so without this conversion
+# only target_info reaches a remote-write backend.
+#
+# delta_to_cumulative keeps accumulation state in memory per metric stream.
+# In a multi-instance (HA) deployment, every sample of a stream must reach
+# the same replica: route metrics through a dedicated load_balancing
+# exporter with `routing_key: streamID` at tier 1. See
+# docs/multi-instance-ha.md.
+#
+# The connector does not normalize metrics; this pipeline forwards them
+# unchanged apart from the temporality conversion.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  delta_to_cumulative:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  prometheus_remote_write:
+    http:
+      endpoint: ${env:PROMETHEUS_RW_ENDPOINT:-http://prometheus:9090/api/v1/write}
+    # Expose resource attributes as metric labels. This is the non-deprecated
+    # equivalent of `resource_to_telemetry_conversion.enabled: true`.
+    resource_constant_labels:
+      included: ["*"]
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [delta_to_cumulative, batch]
+      exporters: [prometheus_remote_write]

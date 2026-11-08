@@ -9,6 +9,13 @@ this file drills into the metrics dimension only. It does not propose
 connector support; it records what the sources say so a decision can rest on
 evidence.
 
+Connector scope note: the connector still normalizes only traces and logs —
+metrics pass through unmodified. The distribution ships a reference metrics
+pipeline ([examples/otelcol-metrics.yaml](../examples/otelcol-metrics.yaml))
+that converts delta to cumulative before Prometheus remote write, because
+Claude Code and Cursor export delta temporality by default and the remote
+write exporter drops non-cumulative monotonic sums and histograms.
+
 Research refreshed 2026-08-21 against primary sources (official docs and the
 harnesses' own source trees). Provider schemas are not stable APIs; treat the
 attribute names below as snapshots, not contracts. On 2026-10-19 each
