@@ -67,6 +67,14 @@ with the turn by trace id. The 2026-10-23 capture also shows one tool span
 under a detached task with a trace id of its own; it stays parentless and
 joins the turn only through `gen_ai.conversation.id` on the root.
 
+Failure is not on the pinned capture's wire: no span carries Status Error and
+none carries an error attribute, so the edge applies no failure rule of its
+own and status simply passes through — a wire Error on a kept turn or response
+span reaches canonical output unchanged. A call that fails before reporting
+usage carries no `gen_ai.usage.input_tokens`, so its response span drops and
+the failure stays invisible on this edge; the logs edge is the Codex source for
+failures (see [Logs edge vs native traces edge](#logs-edge-vs-native-traces-edge)).
+
 Running Codex logs and traces into one connector produces two canonical traces
 per turn, one from each edge (`coding_agent.source` = `normalized` from logs,
 `native` from traces). Pick one with the connector's `signals` setting or by
@@ -186,7 +194,7 @@ Event-to-span mapping:
 |---|---|
 | `codex.sse_event` (`event.kind=response.completed`, usage/ttft-bearing) | `chat <model>` span |
 | `codex.sse_event` (`event.kind=response.completed`, carrying only `duration_ms`) | duplicate of the same call's usage-bearing record → dropped; the call's only record when the provider reported no usage → `chat <model>` span without usage keys |
-| failed `response.completed` carrying only `error.message` | dropped |
+| failed `response.completed` carrying only `error.message` | `chat <model>` span with Status Error and the message (Codex logs one such record per failed response stream) |
 | `codex.user_prompt` | turn boundary / root source event (content stripped) |
 | `codex.tool_result` | `execute_tool <tool>` span |
 | `codex.api_request`, `codex.startup_phase`, … | root span events (name + timestamp only) |
@@ -245,7 +253,8 @@ out of canonical output.
 | `service_tier` | `coding_agent.request.service_tier` | mapped (the request's tier, not a provider value; absent when the request sets no service tier, as in the pinned 0.163.0 capture; absent when the provider reported no usage, because the frame record carries no tier field) |
 | `duration_ms` | — | dropped (used for span bounds only; the only key that identifies the frame record) |
 | `event.kind`, `event.timestamp` | — | dropped (span name/bounds carry them) |
-| `slug`, `originator`, `terminal.type`, `auth_mode`, `error.message` | — | dropped |
+| `error.message` | span Status = Error, message = the wire value | mapped to status (a record carrying it is the failed call's chat span; no attribute is written, and the record is never treated as a frame record) |
+| `slug`, `originator`, `terminal.type`, `auth_mode` | — | dropped |
 
 ##### codex.tool_result → execute_tool
 
@@ -326,6 +335,102 @@ they appear on every emitted span except where noted:
 | `exception.*` | not provided |
 | `coding_agent.usage.cost` | not provided (`codex.turn_cost` is a log-only event the edge does not read, and the pinned capture carries none) |
 | `coding_agent.request.attempt` | not provided (the `codex.api_request` event carries a 0-based `attempt` retry counter, but that event produces no canonical span — it only continues the turn — and the connector records no 0-based number under this 1-based key; mapping it would also need turn state) |
+
+## Logs edge vs native traces edge
+
+Both edges carry the same Codex turns, and `signals` (see the README) picks
+which one an operator consumes; the connector never dedupes across them. Over
+the same 7 days (to 2026-11-08) the two implementations produced different
+numbers for the same conversations: the logs edge 27 turns, 94 chat spans, 82 of
+them carrying `gen_ai.response.time_to_first_chunk`, and 6.35M input tokens;
+the native edge 17 turns, 13 chat spans, no TTFC, 11.75M input tokens, and 20 of
+its 37 canonical traces without an `invoke_agent codex` root. The pinned
+captures (`internal/codex/testdata/codex-native-logs.json`,
+`internal/codextraces/testdata/codex-native-traces.json`) each hold one turn
+with two model calls, and on them the edges agree: two chat spans each.
+
+**Chat spans — one per call on both edges, not one per turn.** The logs edge
+emits a chat span per `response.completed` record that describes a call
+(`internal/codex/trace.go`, `appendChatSpans` / `describesModelCall`),
+including the usage-less frame record that stands in for a call whose provider
+reported no usage. The native edge classifies by the
+`gen_ai.usage.input_tokens` attribute (`internal/codextraces/normalizer.go`,
+`normalizeSpan` / `chatMarkerAttr`), and Codex records that attribute only on
+the loop iteration that receives `ResponseEvent::Completed { token_usage:
+Some(_) }` (`otel/src/events/session_telemetry.rs:653-672` in
+`rust-v0.163.0`). So every native response span without usage — a provider that
+reported none, a call that errored, an interrupted stream — drops, while the
+logs edge still gives that call a chat span. Codex also opens
+`handle_responses` inside its response-event loop
+(`core/src/session/turn.rs:2715`), so one turn can export several response
+spans for one call, and only the iteration that receives the completion
+carries usage: the pinned traces capture holds four response spans for the
+turn's two calls, and the two without usage drop. Those mechanisms cost the
+native edge usage-less and failed calls, but both captures show per-call
+parity, so they do not explain a 13-vs-94 shortfall; what remains points at
+spans that never reached the collector (the native exporter is opt-in, and a
+span exports only when it ends) — see the follow-ups.
+
+**Failures.** The logs edge now sets Status Error and the wire's `error.message`
+on the failed call's chat span; Codex logs exactly one such record per failed
+response stream (`otel/src/events/session_telemetry.rs:1115-1126`). The native
+edge keeps a wire Error status on a kept span but has no failure signal of its
+own to map, and a failed call records no usage on its response span, so it
+produces no chat span at all. Failures are therefore a logs-edge fact.
+
+**TTFC — not on the native wire.** Codex records `ttft_ms` on the usage-bearing
+`codex.sse_event` log record only; no trace span declares the field
+(`core/src/session/turn.rs:2715-2726`), and no span in the pinned capture
+carries it. The native edge maps no `gen_ai.response.time_to_first_chunk` (see
+"Canonical keys with no source on the traces wire" above); use the logs edge for
+TTFT.
+
+**Input tokens — the same counters, counted twice.** Both edges copy the
+provider's `usage.input_tokens` verbatim (the two captures agree on the first
+call: 7927), but the native edge also maps the turn span's per-turn totals onto
+the root (`internal/codextraces/normalizer.go`, `turnUsageKeys`), and a turn
+total is exactly the sum of that turn's call counters: the pinned capture's root
+carries 15965 for chats of 7927 and 8038, so summing
+`gen_ai.usage.input_tokens` over every canonical span counts each token twice.
+The logs edge drops turn totals for that reason (row in "invoke_agent codex
+root" above), so the two edges are not sum-compatible. Cached tokens are not a
+second count on either wire: `input_tokens` already includes them (the capture's
+second chat reports 8038 input with 7924 cache-read and 111 cache-write, and the
+turn's totals are the sums of its calls' counters: 7924 cache-read = 0 + 7924,
+8035 cache-write = 7924 + 111). The 11.75M figure is consistent with a sum over
+roots plus chats, while the logs edge carries no root usage at all. Mapping the
+turn totals is deliberate — the two signals carry different facts (see
+`docs/superpowers/specs/2026-10-19-harness-feature-gaps-design.md`) — so it
+stays; a consumer comparing the edges must sum chat spans only.
+
+**Rootless traces — spans whose turn is not in their batch.** The edge is
+stateless: it reparents a kept child only onto a root with the same trace id in
+the same batch (`internal/codextraces/normalizer.go`, `reparentOrphans`) and
+keeps the wire parent id otherwise. Codex exports a span when it ends and closes
+the turn span last, so a batch can carry a turn's response and tool spans
+without the turn; and a span created in a detached task carries a trace id of
+its own. The pinned capture shows both shapes: its canonical output has one
+trace with the root (2 chats + 1 tool) and one rootless trace holding a single
+`execute_tool exec_command` whose wire parent is not in the batch and whose
+trace id differs from the turn's. Only a `session_task.turn` / `.compact` /
+`.review` span can become a root (`turnSpanNames`); `codex.exec`,
+`session_task.run`, and every other span drop, so none of them can supply a
+missing one. Live, 20 of 37 native canonical traces have no root — the same
+shape, at scale.
+
+Follow-ups (each larger than a stateless mapping fix):
+
+- **Find the missing native spans.** For one window, count `handle_responses`
+  spans carrying `gen_ai.usage.input_tokens` in a raw traces pipeline and
+  compare it with the canonical chat-span count. If the raw spans are already
+  absent, the loss is upstream of the connector (opt-in `trace_exporter`
+  coverage, or the exporter's bounded queue), not in this edge.
+- **Rootless traces need correlation the edge cannot do statelessly:** a backend
+  join on `gen_ai.conversation.id` (roots carry it; rootless children do not),
+  or cross-batch turn correlation that would make the edge stateful.
+- **Sum compatibility** between the edges would need the native root to stop
+  mapping turn totals, which is the only usage the native edge keeps for a turn
+  whose chat spans are missing. That is a product decision, not a bug fix.
 
 ## Metrics
 
