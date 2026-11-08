@@ -26,9 +26,11 @@ checked 2026-10-19).
 | Logs | via extension (`pi-otel` only, of extensions surveyed) | not consumed |
 | Metrics | via extension (`pi-otel-telemetry`, `pi-otel`, `maxmalkin/pi-OTEL`, `devkade/pi-opentelemetry`) | not applicable |
 
-Last verified: 2026-10-19 (all rows; extension package metadata and source,
-plus live captures of `@amaster.ai/pi-telemetry` 0.1.9 under pi 0.84.2 and
-0.1.28 under pi 1.3.0 for this file's attribute matrix). See Sources below.
+Last verified: 2026-11-08 (subagent lineage rows against the
+`@amaster.ai/pi-telemetry` 0.1.31 package source); all other rows 2026-10-19
+(extension package metadata and source, plus live captures of
+`@amaster.ai/pi-telemetry` 0.1.9 under pi 0.84.2 and 0.1.28 under pi 1.3.0
+for this file's attribute matrix). See Sources below.
 
 ## Traces
 
@@ -63,6 +65,14 @@ below plus the connector-written set are written into a fresh map that
 replaces the raw one. The mapping is an allowlist by construction, so a raw
 key this file does not name — including whatever a future extension release
 adds — cannot reach canonical output.
+
+Subagent attribution is stateless and verbatim: a subagent runs as its own pi
+process inside the parent session's trace, and every event it publishes
+carries the subagent's own session id (`childSessionId`) and the spawning
+session's id (`parentSessionId`). Those two keys map onto `gen_ai.agent.id`
+and `coding_agent.agent.parent_id` on the subagent's `chat` and
+`execute_tool` spans; main-agent spans carry neither key. The connector does
+no cross-span lookup: the same span states both the agent and its parent.
 
 #### Attribute matrix
 
@@ -99,6 +109,8 @@ only in one serialized object, provider only inside the model id).
 | `reasoning`, `cacheWrite1h` (standalone attributes) | — | dropped (0.1.28 duplicates the same numbers inside the `usage` object, which is the source the edge reads) |
 | `llmGenerationId` | — | dropped |
 | `sessionId` | `gen_ai.conversation.id` | mapped (every raw Pi span carries its own `sessionId`, so the canonical `chat` span carries the conversation id even when Pi exports children in batches without their turn; absent when empty or when the wire carries a non-empty native `gen_ai.conversation.id`, which wins) |
+| `childSessionId` | `gen_ai.agent.id` | mapped (verbatim, when non-empty; only a subagent pi process stamps the events it publishes with its own session id under this key — `@amaster.ai/pi-telemetry` `dist/extension.js`, `dist/langfuse/metadata.js` — and the same field is what switches the raw span name to `llm-generation [subagent] …`; it equals the span's `gen_ai.conversation.id`, and main-agent spans carry neither this key nor the parent key below) |
+| `parentSessionId` | `coding_agent.agent.parent_id` | mapped (verbatim, when non-empty; the spawning session's id, joinable to the parent's `gen_ai.conversation.id`; present only on spans a subagent process emitted) |
 | `status`, `api`, `source`, `costSource` | — | dropped |
 
 Provider values may carry harness/route labels (for example a router or
@@ -135,6 +147,8 @@ allowlist. Raw events remain unchanged in the raw pipeline.
 | `toolCallId` | `gen_ai.tool.call.id` | mapped (when non-empty; `toolName` alone still produces the span) |
 | `status` | — | dropped |
 | `sessionId` | `gen_ai.conversation.id` | mapped (absent when empty or when the wire carries a non-empty native `gen_ai.conversation.id`, which wins) |
+| `childSessionId` | `gen_ai.agent.id` | mapped (verbatim, when non-empty; a subagent process stamps its tool spans with the same lineage keys as its generations) |
+| `parentSessionId` | `coding_agent.agent.parent_id` | mapped (verbatim, when non-empty; present only on spans a subagent process emitted) |
 | `durationMs` | — | dropped (0.1.28 tool duration; no canonical counterpart) |
 
 ##### llm-stream span → dropped
@@ -178,9 +192,9 @@ drop without a denylist entry naming them.
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided (0.1.28 carries `max_tokens` only inside Langfuse model-parameter bags, which the edge does not parse) |
 | `gen_ai.response.model` | not provided |
 | `server.address` / `server.port` | not provided |
-| `gen_ai.agent.id` / `gen_ai.agent.version` | not provided |
+| `gen_ai.agent.version` | not provided |
 | `exception.*` | not provided |
-| `coding_agent.agent.parent_id` | not provided |
+| `gen_ai.agent.id` / `coding_agent.agent.parent_id` on the `invoke_agent` root and on main-agent spans | not provided (mapped on a subagent's `chat` and `execute_tool` spans instead — the wire states the subagent's `childSessionId`/`parentSessionId` only there; a subagent's own turn exports as a `subagent …` span, which is not a canonical shape and drops) |
 
 ## Logs
 
@@ -288,6 +302,13 @@ the two not published under the surveyed name), all checked 2026-10-19.
   `package.json` depends on no OTel logs or metrics SDK, and `dist/otel.js`
   and `dist/langfuse/exporters.js` show the resource and
   `completion_start_time` handling (checked 2026-10-19)
+- `@amaster.ai/pi-telemetry` 0.1.31 package source (npm install inspected
+  2026-11-08): `dist/extension.js` (a subagent process stamps every event it
+  publishes with `childSessionId: localSessionId` and
+  `parentSessionId: inheritedSessionId`), `dist/langfuse/metadata.js`
+  (`lineageMetadata` spreads both onto every generation and tool span),
+  `dist/langfuse/mapping.js` (the `[subagent]` span-name marker is derived
+  from the same `childSessionId`) — the subagent lineage rows above
 - Live capture, 2026-10-19: pi 1.3.0 + `@amaster.ai/pi-telemetry` 0.1.28,
   model `opencode-go/claude-haiku-5-5` (the `completion_start_time` and
   resource `telemetry.sdk.name` observations)

@@ -441,6 +441,102 @@ func TestPiTraceNormalizerMapsConversationIDOnEverySpan(t *testing.T) {
 	})
 }
 
+// TestPiTraceNormalizerMapsSubagentAttribution pins the subagent mapping
+// (live evidence 2026-11-08: raw spans named `llm-generation [subagent]
+// [request]` inside the parent session's trace): a subagent process stamps
+// its own session id on every event as childSessionId and the spawning
+// session as parentSessionId, so both map verbatim onto gen_ai.agent.id and
+// coding_agent.agent.parent_id on the chat and execute_tool spans they
+// produce. Main-agent spans carry neither key, and an empty childSessionId
+// maps nothing.
+func TestPiTraceNormalizerMapsSubagentAttribution(t *testing.T) {
+	t.Run("subagent generation next to a main generation", func(t *testing.T) {
+		input := ptrace.NewTraces()
+		scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+		scope.Scope().SetName("@amaster.ai/pi-telemetry")
+		spans := scope.Spans()
+		turn := spans.AppendEmpty()
+		turn.SetName("chat-turn")
+		turn.SetSpanID(pcommon.SpanID{2})
+		turn.Attributes().PutStr("sessionId", "session-parent")
+
+		main := spans.AppendEmpty()
+		main.SetName("llm-generation [main] [request]")
+		main.SetParentSpanID(pcommon.SpanID{2})
+		main.Attributes().PutStr("model", "claude-haiku-5-5")
+		main.Attributes().PutStr("sessionId", "session-parent")
+
+		sub := spans.AppendEmpty()
+		sub.SetName("llm-generation [subagent] [request]")
+		sub.SetParentSpanID(pcommon.SpanID{2})
+		sub.Attributes().PutStr("model", "glm-5.3")
+		sub.Attributes().PutStr("sessionId", "session-sub")
+		sub.Attributes().PutStr("childSessionId", "session-sub")
+		sub.Attributes().PutStr("parentSessionId", "session-parent")
+
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		all := reassemble(sink)
+		subChat := findSpan(t, all, "chat glm-5.3")
+		require.Equal(t, "session-sub", attrString(t, subChat, "gen_ai.agent.id"),
+			"the subagent's own sessionId is the agent id its span states")
+		require.Equal(t, "session-parent", attrString(t, subChat, "coding_agent.agent.parent_id"),
+			"the spawning session id maps onto the canonical parent id")
+		require.Equal(t, "session-sub", attrString(t, subChat, "gen_ai.conversation.id"),
+			"the subagent keeps its own conversation id alongside the agent attribution")
+		for _, key := range []string{"gen_ai.agent.id", "coding_agent.agent.parent_id"} {
+			_, ok := findSpan(t, all, "invoke_agent pi").Attributes().Get(key)
+			require.False(t, ok, "the main-agent root must not carry %s", key)
+			_, ok = findSpan(t, all, "chat claude-haiku-5-5").Attributes().Get(key)
+			require.False(t, ok, "the main generation must not carry %s", key)
+		}
+	})
+
+	t.Run("subagent tool span", func(t *testing.T) {
+		input := ptrace.NewTraces()
+		scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+		scope.Scope().SetName("@amaster.ai/pi-telemetry")
+		spans := scope.Spans()
+		turn := spans.AppendEmpty()
+		turn.SetName("chat-turn")
+		turn.SetSpanID(pcommon.SpanID{2})
+		tool := spans.AppendEmpty()
+		tool.SetName("bash")
+		tool.SetParentSpanID(pcommon.SpanID{2})
+		tool.Attributes().PutStr("toolName", "bash")
+		tool.Attributes().PutStr("sessionId", "session-sub")
+		tool.Attributes().PutStr("childSessionId", "session-sub")
+		tool.Attributes().PutStr("parentSessionId", "session-parent")
+
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		toolSpan := findSpan(t, reassemble(sink), "execute_tool bash")
+		require.Equal(t, "session-sub", attrString(t, toolSpan, "gen_ai.agent.id"),
+			"the wire marks a subagent's tool spans the same way as its generations")
+		require.Equal(t, "session-parent", attrString(t, toolSpan, "coding_agent.agent.parent_id"))
+	})
+
+	t.Run("empty childSessionId maps nothing", func(t *testing.T) {
+		input := ptrace.NewTraces()
+		scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+		scope.Scope().SetName("@amaster.ai/pi-telemetry")
+		gen := scope.Spans().AppendEmpty()
+		gen.SetName("llm-generation [main] [request]")
+		gen.Attributes().PutStr("model", "glm-5.3")
+		gen.Attributes().PutStr("sessionId", "session-1")
+		gen.Attributes().PutStr("childSessionId", "")
+		gen.Attributes().PutStr("parentSessionId", "")
+
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		chat := findSpan(t, reassemble(sink), "chat glm-5.3")
+		for _, key := range []string{"gen_ai.agent.id", "coding_agent.agent.parent_id"} {
+			_, ok := chat.Attributes().Get(key)
+			require.False(t, ok, "an empty wire key must not produce %s", key)
+		}
+	})
+}
+
 // piConversationInput builds a claimed Pi group with a chat-turn (turn attrs),
 // one generation, and one tool span (gen/tool attrs). The generation and tool
 // spans always dangle on a phantom parent, so a batch without turn attrs
