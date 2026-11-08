@@ -45,6 +45,12 @@ Code, OpenCode, and Pi findings below now reflect those audits (checked
 | **Strands Agents SDK** | native | none | native | traces (GenAI edge) |
 | **openai-v2 / util-genai** | native | opt-in content-capture log-event mode | native (GenAI-semconv histograms) | traces (GenAI edge) |
 
+There is no metrics connector edge: metrics pass through any pipeline
+unnormalized. The distribution does ship a metrics path as a reference
+configuration — [`examples/otelcol-metrics.yaml`](../examples/otelcol-metrics.yaml)
+converts delta to cumulative before Prometheus remote write (Claude Code and
+Cursor export delta by default; the remote-write exporter drops delta data).
+
 ## Claude Code
 
 All three signals are native and independently switchable — see

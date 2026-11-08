@@ -172,6 +172,7 @@ Repository layout:
 │   └── internal/pi/                 #   stateless @amaster.ai/pi-telemetry normalization
 ├── e2e/                             # real agent runners and OTLP JSON validator
 ├── examples/otelcol-s3.yaml         # S3 export with persistent local queues
+├── examples/otelcol-metrics.yaml    # delta-to-cumulative metrics to Prometheus remote write
 ├── builder-config.yaml              # pinned OCB distribution
 ├── compose.e2e-base.yaml            # shared collector included by every e2e stack
 └── collector-config.yaml            # raw and canonical pipelines
@@ -294,6 +295,20 @@ default agent settings. Configure Strands redaction
 (`gen_ai_unredacted_attributes` in `OTEL_SEMCONV_STABILITY_OPT_IN`) or apply
 the same access policy to the raw destination and any content store. The
 canonical pipeline strips content-bearing attributes and events regardless.
+
+### Metrics reference deployment
+
+[`examples/otelcol-metrics.yaml`](examples/otelcol-metrics.yaml) is a
+reference for the metrics signal, which the connector does not normalize:
+an OTLP receiver feeds the `delta_to_cumulative` processor and the
+`prometheus_remote_write` exporter. The conversion is needed because Claude
+Code (and Cursor) export delta temporality by default and the remote-write
+exporter drops non-cumulative monotonic sums and histograms. The processor
+keeps per-series state, so a multi-instance deployment must route metrics
+with `routing_key: streamID` (see
+[`docs/multi-instance-ha.md`](docs/multi-instance-ha.md)). Point
+`PROMETHEUS_RW_ENDPOINT` at a remote-write backend and run the example with
+`./dist/otelcol-coding-agents --config examples/otelcol-metrics.yaml`.
 
 ### S3 reference deployment
 

@@ -364,14 +364,24 @@ checked 2026-10-19):
 | `claude_code.code_edit_tool.decision` | none | `tool_name`, `decision`, `source`, `language` |
 | `claude_code.active_time.total` | s | `type` (`user`/`cli`) |
 
-### Connector mapping
+### Distribution metrics path
 
-Not applicable. The connector only registers `logs-to-traces` and
-`traces-to-traces` connector pipelines (see
-`connector/codingagentconnector/factory.go`); it does not process, transform,
-or filter OTel metrics for any harness. Claude Code's native metrics, where
-exported, pass through a metrics pipeline unmodified, outside this
+The connector does not normalize metrics: it only registers `logs-to-traces`
+and `traces-to-traces` connector pipelines (see
+`connector/codingagentconnector/factory.go`). Claude Code's native metrics,
+where exported, pass through a metrics pipeline unmodified, outside this
 connector's scope.
+
+The distribution does ship a metrics path: the reference configuration
+[`examples/otelcol-metrics.yaml`](../../examples/otelcol-metrics.yaml)
+converts delta to cumulative with the `delta_to_cumulative` processor before
+the `prometheus_remote_write` exporter. Claude Code exports delta temporality
+by default, and the remote-write exporter drops non-cumulative monotonic sums
+and histograms — in a live deployment, 2,760 of 2,776 remote-write
+translations failed over seven days and only `target_info` reached the
+backend. (Setting
+`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative` on the client
+is the alternative fix; the pipeline covers clients you do not control.)
 
 ## Sources
 
