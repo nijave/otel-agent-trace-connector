@@ -135,12 +135,11 @@ and from `api_error` logs (logs source, Task 2 edge). Other harnesses: record
    fewer chat spans, no TTFC, and higher input-token totals for the same
    turns. Fix mapping bugs that are local and stateless (for example a wrong
    token key or a missed TTFC field). List anything larger as a follow-up in
-   the doc. Strengthen the README warning: with both Codex signals reaching the
-   connector, each turn appears twice. The client-side fix is to leave
-   `otel.trace_exporter` unset.
+   the doc. Task 9 removes the duplicate turns; do not change the `signals`
+   switch or its README text here.
 
 - [ ] Error-status tests (logs edge; native edge if applicable).
-- [ ] Parity notes, local fixes with tests, README warning.
+- [ ] Parity notes, local fixes with tests.
 
 ### Task 8: Metrics path converts delta to cumulative (E7)
 
@@ -155,9 +154,44 @@ and from `api_error` logs (logs source, Task 2 edge). Other harnesses: record
       the distribution ships a metrics path and why it converts delta to cumulative.
 - [ ] Build check: `scripts/check.sh` (and the OCB build it runs) passes.
 
+### Task 9: Per-harness `signals` for duplicate implementations (E10)
+
+The `signals` switch exists to choose between two implementations of the same
+data from different signals. Today it gates a whole router, so it also turns
+off unrelated edges on that signal. Codex is the only harness with duplicate
+implementations (its logs edge and its native traces edge). Claude Code's two
+edges augment one trace instead of duplicating it, so `claude_chat_source`
+stays separate and Claude Code is not in this map.
+
+- `signals` becomes a map from harness to signal list. The only valid key
+  today is `codex`; valid values are `logs` and `traces`. Default:
+  `codex: [logs]`.
+- The routers construct only the enabled edges. A disabled edge is absent
+  from the edge list, not built and skipped. Remove the router-wide
+  `consume` flag and `ConsumesLogs`/`ConsumesTraces`.
+- Edges with a single implementation (Claude Code traces and logs, Cursor,
+  Pi, OpenCode, OpenHands, GenAI) are always constructed.
+- `Validate` rejects an unknown harness, an unknown signal, a duplicate
+  signal, and an empty list.
+- This changes the config shape and the Codex default. Note the breaking
+  change in the README and in the commit body. With the default, a client
+  sending both Codex signals no longer gets duplicate turns, and a client
+  sending only native traces must set `codex: [traces]`.
+- Update the conformance edge-count mirror so it counts edges built with the
+  default config, and add a test that the non-default config builds the
+  other set.
+
+- [ ] Config type, defaults, validation, YAML decode tests.
+- [ ] Routers build edges from the map; tests for both Codex choices and for
+      both signals.
+- [ ] README configuration section, `docs/harnesses/codex.md`, and the
+      README sentence added in Task 2 about `signals` stopping the Claude
+      Code logs edge (no longer true).
+
 ### Final: integration
 
 - [ ] `GOTOOLCHAIN=auto ./scripts/check.sh` and `scripts/e2e-routing.sh` pass.
 - [ ] Every evidence row E1–E10 maps to a commit or a documented follow-up.
-- [ ] Open one PR; its body lists the follow-ups and the deployment change
-      `claude_chat_source: logs` needs (both connector instances).
+- [ ] Open one PR; its body lists the follow-ups, the breaking `signals`
+      change, and the deployment change `claude_chat_source: logs` needs
+      (both connector instances).
