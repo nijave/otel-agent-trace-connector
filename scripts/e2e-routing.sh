@@ -2,14 +2,17 @@
 set -euo pipefail
 
 # Zero-API-cost e2e: replays the pinned codex fixture through a contrib
-# gateway into two tier-2 replicas and asserts per-conversation affinity.
-# No model credentials needed.
+# gateway into two tier-2 replicas and asserts per-conversation affinity, then
+# replays the pinned Claude Code native-traces fixture with distinct trace IDs
+# and asserts each trace lands whole on exactly one replica with both replicas
+# receiving Claude traces. No model credentials needed.
 
 compose_files=(-f compose.e2e-routing.yaml)
 run_compose() { docker compose "${compose_files[@]}" "$@"; }
 
 export E2E_RUN_ID="${E2E_RUN_ID:-routing-otel-$(date +%s)-$$}"
 export CONVERSATIONS="${CONVERSATIONS:-8}"
+export CLAUDE_TRACES="${CLAUDE_TRACES:-16}"
 mkdir -p .e2e-output
 rm -f .e2e-output/canonical-a.json .e2e-output/canonical-b.json
 trap 'run_compose down --remove-orphans' EXIT

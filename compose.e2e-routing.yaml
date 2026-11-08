@@ -1,8 +1,11 @@
 # Two-tier consistent-hash routing e2e (spec: docs/multi-instance-ha.md,
-# Option B). Costs nothing: the "agent" replays the pinned codex fixture as
-# synthetic conversations through a stock contrib gateway running the
-# load_balancing exporter; the validator asserts each conversation lands whole
-# on exactly one tier-2 replica. Does not include compose.e2e-base.yaml
+# Option B, routed by statefulness). Costs nothing: the "agent" replays the
+# pinned codex fixture as synthetic conversations through a stock contrib
+# gateway running the routing connector and two load_balancing exporters, and
+# the pinned Claude Code native-traces fixture with distinct trace IDs per
+# copy; the validator asserts each conversation lands whole on exactly one
+# tier-2 replica, each Claude trace lands whole on exactly one replica, and
+# both replicas receive Claude traces. Does not include compose.e2e-base.yaml
 # because the topology needs two collectors with distinct output paths.
 services:
   gateway:
@@ -58,10 +61,12 @@ services:
       context: e2e/routing
     volumes:
       - ./connector/codingagentconnector/internal/codex/testdata/codex-native-logs.json:/fixture/codex-native-logs.json:ro
+      - ./connector/codingagentconnector/internal/claude/testdata/claude-native-traces.json:/fixture/claude-native-traces.json:ro
     environment:
       GATEWAY_ENDPOINT: "http://gateway:4318"
       E2E_RUN_ID: "${E2E_RUN_ID:?set E2E_RUN_ID or run scripts/e2e-routing.sh}"
       CONVERSATIONS: "${CONVERSATIONS:-8}"
+      CLAUDE_TRACES: "${CLAUDE_TRACES:-16}"
     depends_on:
       gateway:
         condition: service_started

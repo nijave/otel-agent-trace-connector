@@ -14,7 +14,7 @@ data:
             endpoint: 0.0.0.0:4318
 
     exporters:
-      load_balancing:
+      load_balancing/conversation:
         routing_key: attributes
         routing_attributes:
           - conversation.id
@@ -30,12 +30,38 @@ data:
         resolver:
           k8s:
             service: coding-agent-collector.coding-agent-telemetry
+      load_balancing/trace:
+        routing_key: traceID
+        protocol:
+          otlp:
+            tls:
+              insecure: true
+            retry_on_failure:
+              enabled: true
+            sending_queue:
+              enabled: true
+        resolver:
+          k8s:
+            service: coding-agent-collector.coding-agent-telemetry
+
+    connectors:
+      routing:
+        default_pipelines: [logs/trace]
+        table:
+          - condition: log.attributes["conversation.id"] != nil or log.attributes["cursor.conversation.id"] != nil
+            pipelines: [logs/conversation]
 
     service:
       pipelines:
-        logs:
+        logs/in:
           receivers: [otlp]
-          exporters: [load_balancing]
+          exporters: [routing]
+        logs/conversation:
+          receivers: [routing]
+          exporters: [load_balancing/conversation]
+        logs/trace:
+          receivers: [routing]
+          exporters: [load_balancing/trace]
         traces:
           receivers: [otlp]
-          exporters: [load_balancing]
+          exporters: [load_balancing/trace]

@@ -38,3 +38,22 @@ while [ "$n" -le "$count" ]; do
   n=$((n + 1))
 done
 echo "replayed ${count} conversations"
+
+# Replay the pinned Claude Code native-traces fixture once per synthetic
+# trace, rewriting every trace ID. The gateway routes traces by trace ID, so
+# each copy lands whole on exactly one tier-2 replica and the copies spread
+# across both. Span and parent span IDs stay valid within a copy.
+n=1
+while [ "$n" -le "${CLAUDE_TRACES:-16}" ]; do
+  id=$(printf 'claude-%s-%d' "$E2E_RUN_ID" "$n" | md5sum | cut -d' ' -f1)
+  while IFS= read -r line; do
+    printf '%s' "$line" \
+      | jq -c --arg id "$id" \
+          '.resourceSpans[].scopeSpans[].spans[].traceId |= $id' \
+      | curl --silent --output /dev/null --fail \
+          --header 'Content-Type: application/json' --data-binary @- \
+          "${GATEWAY_ENDPOINT}/v1/traces"
+  done < /fixture/claude-native-traces.json
+  n=$((n + 1))
+done
+echo "replayed ${CLAUDE_TRACES:-16} claude traces"
