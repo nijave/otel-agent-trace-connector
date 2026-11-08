@@ -127,6 +127,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 		if callID := firstSpanString(span, "toolCallId"); callID != "" {
 			attrs.PutStr("gen_ai.tool.call.id", callID)
 		}
+		putConversationID(attrs, wire)
 		attrs.CopyTo(wire)
 		return true, true
 	}
@@ -140,9 +141,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 		attrs.PutStr("gen_ai.operation.name", "invoke_agent")
 		attrs.PutStr("gen_ai.agent.name", "pi")
 		attrs.PutStr("coding_agent.source.event", turnSpanName)
-		if sessionID := firstSpanString(span, "sessionId"); sessionID != "" {
-			attrs.PutStr("gen_ai.conversation.id", sessionID)
-		}
+		putConversationID(attrs, wire)
 	case strings.HasPrefix(name, generation):
 		child = true
 		// requestedModel is the model the caller asked for; model is what the
@@ -176,6 +175,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 		if responseID := firstSpanString(span, "responseId"); responseID != "" {
 			attrs.PutStr("gen_ai.response.id", responseID)
 		}
+		putConversationID(attrs, wire)
 		mapTimeToFirstChunk(attrs, wire, span.StartTimestamp())
 		mapUsage(attrs, wire)
 	default:
@@ -212,6 +212,22 @@ func reparentOrphans(spans ptrace.SpanSlice, children map[pcommon.SpanID]bool) {
 		if foundRoot && span.ParentSpanID() != agentRoot {
 			span.SetParentSpanID(agentRoot)
 		}
+	}
+}
+
+// putConversationID maps the span's own sessionId onto
+// gen_ai.conversation.id. Every native Pi span carries its own sessionId, so
+// each canonical span type — invoke_agent root, chat, execute_tool — gets one
+// even when Pi exports children in batches without their chat-turn root. A
+// native gen_ai.conversation.id on the wire wins over sessionId; an empty
+// sessionId maps nothing.
+func putConversationID(attrs, wire pcommon.Map) {
+	if value, ok := wire.Get("gen_ai.conversation.id"); ok && value.Str() != "" {
+		attrs.PutStr("gen_ai.conversation.id", value.Str())
+		return
+	}
+	if value, ok := wire.Get("sessionId"); ok && value.Str() != "" {
+		attrs.PutStr("gen_ai.conversation.id", value.Str())
 	}
 }
 
