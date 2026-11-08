@@ -132,6 +132,7 @@ references.
 | `max_events_per_turn` | `1000` | Bound on retained events and dedupe keys per turn/burst. Overflow is discarded without changing finalization state; truncation is reported by `otelcol_coding_agent_turns_truncated`. |
 | `capture_identity` | `true` | Controls `coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id`, and resource `host.name`. Set `false` to suppress identity. |
 | `signals` | `[logs, traces]` | Input signals this instance consumes. A disabled input edge emits nothing; pipeline wiring is the other way to select signals. |
+| `claude_chat_source` | `traces` | Which signal emits Claude Code chat spans: the native `claude_code.llm_request` traces, or spans synthesized from `api_request`/`api_error` log records (the only source of per-request cost and API failure status). A deployment splitting Claude Code logs and traces across two connector instances must set the same value on both. |
 <!-- vale on -->
 
 Example (both edges bridging into a canonical traces pipeline):
@@ -145,6 +146,7 @@ connectors:
     max_events_per_turn: 1000
     capture_identity: true
     signals: [logs, traces]
+    claude_chat_source: traces
   coding_agent/claude:
 
 service:

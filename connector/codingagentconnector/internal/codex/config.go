@@ -18,6 +18,11 @@ const (
 	// SignalLogs and SignalTraces are the values the signals list accepts.
 	SignalLogs   = "logs"
 	SignalTraces = "traces"
+
+	// ClaudeChatTraces and ClaudeChatLogs are the values claude_chat_source
+	// accepts. The empty value decodes as ClaudeChatTraces.
+	ClaudeChatTraces = "traces"
+	ClaudeChatLogs   = "logs"
 )
 
 // Config controls correlation state, turn finalization, and which input
@@ -32,17 +37,26 @@ type Config struct {
 	// "traces", or both. A signal left out passes through the connector
 	// untouched, so its records still reach the pipeline's other exporters.
 	Signals []string `mapstructure:"signals"`
+	// ClaudeChatSource picks the signal that emits canonical Claude Code chat
+	// spans: "traces" (the default) keeps the native claude_code.llm_request
+	// spans as the chat source; "logs" drops those spans and synthesizes chat
+	// spans from claude_code.api_request / claude_code.api_error log records
+	// instead. Exactly one source emits chat, so canonical output never
+	// duplicates a request. A deployment that splits Claude Code logs and
+	// traces across two connector instances must set the same value on both.
+	ClaudeChatSource string `mapstructure:"claude_chat_source"`
 }
 
 // NewDefaultConfig returns an independent default configuration.
 func NewDefaultConfig() *Config {
 	return &Config{
-		TurnTimeout:     defaultTurnTimeout,
-		ReorderWindow:   defaultReorderWindow,
-		MaxActiveTurns:  defaultMaxActive,
-		MaxEvents:       defaultMaxEvents,
-		CaptureIdentity: true,
-		Signals:         []string{SignalLogs, SignalTraces},
+		TurnTimeout:      defaultTurnTimeout,
+		ReorderWindow:    defaultReorderWindow,
+		MaxActiveTurns:   defaultMaxActive,
+		MaxEvents:        defaultMaxEvents,
+		CaptureIdentity:  true,
+		Signals:          []string{SignalLogs, SignalTraces},
+		ClaudeChatSource: ClaudeChatTraces,
 	}
 }
 
@@ -76,8 +90,17 @@ func (c *Config) Validate() error {
 		}
 		seen[signal] = true
 	}
+	switch c.ClaudeChatSource {
+	case "", ClaudeChatTraces, ClaudeChatLogs:
+	default:
+		return fmt.Errorf("claude_chat_source: unknown value %q (want traces or logs)", c.ClaudeChatSource)
+	}
 	return nil
 }
+
+// ClaudeChatsFromLogs reports whether canonical Claude Code chat spans come
+// from the logs signal instead of the native traces signal.
+func (c *Config) ClaudeChatsFromLogs() bool { return c.ClaudeChatSource == ClaudeChatLogs }
 
 // ConsumesLogs reports whether the logs-to-traces edge is on.
 func (c *Config) ConsumesLogs() bool { return c.consumes(SignalLogs) }

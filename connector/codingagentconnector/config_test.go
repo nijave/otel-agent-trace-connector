@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/confmap"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -78,6 +80,45 @@ func TestConfigDecodeSignalsReplacesDefault(t *testing.T) {
 	require.Equal(t, []string{"logs"}, cfg.Signals)
 	require.True(t, cfg.ConsumesLogs())
 	require.False(t, cfg.ConsumesTraces())
+}
+
+func TestConfigValidateClaudeChatSource(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     string
+		wantError string
+	}{
+		{name: "default", value: codex.ClaudeChatTraces},
+		{name: "logs", value: codex.ClaudeChatLogs},
+		{name: "unset decodes as traces", value: ""},
+		{name: "unknown", value: "both", wantError: `claude_chat_source: unknown value "both"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := createDefaultConfig()
+			cfg.ClaudeChatSource = tt.value
+			err := cfg.Validate()
+			if tt.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantError)
+			}
+		})
+	}
+}
+
+// TestConfigDecodeClaudeChatSource pins the field through the same
+// mapstructure decoding OCB uses.
+func TestConfigDecodeClaudeChatSource(t *testing.T) {
+	cfg := createDefaultConfig()
+	require.Equal(t, codex.ClaudeChatTraces, cfg.ClaudeChatSource, "default must be traces")
+	require.False(t, cfg.ClaudeChatsFromLogs())
+
+	conf := confmap.NewFromStringMap(map[string]any{"claude_chat_source": "logs"})
+	require.NoError(t, conf.Unmarshal(cfg))
+	require.Equal(t, codex.ClaudeChatLogs, cfg.ClaudeChatSource)
+	require.True(t, cfg.ClaudeChatsFromLogs())
+	require.NoError(t, cfg.Validate())
 }
 
 func TestFactoryDefaultsAreIndependent(t *testing.T) {

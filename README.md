@@ -29,7 +29,9 @@ OCB-built distribution for coding-agent traces:
   GenAI-semconv edge
 - **Claude Code:** preserves its native span hierarchy and normalizes the
   interaction, LLM, and tool span names and attributes into the same canonical
-  vocabulary.
+  vocabulary; with `claude_chat_source: logs` the LLM chat spans are
+  synthesized from the `api_request`/`api_error` log records instead, adding
+  the per-request cost and API failure status the traces wire lacks.
 - **GenAI semconv sources:** normalizes native traces from
   `opentelemetry-instrumentation-openai-v2` (legacy and latest semconv
   spellings; util-genai ≥ 1.0b0 ignores `OTEL_SEMCONV_STABILITY_OPT_IN`),
@@ -84,6 +86,7 @@ automatic. No per-source connector setting exists.
 | Codex (native traces) | traces | resource groups whose scope equals `service.name` and hold a Codex marker span (`session_task.*`, a `codex.*` attribute, or a `codex.tool_result` event) | `trace_exporter` in the same `[otel]` block |
 | Cursor | logs | instrumentation scope starting with `cursor.telemetry` | Team Settings → OpenTelemetry Export (Enterprise beta), OTLP/HTTP to `/v1/logs` |
 | Claude Code | traces | span names starting with `claude_code.` | telemetry env vars with beta trace flag (below) |
+| Claude Code (chats from logs) | logs | `com.anthropic.claude_code.events` records with `event.name` `api_request` or `api_error`, when `claude_chat_source: logs` | same telemetry env vars plus `OTEL_LOGS_EXPORTER=otlp` |
 | OpenCode | traces | instrumentation scope named exactly `opencode` | `experimental.openTelemetry: true` plus OTLP endpoint env vars |
 | GitHub Copilot | traces | instrumentation scope starting with `github.copilot` (GenAI-semconv edge) | `COPILOT_OTEL_ENABLED=true` or set `OTEL_EXPORTER_OTLP_ENDPOINT`; OTLP/HTTP or file exporter (`COPILOT_OTEL_FILE_EXPORTER_PATH`) |
 | openai-v2 / util-genai agents | traces | instrumentation scope starting with `opentelemetry.instrumentation.openai_v2` or `opentelemetry.util.genai` | standard OpenTelemetry SDK env vars |
@@ -118,7 +121,11 @@ export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf
 ```
 
 Leave Claude Code's content gates unset so prompt text, tool arguments, tool
-output, and raw API bodies stay out of the raw destination.
+output, and raw API bodies stay out of the raw destination. For
+`claude_chat_source: logs`, additionally export the logs signal
+(`OTEL_LOGS_EXPORTER=otlp` with the standard `OTEL_EXPORTER_OTLP_LOGS_*`
+endpoint/protocol variables) so the `api_request`/`api_error` records reach
+the connector.
 
 OpenCode enables its tracer with `"experimental": {"openTelemetry": true}` in
 `opencode.json` and exports wherever `OTEL_EXPORTER_OTLP_ENDPOINT` points
@@ -220,6 +227,7 @@ connectors:
     max_events_per_turn: 1000
     capture_identity: true
     signals: [logs, traces]
+    claude_chat_source: traces
   coding_agent/claude:
 
 service:
@@ -250,6 +258,15 @@ shutdown, or through bounded-state eviction.
 The traces edge auto-detects Claude Code, OpenCode, OpenHands, Codex native
 spans, and GenAI-semconv sources, so every source enters the same pipeline.
 
+`claude_chat_source` picks which signal emits canonical Claude Code chat
+spans: `traces` (default) keeps the native `claude_code.llm_request` spans;
+`logs` drops those spans and synthesizes chat spans from the
+`claude_code.api_request` / `claude_code.api_error` log records instead — the
+only way to put Claude Code's per-request cost and API failure status on the
+chat span. Exactly one source emits chat spans, so a request never duplicates.
+A deployment that splits Claude Code logs and traces across two connector
+instances must set the same value on both.
+
 `capture_identity` defaults to `true` and applies to every `coding_agent`
 instance in the pipeline. It controls the PII-bearing identity keys
 (`coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id`,
@@ -266,7 +283,10 @@ matters for a harness that sends both signals (Codex with `otel.trace_exporter`
 set, for example), where consuming both would produce two canonical traces per
 turn. Pipeline wiring is the other way to choose: a connector instance only
 sees the signals of the pipelines that list it as an exporter, as the example
-above does with `coding_agent` and `coding_agent/claude`.
+above does with `coding_agent` and `coding_agent/claude`. The switch covers
+every edge on a signal, not one harness: `signals: [traces]` also stops the
+Claude Code logs edge, so under `claude_chat_source: logs` Claude Code chat
+spans and their cost disappear.
 
 Strands captures prompt and completion content in span events by default and
 its redaction is opt-in, so the raw trace destination receives content under

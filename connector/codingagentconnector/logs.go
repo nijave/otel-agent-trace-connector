@@ -12,17 +12,20 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/plog"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claudelogs"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/cursor"
 )
 
 // logsRouter fans the logs-to-traces edge across the provider claimers. Each
 // edge ignores foreign records (Codex claims codex.-prefixed event names,
-// Cursor claims the cursor.telemetry scope), so a record lands in at most one
-// edge and unclaimed records stay out of the canonical edge. Unlike the
-// stateless tracesRouter, Start and Shutdown fan out: both edges own sweep
-// loops and drain-on-shutdown state. consume mirrors the signals config: when
-// logs are off the router is a pass-through and the edges never see a record.
+// Cursor claims the cursor.telemetry scope, claudelogs claims the
+// com.anthropic.claude_code.events scope's api_request/api_error records), so
+// a record lands in at most one edge and unclaimed records stay out of the
+// canonical edge. Start and Shutdown fan out: the codex and cursor edges own
+// sweep loops and drain-on-shutdown state, while the stateless claudelogs
+// edge no-ops both. consume mirrors the signals config: when logs are off the
+// router is a pass-through and the edges never see a record.
 type logsRouter struct {
 	edges   []connector.Logs
 	consume bool
@@ -37,7 +40,8 @@ func newLogsRouter(cfg *Config, set connector.Settings, next consumer.Traces) (c
 	if err != nil {
 		return nil, err
 	}
-	return &logsRouter{edges: []connector.Logs{codexEdge, cursorEdge}, consume: cfg.ConsumesLogs()}, nil
+	claudelogsEdge := claudelogs.New(cfg, set, next)
+	return &logsRouter{edges: []connector.Logs{codexEdge, cursorEdge, claudelogsEdge}, consume: cfg.ConsumesLogs()}, nil
 }
 
 func (*logsRouter) Capabilities() consumer.Capabilities {
