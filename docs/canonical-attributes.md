@@ -102,6 +102,7 @@ there, never here. Keys appear in declaration order:
 - `exception.escaped`
 - `exception.stacktrace`
 - `coding_agent.request.service_tier`
+- `coding_agent.request.attempt`
 - `coding_agent.usage.cost`
 - `coding_agent.source`
 - `coding_agent.source.scope`
@@ -123,6 +124,8 @@ appears on some wires; the GenAI edge remaps it onto the registry key, and the
 other edges map their native cache-write counters onto it directly.
 
 `gen_ai.request.reasoning.level` records the reasoning effort the request asked for (Codex's `model_reasoning_effort`; it corresponds to OpenAI's `reasoning.effort` request parameter), copied verbatim from the wire when present.
+
+`coding_agent.request.attempt` records the 1-based attempt number of the request as the harness reports it (Claude Code's `attempt` on `llm_request` spans and `api_error` log records), absent when the wire has none. A first, unretried request is attempt 1; the key says nothing about success, so a failed attempt maps too. Harnesses that count retries 0-based (Codex) do not fit the definition and stay absent.
 
 `coding_agent.request.service_tier` records the provider service tier a request ran in, copied verbatim from the wire when present. The connector namespace holds it rather than a provider namespace because providers beyond OpenAI have tier concepts and other harnesses pass tiers through; one key keeps cross-provider queries uniform.
 
@@ -165,7 +168,7 @@ from.
   - `gen_ai.event.start_time`, `gen_ai.event.end_time`: Strands emits them
     natively on every span and the GenAI edge keeps them verbatim.
 - **Connector namespace**: `coding_agent.request.service_tier`,
-  `coding_agent.usage.cost`, `coding_agent.source`, `coding_agent.source.scope`,
+  `coding_agent.request.attempt`, `coding_agent.usage.cost`, `coding_agent.source`, `coding_agent.source.scope`,
   `coding_agent.source.event`, `coding_agent.client.name`,
   `coding_agent.client.version`, `coding_agent.user.id`,
   `coding_agent.user.email`, `coding_agent.team.id`,

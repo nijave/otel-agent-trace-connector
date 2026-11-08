@@ -214,6 +214,47 @@ func TestAPIErrorSetsErrorStatus(t *testing.T) {
 	}
 }
 
+// TestAttemptMapsOntoChatSpan pins the retry-attempt mapping on the logs
+// edge: api_error records carry `attempt` today, and a record that carries it
+// maps onto coding_agent.request.attempt regardless of its event type —
+// Claude Code reports a 1-based attempt number, so a failed attempt maps
+// alongside a successful one. Int, double, and numeric-string values parse;
+// an unparsable one stays absent.
+func TestAttemptMapsOntoChatSpan(t *testing.T) {
+	edge := newRecordingEdge(t)
+	errorRecord := claudeRecord("api_error")
+	errorRecord.Attributes().PutStr("request_id", "req_03SYNTHETIC")
+	errorRecord.Attributes().PutStr("error", "rate limit exceeded")
+	errorRecord.Attributes().PutInt("attempt", 2)
+	requestRecord := claudeRecord("api_request")
+	requestRecord.Attributes().PutStr("request_id", "req_07SYNTHETIC")
+	requestRecord.Attributes().PutDouble("attempt", 1)
+	stringRecord := claudeRecord("api_error")
+	stringRecord.Attributes().PutStr("request_id", "req_08SYNTHETIC")
+	stringRecord.Attributes().PutStr("attempt", "3")
+	unparsableRecord := claudeRecord("api_error")
+	unparsableRecord.Attributes().PutStr("request_id", "req_09SYNTHETIC")
+	unparsableRecord.Attributes().PutStr("attempt", "not-a-number")
+
+	require.NoError(t, edge.ConsumeLogs(context.Background(), batch(t, ScopeName, errorRecord, requestRecord, stringRecord, unparsableRecord)))
+	spans := flatten(edge.sink)
+	require.Equal(t, 4, spans.Len())
+	bySpanID := map[string]ptrace.Span{}
+	for i := 0; i < spans.Len(); i++ {
+		bySpanID[attr(t, spans.At(i), "gen_ai.response.id").Str()] = spans.At(i)
+	}
+	// api_error record: the failed attempt maps too.
+	require.Equal(t, int64(2), attr(t, bySpanID["req_03SYNTHETIC"], "coding_agent.request.attempt").Int())
+	// api_request carries no attempt on the wire today; if a record does, it
+	// maps the same way.
+	require.Equal(t, int64(1), attr(t, bySpanID["req_07SYNTHETIC"], "coding_agent.request.attempt").Int())
+	// Numeric strings parse.
+	require.Equal(t, int64(3), attr(t, bySpanID["req_08SYNTHETIC"], "coding_agent.request.attempt").Int())
+	// Unparsable values stay absent.
+	_, ok := bySpanID["req_09SYNTHETIC"].Attributes().Get("coding_agent.request.attempt")
+	require.False(t, ok)
+}
+
 func TestZeroCostMapsAsZero(t *testing.T) {
 	edge := newRecordingEdge(t)
 	record := claudeRecord("api_request")

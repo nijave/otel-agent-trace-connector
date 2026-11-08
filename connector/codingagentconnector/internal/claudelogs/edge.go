@@ -222,6 +222,12 @@ func newChatSpan(record plog.LogRecord, version string, captureIdentity bool) (p
 	if effort := attrString(attrs, "effort"); effort != "" {
 		out.PutStr("gen_ai.request.reasoning.level", effort)
 	}
+	// `attempt` rides the api_error records today (the api_request records
+	// carry none); if a record carries one, it maps regardless of event type,
+	// and an unparsable value stays absent.
+	if n, ok := attrInt(attrs, "attempt"); ok {
+		out.PutInt(attemptCanonicalKey, n)
+	}
 	// A zero cost maps as 0; an unparsable one is absent, not an error.
 	if cost, ok := attrDouble(attrs, "cost_usd"); ok {
 		out.PutDouble(costCanonicalKey, cost)
@@ -270,6 +276,8 @@ var counterKeys = [][2]string{
 const (
 	ttftCanonicalKey = "gen_ai.response.time_to_first_chunk"
 	costCanonicalKey = "coding_agent.usage.cost"
+
+	attemptCanonicalKey = "coding_agent.request.attempt"
 )
 
 // chatSpanID derives the synthesized span id from the request id: first 8

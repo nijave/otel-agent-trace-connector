@@ -162,6 +162,7 @@ unchanged in the raw pipeline.
 | `gen_ai.response.finish_reasons` / `gen_ai.response.id` / `gen_ai.response.model` | not provided |
 | `gen_ai.agent.id` / `coding_agent.agent.parent_id` | not provided (the trace-safe `codex.tool_result` event omits `agent_name`; use the logs edge for subagent attribution) |
 | `coding_agent.usage.cost` | not provided (`codex.turn_cost` is log-only) |
+| `coding_agent.request.attempt` | not provided (the traces wire carries no attempt count; the logs wire's `codex.api_request` event carries a 0-based `attempt` retry counter, but that event produces no canonical span and the connector records no 0-based number under this 1-based key) |
 
 ## Logs
 
@@ -324,6 +325,7 @@ they appear on every emitted span except where noted:
 | `server.address` / `server.port` | not provided (proxied setups are indistinguishable) |
 | `exception.*` | not provided |
 | `coding_agent.usage.cost` | not provided (`codex.turn_cost` is a log-only event the edge does not read, and the pinned capture carries none) |
+| `coding_agent.request.attempt` | not provided (the `codex.api_request` event carries a 0-based `attempt` retry counter, but that event produces no canonical span — it only continues the turn — and the connector records no 0-based number under this 1-based key; mapping it would also need turn state) |
 
 ## Metrics
 

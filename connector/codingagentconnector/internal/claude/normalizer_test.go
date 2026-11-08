@@ -144,6 +144,15 @@ func TestClaudeTraceNormalizerAgainstRealCapture(t *testing.T) {
 	}
 	require.ElementsMatch(t, []float64{0.784, 1.137}, ttfts)
 	require.True(t, finishReasons["end_turn"] && finishReasons["tool_use"], "stop reasons must be remapped: %v", finishReasons)
+	// Every llm_request span in the capture reports attempt 1; the 1-based
+	// attempt number maps onto coding_agent.request.attempt.
+	for i := 0; i < all.Len(); i++ {
+		if strings.HasPrefix(all.At(i).Name(), "chat ") {
+			attempt, ok := all.At(i).Attributes().Get("coding_agent.request.attempt")
+			require.True(t, ok, "chat span must carry coding_agent.request.attempt")
+			require.Equal(t, int64(1), attempt.Int())
+		}
+	}
 	for _, raw := range []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
 		"ttft_ms", "stop_reason", "model", "duration_ms", "speed", "llm_request.context", "attempt",
 		"success", "gen_ai.system"} {
@@ -202,6 +211,62 @@ func TestClaudeTraceNormalizerMapsEffortToReasoningLevel(t *testing.T) {
 			require.Equal(t, tc.want, attrString(t, chat, "gen_ai.request.reasoning.level"))
 		})
 	}
+}
+
+// TestClaudeTraceNormalizerMapsAttempt pins the retry-attempt mapping on the
+// traces edge: Claude Code reports each request's 1-based attempt number as
+// `attempt`, and canonical output carries it as coding_agent.request.attempt.
+// Int, double (truncate), and numeric-string values map; anything else —
+// including an unparsable string — stays absent, as does an llm_request
+// without the key.
+func TestClaudeTraceNormalizerMapsAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  func(pcommon.Map)
+		want int64
+	}{
+		{name: "int", set: func(a pcommon.Map) { a.PutInt("attempt", 2) }, want: 2},
+		{name: "double truncates", set: func(a pcommon.Map) { a.PutDouble("attempt", 3.9) }, want: 3},
+		{name: "numeric string", set: func(a pcommon.Map) { a.PutStr("attempt", "4") }, want: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chat := normalizeAttemptInput(t, tc.set)
+			value, ok := chat.Attributes().Get("coding_agent.request.attempt")
+			require.True(t, ok)
+			require.Equal(t, tc.want, value.Int())
+		})
+	}
+	for _, tc := range []struct {
+		name string
+		set  func(pcommon.Map)
+	}{
+		{name: "unparsable string", set: func(a pcommon.Map) { a.PutStr("attempt", "second") }},
+		{name: "absent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chat := normalizeAttemptInput(t, tc.set)
+			_, exists := chat.Attributes().Get("coding_agent.request.attempt")
+			require.False(t, exists, "unparsable or absent attempt must stay out of canonical output")
+		})
+	}
+}
+
+// normalizeAttemptInput runs one llm_request span carrying the given attrs
+// through the traces edge and returns its canonical chat span.
+func normalizeAttemptInput(t *testing.T, set func(pcommon.Map)) ptrace.Span {
+	t.Helper()
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	spans.AppendEmpty().SetName("claude_code.interaction")
+	llm := spans.AppendEmpty()
+	llm.SetName("claude_code.llm_request")
+	llm.Attributes().PutStr("model", "claude-test")
+	if set != nil {
+		set(llm.Attributes())
+	}
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	return findSpan(t, reassemble(sink), "chat claude-test")
 }
 
 // TestClaudeCaptureNewerKeysMapOrDrop walks every attribute Claude Code 2.1.304

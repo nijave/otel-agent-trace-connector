@@ -189,6 +189,11 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, ca
 		if effort := firstSpanString(span, "effort"); effort != "" {
 			span.Attributes().PutStr("gen_ai.request.reasoning.level", effort)
 		}
+		// `attempt` is the harness's 1-based attempt number for the request;
+		// unparsable values stay absent.
+		if n, ok := attrInt(span.Attributes(), "attempt"); ok {
+			span.Attributes().PutInt("coding_agent.request.attempt", n)
+		}
 		remapUsage(span.Attributes())
 	case "claude_code.tool":
 		tool := firstSpanString(span, "gen_ai.tool.name", "tool_name")
