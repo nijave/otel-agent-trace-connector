@@ -71,7 +71,10 @@ Stateful-edge facts that matter for HA:
 
 ## What does not block multi-instance
 
-- The Claude/GenAI traces edge is stateless and already scales horizontally.
+- The Claude/GenAI traces edge is stateless. With the tier-1 traceID route it
+  spreads evenly across replicas, so it scales horizontally without any
+  connector change (the pre-2026-11-08 example pinned everything to one
+  attribute-hashed exporter, which did not).
 - Exporter sending queues are per-replica by design; each replica needs its own
   durable volume (already documented in the S3 reference).
 - Self-metrics (`coding_agent.active_turns`, turns emitted/dropped/truncated)
@@ -90,33 +93,92 @@ repository change beyond manifests that do not exist yet.
 ### B. Two-tier consistent-hash routing (upstream-supported scale-out)
 
 Put a stateless gateway tier in front: stock `otelcol-contrib` (no custom
-build needed) running an OTLP receiver and the `load_balancing` exporter with
-attribute-based routing:
+build needed) running an OTLP receiver, a `routing` connector that splits
+logs by statefulness, and two `load_balancing` exporters — one per routing
+key:
 
 ```yaml
 exporters:
-  load_balancing:
+  load_balancing/conversation:
     routing_key: attributes
     routing_attributes:
       - conversation.id
       - cursor.conversation.id
+    protocol:
+      otlp:
+        tls:
+          insecure: true
     resolver:
       k8s:
         service: coding-agent-collector.telemetry.svc
+  load_balancing/trace:
+    routing_key: traceID
+    protocol:
+      otlp:
+        tls:
+          insecure: true
+    resolver:
+      k8s:
+        service: coding-agent-collector.telemetry.svc
+
+connectors:
+  routing:
+    default_pipelines: [logs/trace]
+    table:
+      - condition: log.attributes["conversation.id"] != nil
+                  or log.attributes["cursor.conversation.id"] != nil
+        pipelines: [logs/conversation]
+
+service:
+  pipelines:
+    logs/in:
+      receivers: [otlp]
+      exporters: [routing]
+    logs/conversation:
+      receivers: [routing]
+      exporters: [load_balancing/conversation]
+    logs/trace:
+      receivers: [routing]
+      exporters: [load_balancing/trace]
+    traces:
+      receivers: [otlp]
+      exporters: [load_balancing/trace]
 ```
 
-At v0.163.0 the `load_balancing` exporter supports logs at beta stability and
-`routing_key: attributes` checks resource, scope, and log-record attributes,
-so both conversation attributes route correctly even though they never appear
-on the same record (missing attributes encode deterministically). Consistent
-hashing gives the same backend decision on every tier-1 replica sharing the
-same resolved endpoint list, so tier-1 scales freely. Tier 2 runs this
-distribution unchanged behind a headless service.
+The route by statefulness: log records carrying `conversation.id` or
+`cursor.conversation.id` go to the `attributes` exporter so Codex and Cursor
+correlation keeps one turn's records on one instance; every other log record
+and all traces go to the `traceID` exporter, which spreads them across tier 2
+while keeping each trace's spans together. The connector conditions read
+log-record attributes because Codex sets `conversation.id` on the record, not
+the resource. The routing connector's default `action: move` removes matched
+records from later evaluation and `default_pipelines` receive only the
+leftovers, so a record that has a conversation attribute can never reach the
+traceID route.
+
+At v0.163.0 (verified against
+`exporter/loadbalancingexporter/log_exporter.go` and
+`connector/routingconnector/logs.go` in the collector contrib source):
+`load_balancing` accepts `routing_key: traceID` for logs and splits a batch
+record by record, giving records without a trace ID a random key so they do
+not hot-spot one backend; the `routing` connector routes logs on the log-record
+context and splits one incoming batch across routes record by record.
+Consistent hashing gives the same backend decision on every tier-1 replica
+sharing the same resolved endpoint list, so tier-1 scales freely. Tier 2 runs
+this distribution unchanged behind a headless service.
+
+Metrics through tier 1 need `routing_key: streamID` on a separate
+`load_balancing/metrics` exporter once tier 2 runs `deltatocumulative` (Task
+8 of the 2026-11-08 telemetry gaps plan): delta-to-cumulative conversion keeps
+state per series, so a stream's points must all reach the same tier-2
+replica. `streamID` routes on metric stream identity, which is exactly that
+grouping.
 
 Required supporting changes:
 
-- Add `loadbalancingexporter` to tier-1 images (stock contrib image avoids
-  touching `builder-config.yaml`; the custom distribution stays tier-2-only).
+- Add `loadbalancingexporter` and `routingconnector` to tier-1 images (stock
+  contrib image avoids touching `builder-config.yaml`; the custom
+  distribution stays tier-2-only).
 - k8s resolver needs RBAC for `get/list/watch` on EndpointSlices, otherwise
   the endpoint list stays empty. DNS against a headless service is the slower
   fallback.
