@@ -77,9 +77,13 @@ failures (see [Logs edge vs native traces edge](#logs-edge-vs-native-traces-edge
 
 Running Codex logs and traces into one connector produces two canonical traces
 per turn, one from each edge (`coding_agent.source` = `normalized` from logs,
-`native` from traces). Pick one with the connector's `signals` setting or by
-pipeline wiring; the connector does not dedupe across signals. The e2e stack
-runs both on purpose and its validator requires both roots.
+`native` from traces); the connector does not dedupe across signals. The
+connector's `signals` setting picks which edges are built: the default is
+`codex: [logs]` (logs edge only), and `codex: [traces]` or
+`codex: [logs, traces]` opts into the native edge. Pipeline wiring is the other
+way to choose. The e2e stack runs both on purpose (`signals: {codex: [logs,
+traces]}` in its shared collector config) and its validator requires both
+roots.
 
 | Raw span | Canonical span name |
 |---|---|
@@ -338,8 +342,9 @@ they appear on every emitted span except where noted:
 
 ## Logs edge vs native traces edge
 
-Both edges carry the same Codex turns, and `signals` (see the README) picks
-which one an operator consumes; the connector never dedupes across them. Over
+Both edges carry the same Codex turns, and `signals` (see the README; default
+`codex: [logs]`) picks which one an operator consumes; the connector never
+dedupes across them. Over
 the same 7 days (to 2026-11-08) the two implementations produced different
 numbers for the same conversations: the logs edge 27 turns, 94 chat spans, 82 of
 them carrying `gen_ai.response.time_to_first_chunk`, and 6.35M input tokens;

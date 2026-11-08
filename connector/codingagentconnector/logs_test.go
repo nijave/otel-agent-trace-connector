@@ -191,22 +191,84 @@ func TestLogsRouterShutdownSweepsBothEdges(t *testing.T) {
 	require.Len(t, sink.traces, 2)
 }
 
-// TestLogsRouterSkipsRecordsWhenLogsSignalOff pins the signals switch on the
-// logs edge: with logs off, nothing reaches the canonical sink and the input
-// batch is left intact for the pipeline's other exporters.
-func TestLogsRouterSkipsRecordsWhenLogsSignalOff(t *testing.T) {
+// TestLogsRouterOmitsCodexEdgeWhenTracesOnly pins the per-harness signals
+// switch: with `codex: [traces]` the Codex logs edge is not constructed, so
+// Codex records fall through unclaimed while Cursor — a single-implementation
+// edge — still runs. The switch never gates the whole router.
+func TestLogsRouterOmitsCodexEdgeWhenTracesOnly(t *testing.T) {
 	sink := &logsSink{}
 	cfg := createDefaultConfig()
-	cfg.Signals = []string{"traces"}
+	cfg.Signals = map[string][]string{codex.HarnessCodex: {codex.SignalTraces}}
 	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
 	logsEdge, err := newLogsRouter(cfg, set, sink)
 	require.NoError(t, err)
+	require.Len(t, logsEdge.(*logsRouter).edges, 2, "cursor and claudelogs only")
 	require.NoError(t, logsEdge.Start(context.Background(), nil))
 
 	input := mixedLogs(t)
 	before := input.LogRecordCount()
 	require.NoError(t, logsEdge.ConsumeLogs(context.Background(), input))
 	require.NoError(t, logsEdge.Shutdown(context.Background()))
-	require.Empty(t, sink.traces, "logs off: the edges must emit nothing")
 	require.Equal(t, before, input.LogRecordCount(), "input must pass through untouched")
+	var rootNames []string
+	for _, traces := range sink.traces {
+		for i := 0; i < traces.ResourceSpans().Len(); i++ {
+			ss := traces.ResourceSpans().At(i).ScopeSpans()
+			for j := 0; j < ss.Len(); j++ {
+				spans := ss.At(j).Spans()
+				for k := 0; k < spans.Len(); k++ {
+					if name := spans.At(k).Name(); strings.HasPrefix(name, "invoke_agent") {
+						rootNames = append(rootNames, name)
+					}
+				}
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{"invoke_agent cursor"}, rootNames,
+		"codex logs disabled: the codex record drops but cursor still normalizes")
+}
+
+// TestLogsRouterBuildsExpectedCodexEdgeSets pins the edge set per signals
+// value: the default (`codex: [logs]`) and `codex: [logs, traces]` both build
+// the three-edge logs router with the Codex edge claiming its record; only
+// `codex: [traces]` leaves it out (covered by the test above).
+func TestLogsRouterBuildsExpectedCodexEdgeSets(t *testing.T) {
+	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
+	for _, tc := range []struct {
+		name    string
+		signals map[string][]string
+		wantLen int
+	}{
+		{name: "default codex: [logs]", signals: nil, wantLen: 3},
+		{name: "codex: [logs, traces]", signals: map[string][]string{codex.HarnessCodex: {codex.SignalLogs, codex.SignalTraces}}, wantLen: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := createDefaultConfig()
+			if tc.signals != nil {
+				cfg.Signals = tc.signals
+			}
+			sink := &logsSink{}
+			logsEdge, err := newLogsRouter(cfg, set, sink)
+			require.NoError(t, err)
+			require.Len(t, logsEdge.(*logsRouter).edges, tc.wantLen)
+			require.NoError(t, logsEdge.Start(context.Background(), nil))
+			require.NoError(t, logsEdge.ConsumeLogs(context.Background(), mixedLogs(t)))
+			require.NoError(t, logsEdge.Shutdown(context.Background()))
+			var rootNames []string
+			for _, traces := range sink.traces {
+				for i := 0; i < traces.ResourceSpans().Len(); i++ {
+					ss := traces.ResourceSpans().At(i).ScopeSpans()
+					for j := 0; j < ss.Len(); j++ {
+						spans := ss.At(j).Spans()
+						for k := 0; k < spans.Len(); k++ {
+							if name := spans.At(k).Name(); strings.HasPrefix(name, "invoke_agent") {
+								rootNames = append(rootNames, name)
+							}
+						}
+					}
+				}
+			}
+			require.ElementsMatch(t, []string{"invoke_agent codex", "invoke_agent cursor"}, rootNames)
+		})
+	}
 }

@@ -37,24 +37,30 @@ func TestConfigValidate(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigConsumesBothSignals(t *testing.T) {
+func TestDefaultConfigSignalsCodexLogs(t *testing.T) {
 	cfg := createDefaultConfig()
-	require.Equal(t, []string{"logs", "traces"}, cfg.Signals)
-	require.True(t, cfg.ConsumesLogs())
-	require.True(t, cfg.ConsumesTraces())
+	require.Equal(t, map[string][]string{codex.HarnessCodex: {codex.SignalLogs}}, cfg.Signals)
+	require.True(t, cfg.SignalEnabled(codex.HarnessCodex, codex.SignalLogs))
+	require.False(t, cfg.SignalEnabled(codex.HarnessCodex, codex.SignalTraces))
+	// Harnesses outside the map are always constructed; the helper answers only
+	// about the map.
+	require.False(t, cfg.SignalEnabled("cursor", codex.SignalLogs))
 }
 
 func TestConfigValidateSignals(t *testing.T) {
 	tests := []struct {
 		name      string
-		signals   []string
+		signals   map[string][]string
 		wantError string
 	}{
-		{name: "logs only", signals: []string{"logs"}},
-		{name: "traces only", signals: []string{"traces"}},
-		{name: "empty", signals: []string{}, wantError: "signals"},
-		{name: "unknown", signals: []string{"metrics"}, wantError: `"metrics"`},
-		{name: "duplicate", signals: []string{"logs", "logs"}, wantError: "twice"},
+		{name: "codex logs", signals: map[string][]string{"codex": {"logs"}}},
+		{name: "codex traces", signals: map[string][]string{"codex": {"traces"}}},
+		{name: "codex both", signals: map[string][]string{"codex": {"logs", "traces"}}},
+		{name: "empty map", signals: map[string][]string{}, wantError: "signals"},
+		{name: "empty list", signals: map[string][]string{"codex": {}}, wantError: "at least one signal"},
+		{name: "unknown harness", signals: map[string][]string{"cursor": {"logs"}}, wantError: `unknown harness "cursor"`},
+		{name: "unknown signal", signals: map[string][]string{"codex": {"metrics"}}, wantError: `"metrics"`},
+		{name: "duplicate signal", signals: map[string][]string{"codex": {"logs", "logs"}}, wantError: "twice"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,16 +76,24 @@ func TestConfigValidateSignals(t *testing.T) {
 	}
 }
 
-// TestConfigDecodeSignalsReplacesDefault pins that a configured list replaces
-// the default rather than merging with it: `signals: [logs]` must turn traces
-// off.
+// TestConfigDecodeSignalsReplacesDefault pins that a configured map replaces
+// the harness's default list rather than merging with it: `signals:
+// {codex: [traces]}` must yield exactly [traces], not [logs traces].
 func TestConfigDecodeSignalsReplacesDefault(t *testing.T) {
 	cfg := createDefaultConfig()
-	conf := confmap.NewFromStringMap(map[string]any{"signals": []any{"logs"}})
+	conf := confmap.NewFromStringMap(map[string]any{"signals": map[string]any{"codex": []any{"traces"}}})
 	require.NoError(t, conf.Unmarshal(cfg))
-	require.Equal(t, []string{"logs"}, cfg.Signals)
-	require.True(t, cfg.ConsumesLogs())
-	require.False(t, cfg.ConsumesTraces())
+	require.Equal(t, map[string][]string{codex.HarnessCodex: {codex.SignalTraces}}, cfg.Signals)
+	require.True(t, cfg.SignalEnabled(codex.HarnessCodex, codex.SignalTraces))
+	require.False(t, cfg.SignalEnabled(codex.HarnessCodex, codex.SignalLogs))
+	require.NoError(t, cfg.Validate())
+
+	// Both values together replace too.
+	cfg = createDefaultConfig()
+	conf = confmap.NewFromStringMap(map[string]any{"signals": map[string]any{"codex": []any{"logs", "traces"}}})
+	require.NoError(t, conf.Unmarshal(cfg))
+	require.Equal(t, map[string][]string{codex.HarnessCodex: {codex.SignalLogs, codex.SignalTraces}}, cfg.Signals)
+	require.NoError(t, cfg.Validate())
 }
 
 func TestConfigValidateClaudeChatSource(t *testing.T) {

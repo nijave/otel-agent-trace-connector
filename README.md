@@ -227,7 +227,8 @@ connectors:
     max_active_turns: 10000
     max_events_per_turn: 1000
     capture_identity: true
-    signals: [logs, traces]
+    signals:
+      codex: [logs]
     claude_chat_source: traces
   coding_agent/claude:
 
@@ -276,18 +277,27 @@ emitting them immediately. Set `capture_identity: false` to restore the
 previous no-identity output. `coding_agent.terminal.type` carries no
 identity, so it ships regardless of this setting.
 
-`signals` lists which input signals a `coding_agent` instance consumes and
-defaults to both. Set `signals: [traces]` on an instance that sits in a logs
-pipeline to make it a pass-through: the records still reach every other
-exporter in that pipeline, and the connector emits nothing from them. This
-matters for a harness that sends both signals (Codex with `otel.trace_exporter`
-set, for example), where consuming both would produce two canonical traces per
-turn. Pipeline wiring is the other way to choose: a connector instance only
-sees the signals of the pipelines that list it as an exporter, as the example
-above does with `coding_agent` and `coding_agent/claude`. The switch covers
-every edge on a signal, not one harness: `signals: [traces]` also stops the
-Claude Code logs edge, so under `claude_chat_source: logs` Claude Code chat
-spans and their cost disappear.
+`signals` chooses, per harness, between duplicate implementations of the same
+data on different signals. Only Codex has duplicates — its logs edge and its
+native traces edge both carry the same turns — so `codex` is the only key the
+map accepts, and the default is `codex: [logs]` (the logs edge is the richer
+of the two; see [docs/harnesses/codex.md](docs/harnesses/codex.md)). Valid
+values are `logs` and `traces`; a decoded map replaces the harness's list
+wholesale. With the default, a client sending both Codex signals gets one
+canonical trace per turn instead of two, and a client sending only native
+codex traces must set `codex: [traces]`. Edges with a single implementation
+(Claude Code, Cursor, Pi, OpenCode, OpenHands, GenAI-semconv) are always
+constructed and never appear in this map — `claude_chat_source` is the switch
+for the Claude Code logs/traces pairing, and it stays separate. Pipeline
+wiring is the other way to choose signals: a connector instance only sees the
+signals of the pipelines that list it as an exporter, as the example above
+does with `coding_agent` and `coding_agent/claude`.
+
+> **Breaking change:** `signals` was a list (`[logs, traces]`) that gated each
+> router wholesale; it is now a per-harness map whose default enables Codex
+> logs only. Set `signals: {codex: [traces]}` if your clients export Codex
+> native traces only, or `{codex: [logs, traces]}` to keep today's
+> duplicate-turn behavior.
 
 Strands captures prompt and completion content in span events by default and
 its redaction is opt-in, so the raw trace destination receives content under

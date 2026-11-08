@@ -200,20 +200,75 @@ func TestTracesRouterClaimsOpenHandsGroup(t *testing.T) {
 	require.NotContains(t, names, "unrelated_span")
 }
 
-// TestTracesRouterSkipsSpansWhenTracesSignalOff pins the signals switch on
-// the traces edge: with traces off, a Claude group produces no canonical
-// output.
-func TestTracesRouterSkipsSpansWhenTracesSignalOff(t *testing.T) {
+// codexNativeGroup builds one resource group the Codex native edge claims.
+func codexNativeGroup(input ptrace.Traces) {
+	rs := input.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "codex_exec")
+	ss := rs.ScopeSpans().AppendEmpty()
+	ss.Scope().SetName("codex_exec")
+	span := ss.Spans().AppendEmpty()
+	span.SetName("session_task.turn")
+	span.SetTraceID(pcommon.TraceID([16]byte{5}))
+	span.SetSpanID(pcommon.SpanID([8]byte{6}))
+	span.Attributes().PutStr("thread.id", "thread-router")
+}
+
+func emittedNames(traces []ptrace.Traces) []string {
+	var names []string
+	for _, batch := range traces {
+		for i := 0; i < batch.ResourceSpans().Len(); i++ {
+			ss := batch.ResourceSpans().At(i).ScopeSpans()
+			for j := 0; j < ss.Len(); j++ {
+				for k := 0; k < ss.At(j).Spans().Len(); k++ {
+					names = append(names, ss.At(j).Spans().At(k).Name())
+				}
+			}
+		}
+	}
+	return names
+}
+
+// TestTracesRouterOmitsCodexNativeEdgeByDefault pins the per-harness signals
+// switch: the default enables codex logs only, so the Codex native edge is not
+// constructed while the single-implementation normalizers — Claude here —
+// still run.
+func TestTracesRouterOmitsCodexNativeEdgeByDefault(t *testing.T) {
 	input := ptrace.NewTraces()
 	claudeGroup := input.ResourceSpans().AppendEmpty()
 	claudeGroup.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("claude_code.interaction")
+	codexNativeGroup(input)
 
-	cfg := createDefaultConfig()
-	cfg.Signals = []string{"logs"}
 	sink := &routerSink{}
-	router := newTracesRouter(cfg, sink)
+	router := newTracesRouter(createDefaultConfig(), sink)
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
-	require.Empty(t, sink.traces, "traces off: the edges must emit nothing")
+	require.Len(t, router.(*tracesRouter).edges, 5)
+	require.ElementsMatch(t, []string{"invoke_agent claude_code"}, emittedNames(sink.traces),
+		"codex traces disabled: the codex group drops but Claude still normalizes")
+}
+
+// TestTracesRouterBuildsCodexEdgeWhenSignalsEnableIt pins the non-default
+// signals values: both `codex: [traces]` and `codex: [logs, traces]` build the
+// same six-edge traces router, and the Codex native edge claims its group.
+func TestTracesRouterBuildsCodexEdgeWhenSignalsEnableIt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		signals map[string][]string
+	}{
+		{name: "codex: [traces]", signals: map[string][]string{codex.HarnessCodex: {codex.SignalTraces}}},
+		{name: "codex: [logs, traces]", signals: map[string][]string{codex.HarnessCodex: {codex.SignalLogs, codex.SignalTraces}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := ptrace.NewTraces()
+			codexNativeGroup(input)
+			cfg := createDefaultConfig()
+			cfg.Signals = tc.signals
+			sink := &routerSink{}
+			router := newTracesRouter(cfg, sink)
+			require.Len(t, router.(*tracesRouter).edges, 6, "the five always-on normalizers plus codextraces")
+			require.NoError(t, router.ConsumeTraces(context.Background(), input))
+			require.ElementsMatch(t, []string{"invoke_agent codex"}, emittedNames(sink.traces))
+		})
+	}
 }
 
 // TestTracesRouterDropsClaudeLLMRequestWhenChatSourceLogs pins the config
@@ -256,18 +311,12 @@ func TestTracesRouterDropsClaudeLLMRequestWhenChatSourceLogs(t *testing.T) {
 
 func TestTracesRouterClaimsCodexNativeGroup(t *testing.T) {
 	input := ptrace.NewTraces()
-	rs := input.ResourceSpans().AppendEmpty()
-	rs.Resource().Attributes().PutStr("service.name", "codex_exec")
-	ss := rs.ScopeSpans().AppendEmpty()
-	ss.Scope().SetName("codex_exec")
-	turn := ss.Spans().AppendEmpty()
-	turn.SetName("session_task.turn")
-	turn.SetTraceID(pcommon.TraceID([16]byte{5}))
-	turn.SetSpanID(pcommon.SpanID([8]byte{6}))
-	turn.Attributes().PutStr("thread.id", "thread-router")
+	codexNativeGroup(input)
 
+	cfg := createDefaultConfig()
+	cfg.Signals = map[string][]string{codex.HarnessCodex: {codex.SignalLogs, codex.SignalTraces}}
 	sink := &routerSink{}
-	require.NoError(t, newTracesRouter(createDefaultConfig(), sink).ConsumeTraces(context.Background(), input))
+	require.NoError(t, newTracesRouter(cfg, sink).ConsumeTraces(context.Background(), input))
 	require.Len(t, sink.traces, 1, "exactly one edge claims a Codex group")
 	spans := sink.traces[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans()
 	require.Equal(t, 1, spans.Len())

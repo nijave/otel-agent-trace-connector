@@ -15,7 +15,12 @@ const (
 	defaultMaxActive     = 10_000
 	defaultMaxEvents     = 1_000
 
-	// SignalLogs and SignalTraces are the values the signals list accepts.
+	// HarnessCodex is the only harness key the signals map accepts: Codex is
+	// the only harness with two implementations of the same data (its logs edge
+	// and its native traces edge).
+	HarnessCodex = "codex"
+
+	// SignalLogs and SignalTraces are the values a signals list accepts.
 	SignalLogs   = "logs"
 	SignalTraces = "traces"
 
@@ -33,10 +38,16 @@ type Config struct {
 	MaxActiveTurns  int           `mapstructure:"max_active_turns"`
 	MaxEvents       int           `mapstructure:"max_events_per_turn"`
 	CaptureIdentity bool          `mapstructure:"capture_identity"`
-	// Signals lists the input signals the connector consumes: "logs",
-	// "traces", or both. A signal left out passes through the connector
-	// untouched, so its records still reach the pipeline's other exporters.
-	Signals []string `mapstructure:"signals"`
+	// Signals selects, per harness, which input signals the connector consumes
+	// for that harness. It exists only to choose between duplicate
+	// implementations of the same data on different signals; the only key today
+	// is "codex" (its logs edge and its native traces edge carry the same
+	// turns). Harnesses with a single implementation are always constructed and
+	// never appear here. A signal left out means that edge is not built, so its
+	// records pass through the connector untouched and still reach the
+	// pipeline's other exporters. Decoding a map replaces each listed harness's
+	// list wholesale.
+	Signals map[string][]string `mapstructure:"signals"`
 	// ClaudeChatSource picks the signal that emits canonical Claude Code chat
 	// spans: "traces" (the default) keeps the native claude_code.llm_request
 	// spans as the chat source; "logs" drops those spans and synthesizes chat
@@ -55,7 +66,7 @@ func NewDefaultConfig() *Config {
 		MaxActiveTurns:   defaultMaxActive,
 		MaxEvents:        defaultMaxEvents,
 		CaptureIdentity:  true,
-		Signals:          []string{SignalLogs, SignalTraces},
+		Signals:          map[string][]string{HarnessCodex: {SignalLogs}},
 		ClaudeChatSource: ClaudeChatTraces,
 	}
 }
@@ -78,17 +89,25 @@ func (c *Config) Validate() error {
 		return errors.New("max_events_per_turn must be positive")
 	}
 	if len(c.Signals) == 0 {
-		return errors.New("signals must list at least one of logs, traces")
+		return errors.New("signals must map at least one harness to its consumed signals")
 	}
-	seen := map[string]bool{}
-	for _, signal := range c.Signals {
-		if signal != SignalLogs && signal != SignalTraces {
-			return fmt.Errorf("signals: unknown signal %q (want logs or traces)", signal)
+	for harness, signals := range c.Signals {
+		if harness != HarnessCodex {
+			return fmt.Errorf("signals: unknown harness %q (only %q has duplicate implementations)", harness, HarnessCodex)
 		}
-		if seen[signal] {
-			return fmt.Errorf("signals: %q listed twice", signal)
+		if len(signals) == 0 {
+			return fmt.Errorf("signals: %q must list at least one signal", harness)
 		}
-		seen[signal] = true
+		seen := map[string]bool{}
+		for _, signal := range signals {
+			if signal != SignalLogs && signal != SignalTraces {
+				return fmt.Errorf("signals: %q: unknown signal %q (want logs or traces)", harness, signal)
+			}
+			if seen[signal] {
+				return fmt.Errorf("signals: %q: %q listed twice", harness, signal)
+			}
+			seen[signal] = true
+		}
 	}
 	switch c.ClaudeChatSource {
 	case "", ClaudeChatTraces, ClaudeChatLogs:
@@ -102,14 +121,11 @@ func (c *Config) Validate() error {
 // from the logs signal instead of the native traces signal.
 func (c *Config) ClaudeChatsFromLogs() bool { return c.ClaudeChatSource == ClaudeChatLogs }
 
-// ConsumesLogs reports whether the logs-to-traces edge is on.
-func (c *Config) ConsumesLogs() bool { return c.consumes(SignalLogs) }
-
-// ConsumesTraces reports whether the traces-to-traces edge is on.
-func (c *Config) ConsumesTraces() bool { return c.consumes(SignalTraces) }
-
-func (c *Config) consumes(signal string) bool {
-	for _, s := range c.Signals {
+// SignalEnabled reports whether the named harness's implementation on the
+// named signal is constructed. Only "codex" appears in the map, so only the
+// Codex edges consult this; single-implementation edges are always built.
+func (c *Config) SignalEnabled(harness, signal string) bool {
+	for _, s := range c.Signals[harness] {
 		if s == signal {
 			return true
 		}
