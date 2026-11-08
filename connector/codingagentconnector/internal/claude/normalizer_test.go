@@ -352,6 +352,40 @@ func TestClaudeTraceNormalizerDropsNonNativeSiblingsInClaimedGroups(t *testing.T
 	require.Equal(t, "SENSITIVE", attrString(t, inSibling, "gen_ai.input.messages"))
 }
 
+// TestClaudeTraceNormalizerDropsLLMRequestWhenChatsComeFromLogs pins the
+// claude_code.chat_source: logs suppression: claude_code.llm_request spans produce
+// no canonical span while their interaction and tool siblings keep today's
+// behavior.
+func TestClaudeTraceNormalizerDropsLLMRequestWhenChatsComeFromLogs(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	interaction := spans.AppendEmpty()
+	interaction.SetName("claude_code.interaction")
+	interaction.SetSpanID(pcommon.SpanID{1})
+	llm := spans.AppendEmpty()
+	llm.SetName("claude_code.llm_request")
+	llm.SetSpanID(pcommon.SpanID{2})
+	llm.SetParentSpanID(pcommon.SpanID{1})
+	llm.Attributes().PutStr("model", "claude-sonnet-4-5")
+	tool := spans.AppendEmpty()
+	tool.SetName("claude_code.tool")
+	tool.SetSpanID(pcommon.SpanID{3})
+	tool.SetParentSpanID(pcommon.SpanID{1})
+
+	sink := &traceSink{}
+	require.NoError(t, NewWithChatSource(sink, true, true).ConsumeTraces(context.Background(), input))
+	all := reassemble(sink)
+	findSpan(t, all, "invoke_agent claude_code")
+	findSpan(t, all, "execute_tool")
+	for i := 0; i < all.Len(); i++ {
+		require.NotEqual(t, "chat claude-sonnet-4-5", all.At(i).Name(),
+			"llm_request must drop from canonical output when chats come from logs")
+	}
+	// The input keeps the suppressed span: raw fidelity is the raw pipeline's job.
+	require.Equal(t, "claude_code.llm_request",
+		input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(1).Name())
+}
+
 func TestClaudeTraceNormalizerFiltersOtherProviders(t *testing.T) {
 	input := ptrace.NewTraces()
 	input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("codex.internal")

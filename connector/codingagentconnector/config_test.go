@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/confmap"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/cursor"
 )
@@ -103,13 +104,14 @@ func TestConfigDecodeSignalsReplacesDefault(t *testing.T) {
 	require.False(t, cfg.ConsumesTraces())
 }
 
-// TestConfigDecodeNestedBlocks pins the YAML shape: each edge's tuning keys
-// live under its own block, and a block left out keeps that edge's defaults.
+// TestConfigDecodeNestedBlocks pins the YAML shape: each harness's tuning keys
+// live under its own block, and a block left out keeps that harness's defaults.
 func TestConfigDecodeNestedBlocks(t *testing.T) {
 	cfg := createDefaultConfig()
 	conf := confmap.NewFromStringMap(map[string]any{
-		"codex":  map[string]any{"turn_timeout": "30s", "reorder_window": "2s", "max_active_turns": 5, "max_events_per_turn": 7},
-		"cursor": map[string]any{"max_events_per_turn": 9},
+		"codex":       map[string]any{"turn_timeout": "30s", "reorder_window": "2s", "max_active_turns": 5, "max_events_per_turn": 7},
+		"cursor":      map[string]any{"max_events_per_turn": 9},
+		"claude_code": map[string]any{"chat_source": "logs"},
 	})
 	require.NoError(t, conf.Unmarshal(cfg))
 
@@ -122,6 +124,8 @@ func TestConfigDecodeNestedBlocks(t *testing.T) {
 		MaxActiveTurns: 10_000,
 		MaxEvents:      9,
 	}, cfg.Cursor, "a partial block must keep the edge's other defaults")
+	require.Equal(t, claude.Config{ChatSource: claude.ChatLogs}, cfg.ClaudeCode)
+	require.True(t, cfg.ClaudeCode.ChatFromLogs())
 }
 
 // TestConfigDecodeRejectsUnnestedTuningKeys pins that the moved keys are
@@ -135,6 +139,7 @@ func TestConfigDecodeRejectsUnnestedTuningKeys(t *testing.T) {
 	}{
 		{name: "top-level turn_timeout", input: map[string]any{"turn_timeout": "10m"}, key: "turn_timeout"},
 		{name: "connector-wide key inside codex", input: map[string]any{"codex": map[string]any{"capture_identity": false}}, key: "capture_identity"},
+		{name: "unnested claude chat source", input: map[string]any{"chat_source": "logs"}, key: "chat_source"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,6 +148,14 @@ func TestConfigDecodeRejectsUnnestedTuningKeys(t *testing.T) {
 			require.ErrorContains(t, err, tt.key)
 		})
 	}
+}
+
+// TestConfigValidateNamesClaudeCodeBlock pins that a claude_code sub-config
+// error reaches the operator with the YAML key it came from.
+func TestConfigValidateNamesClaudeCodeBlock(t *testing.T) {
+	cfg := createDefaultConfig()
+	cfg.ClaudeCode.ChatSource = "both"
+	require.ErrorContains(t, cfg.Validate(), `claude_code: chat_source: unknown value "both"`)
 }
 
 func TestFactoryDefaultsAreIndependent(t *testing.T) {

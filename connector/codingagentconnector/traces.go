@@ -37,7 +37,10 @@ type tracesRouter struct {
 func newTracesRouter(cfg *Config, next consumer.Traces) connector.Traces {
 	id := cfg.CaptureIdentity
 	return &tracesRouter{edges: []connector.Traces{
-		claude.New(next, id), genai.New(next, id), opencode.New(next, id), pi.New(next, id), openhands.New(next, id), codextraces.New(next, id),
+		// The Claude edge hands chat spans to the claudelogs edge under
+		// claude_code.chat_source: logs, dropping claude_code.llm_request
+		// instead.
+		claude.NewWithChatSource(next, id, cfg.ClaudeCode.ChatFromLogs()), genai.New(next, id), opencode.New(next, id), pi.New(next, id), openhands.New(next, id), codextraces.New(next, id),
 	}, consume: cfg.ConsumesTraces()}
 }
 

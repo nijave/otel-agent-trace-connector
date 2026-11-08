@@ -2,8 +2,9 @@
 
 Claude Code exports three independent OpenTelemetry signals — traces, logs,
 and metrics — each with its own enable switch and exporter. This file covers
-all three, then details the raw → canonical attribute matrix for the one
-signal the connector actually claims (traces). See
+all three, then details the raw → canonical attribute matrix for the signals
+the connector claims: traces by default, and logs under
+`claude_code.chat_source: logs`. See
 [canonical attributes](../canonical-attributes.md) for the shared vocabulary
 and the policy behind the mapping.
 
@@ -11,12 +12,13 @@ and the policy behind the mapping.
 
 | Signal | Native support | Connector support |
 | --- | --- | --- |
-| Traces | native, beta — `claude_code.*` spans, scope `com.anthropic.claude_code.tracing`; enable with `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` + `OTEL_TRACES_EXPORTER=otlp` | consumed — this is the connector's active edge for Claude Code |
-| Logs | native, long-standing — structured `claude_code.*` events; enable with `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `OTEL_LOGS_EXPORTER=otlp` | not consumed |
+| Traces | native, beta — `claude_code.*` spans, scope `com.anthropic.claude_code.tracing`; enable with `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` + `OTEL_TRACES_EXPORTER=otlp` | consumed — the default chat source: the connector's active edge for Claude Code |
+| Logs | native, long-standing — structured `claude_code.*` events; enable with `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `OTEL_LOGS_EXPORTER=otlp` | consumed under `claude_code.chat_source: logs` — the claudelogs edge synthesizes chat spans from `api_request`/`api_error` records (below) |
 | Metrics | native — 8 counters under meter `com.anthropic.claude_code`; enable with `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `OTEL_METRICS_EXPORTER=otlp` | not applicable |
 
-Last verified: 2026-10-19 for all three signals (Claude Code 2.1.304; see
-Sources).
+Last verified: 2026-10-19 for all three signals (Claude Code 2.1.304); the
+traces matrix and the logs mapping re-verified against a live Claude Code
+2.1.319 deployment on 2026-11-07/08 (see Sources).
 
 ## Traces
 
@@ -51,6 +53,11 @@ Span-name renames:
 | `claude_code.llm_request` | `chat <model>` |
 | `claude_code.tool` | `execute_tool <tool>` |
 | other `claude_code.*` sub-spans | unchanged |
+
+Under `claude_code.chat_source: logs` the `claude_code.llm_request` span drops
+from canonical output entirely — the logs edge below becomes the chat source
+so a request never yields two chat spans. Interaction, tool, and sub-spans
+keep the behavior in this section.
 
 #### Attribute matrix
 
@@ -98,7 +105,7 @@ raw key that would map there).
 | `model` | llm_request | `gen_ai.request.model` | mapped (fallback when the canonical key is absent; with neither, the span keeps the bare `chat` name and no key) |
 | `gen_ai.request.model` | llm_request | `gen_ai.request.model` | kept (already canonical; Claude Code emits it with the same value as `model`, and it wins over the `model` fallback) |
 | `gen_ai.response.finish_reasons` | llm_request | `gen_ai.response.finish_reasons` | kept (already canonical) |
-| `gen_ai.response.id` | llm_request | `gen_ai.response.id` | kept (already canonical; documented upstream as the API request id, absent in the 2.1.304 capture) |
+| `gen_ai.response.id` | llm_request | `gen_ai.response.id` | kept (already canonical; the API request id, present on the 2.1.319 wire and equal to the span's `request_id`) |
 | `gen_ai.conversation.id` | llm_request | `gen_ai.conversation.id` | kept (already canonical; absent when the native span carries none — the edge never derives one for chat spans, so a batch without the interaction root keeps exactly what the wire sent) |
 | `gen_ai.provider.name` | llm_request | `gen_ai.provider.name` | kept (already canonical; the connector always writes `anthropic`) |
 | `query_source_safe` | llm_request | — | dropped |
@@ -108,7 +115,8 @@ raw key that would map there).
 | `attempt` | llm_request | — | dropped |
 | `success` | llm_request | — | dropped |
 | `query_source`, `workflow.run_id`, `workflow.name` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
-| `request_id`, `client_request_id`, `status_code`, `error`, `error_class`, `response.has_tool_call` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
+| `request_id` | llm_request | — | dropped (present on the 2.1.319 wire; the canonical response id comes from `gen_ai.response.id`, which carries the same value) |
+| `client_request_id`, `status_code`, `error`, `error_class`, `response.has_tool_call` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
 | `gen_ai.system` | llm_request | — | dropped (`gen_ai.provider.name` is connector-derived, not remapped) |
 | `session.id`, `user.id`, `terminal.type`, `span.type` | llm_request | — | dropped |
 
@@ -199,7 +207,7 @@ canonical allowlist.
 | `gen_ai.agent.version` | not provided |
 | `server.address` / `server.port` | not provided |
 | `gen_ai.tool.type` / `gen_ai.tool.status` | not provided |
-| `coding_agent.usage.cost` | not provided (no per-request cost on the traces wire; `claude_code.cost.usage` is a metric) |
+| `coding_agent.usage.cost` | mapped under `claude_code.chat_source: logs` (from the `api_request` log record's `cost_usd`; not provided on the traces wire — `claude_code.cost.usage` is a metric, not an attribute) |
 | `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
 | `coding_agent.source.scope` | not provided (this edge writes `coding_agent.source.event` instead) |
 
@@ -246,9 +254,76 @@ checked 2026-10-19).
 
 ### Connector mapping
 
-Not consumed. The connector's Claude Code edge claims only spans on the
-`claude_code.` traces scope (above); it does not claim or normalize Claude
-Code's logs signal today.
+With `claude_code.chat_source: logs` (a `claude_code` block setting, default `traces`)
+the connector's `claudelogs` edge claims log records on the
+`com.anthropic.claude_code.events` scope whose `event.name` is `api_request`
+or `api_error` and emits one canonical chat span per record. Every other
+Claude event (`user_prompt`, `tool_result`, …) stays unclaimed, and with the
+default `traces` value this edge emits nothing. The edge is stateless: one
+span per record, no sweep loop, no turn state, so replays are idempotent.
+
+This is the only way canonical Claude Code chat spans carry the per-request
+cost and API failure status: the traces wire carries neither (see the matrix
+above), while every `api_request` log record carries `cost_usd` and every
+failed request produces an `api_error` record. Over the 2.1.319 evidence
+deployment, every `api_request` record joined its native `llm_request` span:
+log `TraceId` = span `TraceId`, log `SpanId` = the span's parent (the
+`claude_code.interaction` span, or `claude_code.tool.execution` for subagent
+requests), log `request_id` = span `request_id` = span `gen_ai.response.id`,
+and the log timestamp lands on the span's end time.
+
+Per claimed record:
+
+| Canonical span field | Value |
+| --- | --- |
+| Trace ID | the log record's `TraceId` |
+| Parent span ID | the log record's `SpanId` (the native interaction or tool-execution span, whose id the traces edge preserves) |
+| Span ID | the first 8 bytes of SHA-256(`request_id`) — deterministic, so replays produce the same id |
+| Name | `chat <model>`, or bare `chat` without a model |
+| Kind | Client |
+| End time | the record timestamp (the `event.timestamp` attribute when the record timestamp is zero) |
+| Start time | end − `duration_ms` (end when `duration_ms` is missing) |
+| Status | Unset for `api_request`; Error for `api_error`, message = the `error` attribute |
+
+| Log attribute | Canonical key |
+| --- | --- |
+| `model` | `gen_ai.request.model` |
+| `request_id` | `gen_ai.response.id` |
+| `input_tokens` | `gen_ai.usage.input_tokens` |
+| `output_tokens` | `gen_ai.usage.output_tokens` |
+| `cache_read_tokens` | `gen_ai.usage.cache_read.input_tokens` |
+| `cache_creation_tokens` | `gen_ai.usage.cache_write.input_tokens` |
+| `ttft_ms` | `gen_ai.response.time_to_first_chunk` (ms → s, double) |
+| `effort` | `gen_ai.request.reasoning.level` |
+| `cost_usd` | `coding_agent.usage.cost` (double; a value of `0` maps as `0`, an unparsable value is absent) |
+| `session.id` | `gen_ai.conversation.id` |
+| `agent_id` | `gen_ai.agent.id` |
+| `user.id`, `user.email`, `organization.id` | `coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id` (only with `capture_identity`) |
+| `terminal.type` | `coding_agent.terminal.type` |
+
+Counters parse as integers or strings — both wire spellings map. The
+connector-written keys match the traces edge: `gen_ai.operation.name` =
+`chat`, `gen_ai.provider.name` = `anthropic`, `coding_agent.source` =
+`native`, `coding_agent.source.event` = the record body
+(`claude_code.api_request` or `claude_code.api_error`),
+`coding_agent.client.name` = `claude_code`, and `coding_agent.client.version`
+= resource `service.version`. Resource attributes go through the shared
+canonical resource filter; every other log attribute (`speed`, `query_source`,
+`prompt.id`, `event.timestamp`, `event.sequence`, `agent.name`,
+`user.account_uuid`, `user.account_id`, the `cache_creation_5m_tokens` /
+`cache_creation_1h_tokens` splits, `status_code`, `attempt`, `vcs.*`,
+`process.working_directory`) drops.
+
+Records without trace context (a zero `TraceId` or `SpanId`) and records
+without a `request_id` (the span id's input) drop. Clients that export logs
+without traces are out of scope: the synthesized span joins the native trace
+through the record's ids.
+
+Accepted losses under `claude_code.chat_source: logs`, versus the traces source:
+`gen_ai.response.finish_reasons` (only the native span carries `stop_reason`),
+and the chat span id changes from the native span id to the hash above
+(nothing in canonical output references the `llm_request` span id; the
+`gen_ai.request.attempt` span events on `llm_request` drop with it).
 
 ## Metrics
 
@@ -294,3 +369,8 @@ connector's scope.
   wire capture of Claude Code 2.1.304 (model `claude-haiku-5-5`), 2026-10-19.
   Rows marked "documented upstream; absent in the 2.1.304 capture" come from
   the monitoring docs' span attribute tables (checked 2026-10-19).
+- Logs → Connector mapping, the `claude_code.chat_source` behavior, and the
+  2.1.319 corrections (`request_id` / `gen_ai.response.id` present on
+  `llm_request`, per-request cost on `api_request` logs): live deployment
+  evidence recorded in
+  [the 2026-11-08 design](../superpowers/specs/2026-11-08-claude-log-chat-spans-design.md).
