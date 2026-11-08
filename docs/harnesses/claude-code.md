@@ -136,11 +136,24 @@ raw key that would map there).
 | `duration_ms` | tool / tool.execution | — | dropped |
 | `result_tokens`, `workflow.run_id`, `workflow.name` | tool | — | dropped (documented upstream; absent in the 2.1.304 capture) |
 | `file_path`, `full_command`, `skill_name`, `subagent_type` | tool | — | dropped (content; Claude Code emits them only with `OTEL_LOG_TOOL_DETAILS=1`) |
-| `success` | tool.execution | — | dropped (Claude Code also sets span status `ERROR` on a failed execution; the connector passes span status through unchanged) |
+| `success` | tool.execution | — | dropped (Claude Code also sets span status `ERROR` on a failed execution; see the span-status propagation note below) |
 | `error`, `error_class` | tool.execution | — | dropped (present only on a failed execution) |
 | `decision` | tool.blocked_on_user | — | dropped |
 | `source` | tool.blocked_on_user | — | dropped |
 | `session.id`, `user.id`, `terminal.type`, `span.type` | all tool spans | — | dropped |
+
+Span-status propagation: Claude Code marks a failed tool execution only on
+the `claude_code.tool.execution` sub-span, leaving the `claude_code.tool`
+parent Unset — so a failure was invisible at the canonical `execute_tool`
+level. The connector lifts a failed execution to its `execute_tool` parent:
+when an Error `tool.execution` child and its parent (same trace ID, child's
+parent span ID equal to the parent's span ID) are in the same OTLP batch, the
+parent's status becomes Error with the child's status message. A parent that
+is already Error is unchanged, and a child with Ok/Unset status changes
+nothing. This is best-effort: Claude Code exports a span when it ends, so a
+failed child can land in a batch without its parent — in that case the child
+keeps its own Error and the parent stays Unset. The edge holds no cross-batch
+state to close that gap.
 
 Unrenamed sub-spans (`claude_code.tool.execution`,
 `claude_code.tool.blocked_on_user`, hooks) receive the shared provenance keys
