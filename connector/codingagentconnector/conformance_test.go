@@ -451,6 +451,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 			// flat usage.* keys; the edge's own conformance test also pins the
 			// older flat wire.
 			Signals: []canonical.Signal{
+				{RawKey: "sessionId", CanonicalKey: "gen_ai.conversation.id", Kind: canonical.Presence},
 				{RawKey: "usage", RawField: "input", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
 				{RawKey: "usage", RawField: "output", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
 				{RawKey: "usage", RawField: "totalTokens", CanonicalKey: "gen_ai.usage.total_tokens", Kind: canonical.Sum},
