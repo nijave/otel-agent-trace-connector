@@ -187,6 +187,7 @@ they appear on every emitted span except where noted:
 | `gen_ai.response.finish_reasons` | not provided |
 | `gen_ai.usage.reasoning.output_tokens` | not provided |
 | `gen_ai.request.stream` | not provided |
+| `coding_agent.request.attempt` | not provided |
 | `server.address` / `server.port` | not provided |
 | `gen_ai.agent.version` | not provided |
 | `exception.*` | not provided |

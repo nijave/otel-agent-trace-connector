@@ -112,7 +112,7 @@ raw key that would map there).
 | `duration_ms` | llm_request | — | dropped |
 | `speed` | llm_request | — | dropped |
 | `llm_request.context` | llm_request | — | dropped |
-| `attempt` | llm_request | — | dropped |
+| `attempt` | llm_request | `coding_agent.request.attempt` | mapped (int, double, or numeric-string on the wire; absent when the native span carries no `attempt`, and unparsable values stay absent rather than erroring) |
 | `success` | llm_request | — | dropped |
 | `query_source`, `workflow.run_id`, `workflow.name` | llm_request | — | dropped (documented upstream; absent in the 2.1.304 capture) |
 | `request_id` | llm_request | — | dropped (present on the 2.1.319 wire; the canonical response id comes from `gen_ai.response.id`, which carries the same value) |
@@ -308,6 +308,7 @@ Per claimed record:
 | `cache_creation_tokens` | `gen_ai.usage.cache_write.input_tokens` |
 | `ttft_ms` | `gen_ai.response.time_to_first_chunk` (ms → s, double) |
 | `effort` | `gen_ai.request.reasoning.level` |
+| `attempt` | `coding_agent.request.attempt` (int, double, or numeric-string; unparsable values stay absent — `api_request` records carry none on the wire today, `api_error` records do) |
 | `cost_usd` | `coding_agent.usage.cost` (double; a value of `0` maps as `0`, an unparsable value is absent) |
 | `session.id` | `gen_ai.conversation.id` |
 | `agent_id` | `gen_ai.agent.id` |
@@ -324,7 +325,7 @@ connector-written keys match the traces edge: `gen_ai.operation.name` =
 canonical resource filter; every other log attribute (`speed`, `query_source`,
 `prompt.id`, `event.timestamp`, `event.sequence`, `agent.name`,
 `user.account_uuid`, `user.account_id`, the `cache_creation_5m_tokens` /
-`cache_creation_1h_tokens` splits, `status_code`, `attempt`, `vcs.*`,
+`cache_creation_1h_tokens` splits, `status_code`, `vcs.*`,
 `process.working_directory`) drops.
 
 Records without trace context (a zero `TraceId` or `SpanId`) and records

@@ -269,6 +269,7 @@ they appear on every emitted span except where noted:
 | `gen_ai.provider.name` | not provided (the wire never names the upstream provider; the connector does not guess one) |
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided |
 | `gen_ai.request.reasoning.level` / `coding_agent.request.service_tier` | not provided |
+| `coding_agent.request.attempt` | not provided |
 | `gen_ai.event.start_time` / `gen_ai.event.end_time` | not provided |
 | `coding_agent.terminal.type` | not provided |
 | `coding_agent.usage.cost` | not provided (`cursor.cost.usage` is a metric with no conversation id; the logs carry no cost) |
