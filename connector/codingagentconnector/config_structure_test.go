@@ -54,8 +54,9 @@ var crossHarnessImports = map[string]map[string]string{
 // harnessBlocks maps a root Config field's mapstructure tag — the YAML key — to
 // the package that owns that block.
 var harnessBlocks = map[string]string{
-	"codex":  internalPrefix + "codex",
-	"cursor": internalPrefix + "cursor",
+	"claude_code": internalPrefix + "claude",
+	"codex":       internalPrefix + "codex",
+	"cursor":      internalPrefix + "cursor",
 }
 
 // connectorWideFields lists every root Config field that is not a harness

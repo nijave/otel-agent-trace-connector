@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/cursor"
 )
@@ -18,13 +19,14 @@ const (
 )
 
 // Config mirrors the connector's YAML: the connector-wide settings, then one
-// block per stateful edge. Each edge owns its own tuning; nothing is shared
-// between the codex and cursor blocks.
+// block per harness. Each block owns its own defaults and validation; nothing
+// is shared between the codex, cursor, and claude_code blocks.
 type Config struct {
 	CaptureIdentity bool          `mapstructure:"capture_identity"`
 	Signals         []string      `mapstructure:"signals"`
 	Codex           codex.Config  `mapstructure:"codex"`
 	Cursor          cursor.Config `mapstructure:"cursor"`
+	ClaudeCode      claude.Config `mapstructure:"claude_code"`
 }
 
 func createDefaultConfig() *Config {
@@ -33,6 +35,7 @@ func createDefaultConfig() *Config {
 		Signals:         []string{SignalLogs, SignalTraces},
 		Codex:           codex.NewDefaultConfig(),
 		Cursor:          cursor.NewDefaultConfig(),
+		ClaudeCode:      claude.NewDefaultConfig(),
 	}
 }
 
@@ -57,6 +60,9 @@ func (c *Config) Validate() error {
 	}
 	if err := c.Cursor.Validate(); err != nil {
 		return fmt.Errorf("cursor: %w", err)
+	}
+	if err := c.ClaudeCode.Validate(); err != nil {
+		return fmt.Errorf("claude_code: %w", err)
 	}
 	return nil
 }

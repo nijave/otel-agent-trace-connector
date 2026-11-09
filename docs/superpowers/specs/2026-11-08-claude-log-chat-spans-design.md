@@ -89,9 +89,9 @@ attribute drops. Counters given as strings or integers must both parse.
 The edge drops records without trace context (TraceId or SpanId all zero);
 document this. Clients that export logs without traces are out of scope.
 
-### Selecting the chat source: `claude_chat_source`
+### Selecting the chat source: `claude_code.chat_source`
 
-A new config field on the shared `Config`:
+A new `chat_source` field in the `claude_code:` config block:
 
 - `traces` (default; current behavior): the Claude traces edge emits `chat`
   from `claude_code.llm_request`, and the new logs edge emits nothing.
@@ -120,7 +120,7 @@ document this in the README collector configuration section.
   emails, IDs, paths, or repository names) in `internal/claudelogs/testdata/`,
   plus a conformance test like the other edges, and registration in the
   cross-harness conformance test.
-- A traces-edge test: with `claude_chat_source: logs`, an `llm_request` span
+- A traces-edge test: with `claude_code.chat_source: logs`, an `llm_request` span
   produces no canonical span, and its siblings still pass.
 - A test that a synthesized chat span's parent is a span ID that the Claude
   traces edge preserves (the canonical interaction span keeps its native

@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
 )
 
 type routerSink struct {
@@ -212,6 +214,44 @@ func TestTracesRouterSkipsSpansWhenTracesSignalOff(t *testing.T) {
 	router := newTracesRouter(cfg, sink)
 	require.NoError(t, router.ConsumeTraces(context.Background(), input))
 	require.Empty(t, sink.traces, "traces off: the edges must emit nothing")
+}
+
+// TestTracesRouterDropsClaudeLLMRequestWhenChatSourceLogs pins the config
+// plumbing end to end: with claude_code.chat_source: logs the router hands the
+// Claude edge a suppression flag and llm_request produces no canonical span
+// while its siblings still pass.
+func TestTracesRouterDropsClaudeLLMRequestWhenChatSourceLogs(t *testing.T) {
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	interaction := spans.AppendEmpty()
+	interaction.SetName("claude_code.interaction")
+	interaction.SetSpanID(pcommon.SpanID{1})
+	llm := spans.AppendEmpty()
+	llm.SetName("claude_code.llm_request")
+	llm.SetSpanID(pcommon.SpanID{2})
+	llm.SetParentSpanID(pcommon.SpanID{1})
+	llm.Attributes().PutStr("model", "claude-sonnet-4-5")
+	tool := spans.AppendEmpty()
+	tool.SetName("claude_code.tool")
+	tool.SetSpanID(pcommon.SpanID{3})
+	tool.SetParentSpanID(pcommon.SpanID{1})
+
+	cfg := createDefaultConfig()
+	cfg.ClaudeCode.ChatSource = claude.ChatLogs
+	sink := &routerSink{}
+	require.NoError(t, newTracesRouter(cfg, sink).ConsumeTraces(context.Background(), input))
+	require.Len(t, sink.traces, 1)
+	var names []string
+	for i := 0; i < sink.traces[0].ResourceSpans().Len(); i++ {
+		rss := sink.traces[0].ResourceSpans().At(i).ScopeSpans()
+		for j := 0; j < rss.Len(); j++ {
+			for k := 0; k < rss.At(j).Spans().Len(); k++ {
+				names = append(names, rss.At(j).Spans().At(k).Name())
+			}
+		}
+	}
+	require.ElementsMatch(t, []string{"invoke_agent claude_code", "execute_tool"}, names,
+		"llm_request drops; interaction and tool siblings keep today's behavior")
 }
 
 func TestTracesRouterClaimsCodexNativeGroup(t *testing.T) {

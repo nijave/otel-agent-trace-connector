@@ -1,0 +1,141 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": { "stringValue": "claude-code" }
+          },
+          {
+            "key": "service.version",
+            "value": { "stringValue": "2.1.319" }
+          },
+          {
+            "key": "session.id",
+            "value": { "stringValue": "synthetic-session-resource" }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "com.anthropic.claude_code.events",
+            "version": "0.1.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1794052800000000000",
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "00f067aa0ba902b7",
+              "body": {
+                "stringValue": "claude_code.api_request"
+              },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "api_request" } },
+                { "key": "request_id", "value": { "stringValue": "req_01SYNTHETICREQUEST" } },
+                { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } },
+                { "key": "input_tokens", "value": { "intValue": "15234" } },
+                { "key": "output_tokens", "value": { "intValue": "2048" } },
+                { "key": "cache_read_tokens", "value": { "intValue": "4096" } },
+                { "key": "cache_creation_tokens", "value": { "intValue": "512" } },
+                { "key": "cache_creation_5m_tokens", "value": { "intValue": "384" } },
+                { "key": "cache_creation_1h_tokens", "value": { "intValue": "128" } },
+                { "key": "cost_usd", "value": { "doubleValue": 0.1525 } },
+                { "key": "ttft_ms", "value": { "intValue": "812" } },
+                { "key": "duration_ms", "value": { "intValue": "5310" } },
+                { "key": "effort", "value": { "stringValue": "high" } },
+                { "key": "speed", "value": { "stringValue": "standard" } },
+                { "key": "session.id", "value": { "stringValue": "synthetic-session-01" } },
+                { "key": "prompt.id", "value": { "stringValue": "prompt-synthetic-01" } },
+                { "key": "agent.name", "value": { "stringValue": "claude_code" } },
+                { "key": "query_source", "value": { "stringValue": "repl" } },
+                { "key": "event.timestamp", "value": { "stringValue": "2026-11-07T12:00:00Z" } },
+                { "key": "event.sequence", "value": { "intValue": "42" } },
+                { "key": "user.id", "value": { "stringValue": "user_synthetic01" } },
+                { "key": "user.email", "value": { "stringValue": "synthetic.user@example.com" } },
+                { "key": "user.account_uuid", "value": { "stringValue": "uuid-synthetic-01" } },
+                { "key": "user.account_id", "value": { "stringValue": "acct-synthetic-01" } },
+                { "key": "organization.id", "value": { "stringValue": "org-synthetic-01" } },
+                { "key": "terminal.type", "value": { "stringValue": "xterm-256color" } },
+                { "key": "process.working_directory", "value": { "stringValue": "/home/synthetic/project" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1794052805000000000",
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4737",
+              "spanId": "00f067aa0ba902b8",
+              "body": {
+                "stringValue": "claude_code.api_request"
+              },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "api_request" } },
+                { "key": "request_id", "value": { "stringValue": "req_02SYNTHETICREQUEST" } },
+                { "key": "model", "value": { "stringValue": "claude-haiku-4-5" } },
+                { "key": "input_tokens", "value": { "stringValue": "777" } },
+                { "key": "output_tokens", "value": { "stringValue": "88" } },
+                { "key": "cache_read_tokens", "value": { "stringValue": "0" } },
+                { "key": "cache_creation_tokens", "value": { "stringValue": "0" } },
+                { "key": "cost_usd", "value": { "stringValue": "0" } },
+                { "key": "ttft_ms", "value": { "stringValue": "250" } },
+                { "key": "duration_ms", "value": { "stringValue": "2000" } },
+                { "key": "session.id", "value": { "stringValue": "synthetic-session-02" } },
+                { "key": "agent_id", "value": { "stringValue": "agent-synthetic-sub" } },
+                { "key": "agent.name", "value": { "stringValue": "claude_code" } },
+                { "key": "event.timestamp", "value": { "stringValue": "2026-11-07T12:00:05Z" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1794052810000000000",
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4738",
+              "spanId": "00f067aa0ba902b9",
+              "body": {
+                "stringValue": "claude_code.api_error"
+              },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "api_error" } },
+                { "key": "request_id", "value": { "stringValue": "req_03SYNTHETICREQUEST" } },
+                { "key": "model", "value": { "stringValue": "claude-sonnet-4-5" } },
+                { "key": "error", "value": { "stringValue": "rate limit exceeded" } },
+                { "key": "status_code", "value": { "stringValue": "429" } },
+                { "key": "attempt", "value": { "intValue": "2" } },
+                { "key": "duration_ms", "value": { "intValue": "240" } },
+                { "key": "session.id", "value": { "stringValue": "synthetic-session-01" } },
+                { "key": "user.id", "value": { "stringValue": "user_synthetic01" } },
+                { "key": "event.timestamp", "value": { "stringValue": "2026-11-07T12:00:10Z" } }
+              ]
+            },
+            {
+              "timeUnixNano": "1794052815000000000",
+              "body": {
+                "stringValue": "claude_code.user_prompt"
+              },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "user_prompt" } },
+                { "key": "prompt.length", "value": { "intValue": "128" } }
+              ]
+            }
+          ]
+        },
+        {
+          "scope": {
+            "name": "other.scope",
+            "version": "0.1.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1794052820000000000",
+              "body": {
+                "stringValue": "api_request"
+              },
+              "attributes": [
+                { "key": "event.name", "value": { "stringValue": "api_request" } },
+                { "key": "request_id", "value": { "stringValue": "req_04SYNTHETICREQUEST" } }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

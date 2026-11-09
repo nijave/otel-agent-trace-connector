@@ -30,6 +30,7 @@ import (
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claude"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/claudelogs"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codextraces"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/cursor"
@@ -242,6 +243,14 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 		return cursor.New(cursor.NewDefaultConfig(), true, set, next)
 	})
 
+	claudelogsNormalize := conformanceConsumeLogs(func(next consumer.Traces) (connector.Logs, error) {
+		set := connector.Settings{
+			ID:                component.NewID(component.MustNewType("coding_agent")),
+			TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()},
+		}
+		return claudelogs.New(true, true, set, next), nil
+	})
+
 	fixtures := []conformanceFixture{
 		{wired: "claude", edge: canonical.Edge{
 			Name: "claude",
@@ -257,6 +266,32 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 				{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 				{RawKey: "stop_reason", CanonicalKey: "gen_ai.response.finish_reasons", Kind: canonical.Presence},
 				{RawKey: "effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+				{RawKey: "organization.id", CanonicalKey: "coding_agent.team.id", Kind: canonical.Presence},
+			},
+		}},
+		{wired: "claudelogs", edge: canonical.Edge{
+			Name: "claudelogs",
+			LoadRaw: func() (canonical.RawInput, error) {
+				return conformanceLoadJSONLogs("internal/claudelogs/testdata/claude-native-logs.json")
+			},
+			Normalize: claudelogsNormalize,
+			Signals: []canonical.Signal{
+				{RawKey: "input_tokens", CanonicalKey: "gen_ai.usage.input_tokens", Kind: canonical.Sum},
+				{RawKey: "output_tokens", CanonicalKey: "gen_ai.usage.output_tokens", Kind: canonical.Sum},
+				{RawKey: "cache_read_tokens", CanonicalKey: "gen_ai.usage.cache_read.input_tokens", Kind: canonical.Sum},
+				{RawKey: "cache_creation_tokens", CanonicalKey: "gen_ai.usage.cache_write.input_tokens", Kind: canonical.Sum},
+				// cost_usd is a double (zero is meaningful), so a truncating
+				// sum cannot check it; presence pins the mapping.
+				{RawKey: "cost_usd", CanonicalKey: "coding_agent.usage.cost", Kind: canonical.Presence},
+				{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
+				{RawKey: "effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+				{RawKey: "model", CanonicalKey: "gen_ai.request.model", Kind: canonical.Presence},
+				{RawKey: "request_id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
+				{RawKey: "session.id", CanonicalKey: "gen_ai.conversation.id", Kind: canonical.Presence},
+				{RawKey: "agent_id", CanonicalKey: "gen_ai.agent.id", Kind: canonical.Presence},
+				{RawKey: "terminal.type", CanonicalKey: "coding_agent.terminal.type", Kind: canonical.Presence},
+				{RawKey: "user.id", CanonicalKey: "coding_agent.user.id", Kind: canonical.Presence},
+				{RawKey: "user.email", CanonicalKey: "coding_agent.user.email", Kind: canonical.Presence},
 				{RawKey: "organization.id", CanonicalKey: "coding_agent.team.id", Kind: canonical.Presence},
 			},
 		}},
@@ -429,7 +464,7 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 	// Named mirror of the edges newTracesRouter and newLogsRouter construct,
 	// in construction order. The count assertion below keeps this list tied to
 	// the real routers; coverage is asserted by identity, not count.
-	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codextraces", "codex", "cursor"}
+	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codextraces", "codex", "cursor", "claudelogs"}
 	tracesWired := len(newTracesRouter(createDefaultConfig(), &conformanceSink{}).(*tracesRouter).edges)
 	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
 	logsEdge, err := newLogsRouter(createDefaultConfig(), set, &conformanceSink{})

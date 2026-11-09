@@ -23,13 +23,24 @@ import (
 type claudeTraceNormalizer struct {
 	next            consumer.Traces
 	captureIdentity bool
+	chatFromLogs    bool
 	component.StartFunc
 	component.ShutdownFunc
 }
 
 // New creates the stateless Claude Code traces-to-traces edge.
 func New(next consumer.Traces, captureIdentity bool) connector.Traces {
-	return &claudeTraceNormalizer{next: next, captureIdentity: captureIdentity}
+	return NewWithChatSource(next, captureIdentity, false)
+}
+
+// NewWithChatSource creates the edge with an explicit chat source. When
+// chatFromLogs is true (claude_code.chat_source: logs), claude_code.llm_request
+// spans drop from canonical output — the claudelogs edge synthesizes chat
+// spans from the api_request/api_error log records instead, so exactly one
+// signal emits each request's chat span. Interaction, tool, and sub-spans
+// keep today's behavior.
+func NewWithChatSource(next consumer.Traces, captureIdentity, chatFromLogs bool) connector.Traces {
+	return &claudeTraceNormalizer{next: next, captureIdentity: captureIdentity, chatFromLogs: chatFromLogs}
 }
 
 func (*claudeTraceNormalizer) Capabilities() consumer.Capabilities {
@@ -63,6 +74,10 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 					foreign[span.SpanID()] = true
 					continue
 				}
+				if n.chatFromLogs && span.Name() == llmRequestSpanName {
+					foreign[span.SpanID()] = true
+					continue
+				}
 				normalizeClaudeSpan(span, version, resourceSessionID, n.captureIdentity)
 				content.Strip(span)
 			}
@@ -82,6 +97,10 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 // it ends, so a child can land in an export that carries none of its ancestors, and
 // dropping that batch would delete those spans from the trace.
 const claudeSpanPrefix = "claude_code."
+
+// llmRequestSpanName is the native chat span; the claudelogs edge replaces it
+// under claude_code.chat_source: logs.
+const llmRequestSpanName = "claude_code.llm_request"
 
 // ContainsClaudeSpans reports whether any span in the group carries Claude
 // Code's native span-name namespace. The GenAI edge also calls this to leave

@@ -132,10 +132,12 @@ references.
 | `codex.reorder_window` / `cursor.reorder_window` | `30s` | Quiet period after the last event before a completed Codex turn or any Cursor burst finalizes. Must be less than that block's `turn_timeout`; zero is allowed. |
 | `codex.max_active_turns` / `cursor.max_active_turns` | `10000` | Bound on concurrently correlated Codex turns or Cursor bursts, per edge; the least-recently-seen state emits before admitting a new one. |
 | `codex.max_events_per_turn` / `cursor.max_events_per_turn` | `1000` | Bound on retained events and dedupe keys per turn/burst. Overflow is discarded without changing finalization state; truncation is reported by `otelcol_coding_agent_turns_truncated`. |
+| `claude_code.chat_source` | `traces` | Which signal emits Claude Code chat spans: the native `claude_code.llm_request` traces, or spans synthesized from `api_request`/`api_error` log records (the only source of per-request cost and API failure status). A deployment splitting Claude Code logs and traces across two connector instances must set the same value on both. |
 <!-- vale on -->
 
-The two blocks are independent: `codex:` tunes the Codex logs edge and
-`cursor:` tunes the Cursor logs edge, and each defaults as shown. The key names
+The three blocks are independent: `codex:` tunes the Codex logs edge,
+`cursor:` tunes the Cursor logs edge, and `claude_code:` selects the Claude Code
+chat source; each defaults as shown. The key names in `codex:` and `cursor:`
 match because both edges bound the same things.
 
 > **Breaking change:** the four tuning keys (`turn_timeout`,
@@ -162,6 +164,8 @@ connectors:
       reorder_window: 30s
       max_active_turns: 10000
       max_events_per_turn: 1000
+    claude_code:
+      chat_source: traces
   coding_agent/claude:
 
 service:

@@ -64,14 +64,14 @@ zero-cost routing e2e. Also add a metrics note to
 ### Task 2: Claude Code chat spans from logs (E1, E8)
 
 Build the Claude log chat-spans spec: the `internal/claudelogs` edge, the
-`claude_chat_source` config field, the traces-edge suppression, tests,
+`claude_code.chat_source` config field, the traces-edge suppression, tests,
 fixture, conformance registration, and docs. Re-audit
 `docs/harnesses/claude-code.md` against the evidence in the spec (Claude Code
 2.1.319) and correct every stale statement found (E8).
 
 - [ ] Config field and validation tests.
 - [ ] `claudelogs` edge with unit, fixture, and conformance tests.
-- [ ] Claude traces edge drops `llm_request` when `claude_chat_source: logs`.
+- [ ] Claude traces edge drops `llm_request` when `claude_code.chat_source: logs`.
 - [ ] Docs: claude-code matrix (new Logs mapping section), canonical-attributes
       cost row, README configuration section.
 
@@ -160,4 +160,4 @@ and from `api_error` logs (logs source, Task 2 edge). Other harnesses: record
 - [ ] `GOTOOLCHAIN=auto ./scripts/check.sh` and `scripts/e2e-routing.sh` pass.
 - [ ] Every evidence row E1–E10 maps to a commit or a documented follow-up.
 - [ ] Open one PR; its body lists the follow-ups and the deployment change
-      `claude_chat_source: logs` needs (both connector instances).
+      `claude_code.chat_source: logs` needs (both connector instances).
