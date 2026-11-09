@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func newMeteredConnector(t *testing.T, cfg *Config, next consumer.Traces) (*codingAgentConnector, *sdkmetric.ManualReader) {
+func newMeteredConnector(t *testing.T, cfg Config, next consumer.Traces) (*codingAgentConnector, *sdkmetric.ManualReader) {
 	t.Helper()
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))

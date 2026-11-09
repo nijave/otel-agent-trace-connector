@@ -126,25 +126,42 @@ references.
 <!-- vale off -->
 | Setting | Default | Description |
 | --- | --- | --- |
-| `turn_timeout` | `10m` | Codex idle timeout without completion; Cursor maximum burst age measured from its first record. Timeout roots have Error status. |
-| `reorder_window` | `30s` | Quiet period after the last event before a completed Codex turn or any Cursor burst finalizes. Must be less than `turn_timeout`; zero is allowed. |
-| `max_active_turns` | `10000` | Bound on concurrently correlated Codex turns or Cursor bursts per edge; the least-recently-seen state emits before admitting a new one. |
-| `max_events_per_turn` | `1000` | Bound on retained events and dedupe keys per turn/burst. Overflow is discarded without changing finalization state; truncation is reported by `otelcol_coding_agent_turns_truncated`. |
 | `capture_identity` | `true` | Controls `coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id`, and resource `host.name`. Set `false` to suppress identity. |
 | `signals` | `[logs, traces]` | Input signals this instance consumes. A disabled input edge emits nothing; pipeline wiring is the other way to select signals. |
+| `codex.turn_timeout` / `cursor.turn_timeout` | `10m` | Codex idle timeout without completion; Cursor maximum burst age measured from its first record. Timeout roots have Error status. |
+| `codex.reorder_window` / `cursor.reorder_window` | `30s` | Quiet period after the last event before a completed Codex turn or any Cursor burst finalizes. Must be less than that block's `turn_timeout`; zero is allowed. |
+| `codex.max_active_turns` / `cursor.max_active_turns` | `10000` | Bound on concurrently correlated Codex turns or Cursor bursts, per edge; the least-recently-seen state emits before admitting a new one. |
+| `codex.max_events_per_turn` / `cursor.max_events_per_turn` | `1000` | Bound on retained events and dedupe keys per turn/burst. Overflow is discarded without changing finalization state; truncation is reported by `otelcol_coding_agent_turns_truncated`. |
 <!-- vale on -->
+
+The two blocks are independent: `codex:` tunes the Codex logs edge and
+`cursor:` tunes the Cursor logs edge, and each defaults as shown. The key names
+match because both edges bound the same things.
+
+> **Breaking change:** the four tuning keys (`turn_timeout`,
+> `reorder_window`, `max_active_turns`, `max_events_per_turn`) moved from the
+> top level of the `coding_agent` block into the `codex:` and `cursor:`
+> blocks. A tuning key left at the top level is now rejected as an unknown key;
+> move each value under the block whose edge it tunes. `capture_identity` and
+> `signals` stay at the top level because they apply to every edge.
 
 Example (both edges bridging into a canonical traces pipeline):
 
 ```yaml
 connectors:
   coding_agent:
-    turn_timeout: 10m
-    reorder_window: 30s
-    max_active_turns: 10000
-    max_events_per_turn: 1000
     capture_identity: true
     signals: [logs, traces]
+    codex:
+      turn_timeout: 10m
+      reorder_window: 30s
+      max_active_turns: 10000
+      max_events_per_turn: 1000
+    cursor:
+      turn_timeout: 10m
+      reorder_window: 30s
+      max_active_turns: 10000
+      max_events_per_turn: 1000
   coding_agent/claude:
 
 service:

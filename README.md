@@ -214,12 +214,18 @@ The connector can bridge either logs or traces into a traces pipeline:
 ```yaml
 connectors:
   coding_agent:
-    turn_timeout: 10m
-    reorder_window: 30s
-    max_active_turns: 10000
-    max_events_per_turn: 1000
     capture_identity: true
     signals: [logs, traces]
+    codex:
+      turn_timeout: 10m
+      reorder_window: 30s
+      max_active_turns: 10000
+      max_events_per_turn: 1000
+    cursor:
+      turn_timeout: 10m
+      reorder_window: 30s
+      max_active_turns: 10000
+      max_events_per_turn: 1000
   coding_agent/claude:
 
 service:
@@ -234,6 +240,20 @@ service:
       receivers: [coding_agent, coding_agent/claude]
       exporters: [canonical]
 ```
+
+> **Breaking change:** the four tuning keys (`turn_timeout`,
+> `reorder_window`, `max_active_turns`, `max_events_per_turn`) moved from the
+> top level of the `coding_agent` block into the per-edge `codex:` and
+> `cursor:` blocks. A tuning key left at the top level is now rejected as an
+> unknown key, so move each value under the block whose edge it tunes. The
+> connector-wide keys `capture_identity` and `signals` stay at the top level.
+
+The `codex:` and `cursor:` blocks each tune one logs edge and share nothing:
+`codex:` bounds Codex turn correlation, `cursor:` bounds Cursor activity
+bursts. Both use the same key names because both bound the same things — a
+maximum age (`turn_timeout`), a quiet window (`reorder_window`), the per-edge
+concurrent-state bound (`max_active_turns`), and the per-turn event bound
+(`max_events_per_turn`). Each block defaults to the values shown above.
 
 `reorder_window` starts after the most recently received Codex event. A turn
 with at least one `response.completed` event finalizes when that window is

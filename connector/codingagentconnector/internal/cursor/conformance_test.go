@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 )
 
 // TestCursorConformance pins the Cursor logs-to-traces edge to the canonical
@@ -59,7 +58,7 @@ func normalizeViaNormalizer(raw canonical.RawInput) (ptrace.Traces, error) {
 		ID:                component.NewID(component.MustNewType("coding_agent")),
 		TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()},
 	}
-	instance, err := New(codex.NewDefaultConfig(), set, sink)
+	instance, err := New(NewDefaultConfig(), true, set, sink)
 	if err != nil {
 		return ptrace.Traces{}, err
 	}

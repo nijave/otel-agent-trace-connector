@@ -20,7 +20,7 @@ import (
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
@@ -43,10 +43,11 @@ type burstState struct {
 }
 
 type cursorConnector struct {
-	config       *codex.Config
-	set          connector.Settings
-	next         consumer.Traces
-	scopeVersion string
+	config          Config
+	captureIdentity bool
+	set             connector.Settings
+	next            consumer.Traces
+	scopeVersion    string
 
 	mu     sync.Mutex
 	bursts map[string]*burstState
@@ -60,9 +61,8 @@ type cursorConnector struct {
 	telemetry *telemetry
 }
 
-// New creates the stateful Cursor logs-to-traces edge. It shares the
-// provider-neutral Config alias with the codex edge.
-func New(cfg *codex.Config, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
+// New creates the stateful Cursor logs-to-traces edge.
+func New(cfg Config, captureIdentity bool, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
 	ts := set.TelemetrySettings
 	if ts.MeterProvider == nil {
 		ts.MeterProvider = noopmetric.NewMeterProvider()
@@ -73,10 +73,10 @@ func New(cfg *codex.Config, set connector.Settings, next consumer.Traces) (conne
 	}
 	scopeVersion := set.BuildInfo.Version
 	if scopeVersion == "" {
-		scopeVersion = codex.DefaultScopeVersion
+		scopeVersion = canonical.DefaultScopeVersion
 	}
 	c := &cursorConnector{
-		config: cfg, set: set, next: next, scopeVersion: scopeVersion,
+		config: cfg, captureIdentity: captureIdentity, set: set, next: next, scopeVersion: scopeVersion,
 		bursts: make(map[string]*burstState),
 		stop:   make(chan struct{}), done: make(chan struct{}),
 		telemetry: &telemetry{builder: builder},
@@ -260,7 +260,7 @@ func (c *cursorConnector) emit(ctx context.Context, finalized []finalizedBurst) 
 		if fb.burst == nil {
 			continue
 		}
-		traces, err := buildTrace(fb.burst, fb.reason, c.scopeVersion, c.config.CaptureIdentity)
+		traces, err := buildTrace(fb.burst, fb.reason, c.scopeVersion, c.captureIdentity)
 		if err != nil {
 			// Deliver anyway: the spans are intact even when resource
 			// attributes fail to copy, and returning the error would make the

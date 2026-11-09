@@ -28,10 +28,16 @@ receivers:
 
 connectors:
   coding_agent:
-    turn_timeout: 10m
-    reorder_window: 30s
-    max_active_turns: 10000
-    max_events_per_turn: 1000
+    codex:
+      turn_timeout: 10m
+      reorder_window: 30s
+      max_active_turns: 10000
+      max_events_per_turn: 1000
+    cursor:
+      turn_timeout: 10m
+      reorder_window: 30s
+      max_active_turns: 10000
+      max_events_per_turn: 1000
   coding_agent/claude:
 
 processors:

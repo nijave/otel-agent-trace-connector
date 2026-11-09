@@ -73,7 +73,7 @@ func normalizeViaNormalizer(raw canonical.RawInput) (ptrace.Traces, error) {
 		ID:                component.NewID(component.MustNewType("coding_agent")),
 		TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()},
 	}
-	instance, err := newConnector(NewDefaultConfig(), set, sink)
+	instance, err := newConnector(NewDefaultConfig(), true, set, sink)
 	if err != nil {
 		return ptrace.Traces{}, err
 	}

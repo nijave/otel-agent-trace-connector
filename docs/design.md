@@ -173,11 +173,15 @@ isolation, as in Contrib.
 
 The component module root contains `Config`, `NewFactory`, the factory edge
 adapters, and the mdatagen inputs/outputs (`metadata.yaml`, `doc.go`, and the
-mdatagen-generated files). Stateful Codex logic lives in `internal/codex`;
-Cursor burst logic lives in `internal/cursor`; native
-Claude logic lives in `internal/claude`; GenAI normalizer logic lives in
-`internal/genai`; OpenCode normalizer logic lives in `internal/opencode`;
-`internal/metadata` has mdatagen-generated code.
+mdatagen-generated files). Provider logic splits into internal packages, one
+per harness edge: `internal/codex` (stateful Codex turn correlation),
+`internal/cursor` (stateful Cursor burst correlation), and the stateless
+normalizers `internal/claude`, `internal/codextraces`, `internal/genai`,
+`internal/opencode`, `internal/pi`, and `internal/openhands`. Shared logic
+lives in `internal/canonical` (canonical vocabulary, resource contract, and the
+conformance runner) and `internal/content` (content stripping).
+`internal/metadata` holds the mdatagen-generated status/telemetry code, and
+`internal/metadatatest` its generated test helpers.
 This prevents provider schemas and correlation helpers from becoming accidental
 public API.
 
@@ -198,6 +202,58 @@ mixing stateful and stateless logic.
 The component registers standard logs and traces edges, so it uses
 `connector.NewFactory`; it does not depend directly on the profile-aware
 experimental `xconnector` factory.
+
+### Configuration structure
+
+The YAML tree is the Go type tree: a key's location answers where its code
+lives. The rules below are enforced by `config_structure_test.go` in the
+component root package.
+
+- **Connector-wide keys live in the root `Config`.** The root holds only keys
+  read by more than one harness or by the routers. Today those are
+  `capture_identity` (every edge applies the same identity policy) and
+  `signals` (the routers gate whole pipelines on it).
+- **A key only one harness reads lives in that harness package's own `Config`,**
+  nested under the harness key: `codex:` decodes into `internal/codex.Config`,
+  `cursor:` into `internal/cursor.Config`, and a later harness follows the same
+  pattern (`claude_code:` into `internal/claude`, for example). The root
+  field's `mapstructure` tag equals the YAML key, and a block's type is always
+  named `Config`.
+- **Each sub-config owns its defaults and validation.** `NewDefaultConfig`
+  builds the block's defaults and `Validate` rejects its bad values; the root
+  `Validate` delegates and prefixes the key in the error
+  (`codex: turn_timeout must be positive`).
+- **Edges receive what they need explicitly.** An edge constructor takes its
+  own sub-config plus the connector-wide values it applies (`captureIdentity
+  bool`), never the root `Config`. That is what keeps an edge from importing
+  another harness package, as `internal/cursor` no longer imports
+  `internal/codex`.
+- **Harness packages never import another harness package.** Shared helpers and
+  constants go in `internal/canonical` or `internal/content`. The one
+  deliberate exception today is `internal/genai`: the generic GenAI edge defers
+  a resource group to the provider edge that owns it, so it calls each
+  provider's `Contains*Spans` claim predicate in `internal/claude`,
+  `internal/opencode`, `internal/pi`, and `internal/openhands`. Relocating those
+  predicates to a shared package would remove the exception, but choosing
+  between that and the deferral is a maintainer's call, so the guard test
+  records the exception explicitly: any other cross-harness import fails.
+
+#### Adding a config key
+
+1. Decide the scope: does exactly one harness read the key, or more than one
+   (or a router)?
+2. Add the field with its `mapstructure` tag to the right struct — the harness
+   package's `Config` for one harness, the root `Config` for connector-wide.
+3. Give it a default in that struct's `NewDefaultConfig`.
+4. Validate it in that struct's `Validate` (the root delegates and prefixes).
+5. Add or extend a decode test proving the YAML lands on the field, plus a
+   validation test naming the key on failure.
+6. Document it in the README configuration section — and in the harness file
+   under `docs/harnesses/` when it changes what that harness emits.
+7. Update every repo YAML that should set it (`collector-config.yaml`,
+   `examples/`, `e2e/`).
+8. For an existing key that moves or changes shape, add a breaking-change note
+   to the README and the connector README.
 
 ## Canonical semantics
 
@@ -325,6 +381,11 @@ limits individual turn memory; truncation surfaces through the
 `otelcol_coding_agent_turns_truncated` metric rather than a span attribute.
 These controls are intentionally configuration-driven.
 
+Every tuning key in this section lives in the connector's `codex:` block
+(`codex.turn_timeout`, `codex.reorder_window`, `codex.max_active_turns`,
+`codex.max_events_per_turn`); the connector-wide `capture_identity` and
+`signals` keys stay at the top level of the `coding_agent` block.
+
 ## Cursor correlation model
 
 ### Key and burst boundary
@@ -381,6 +442,10 @@ never reaches emitted spans.
 `max_active_turns` bounds concurrent bursts with LRU eviction;
 `max_events_per_turn` bounds per-burst memory; truncation surfaces through
 the `otelcol_coding_agent_turns_truncated` metric, identical to Codex.
+The tuning keys live in the connector's `cursor:` block
+(`cursor.turn_timeout`, `cursor.reorder_window`, `cursor.max_active_turns`,
+`cursor.max_events_per_turn`), independent of the `codex:` block that holds
+the same names.
 
 ### Span construction
 

@@ -81,6 +81,13 @@ tests cover it — before cleverness, flexibility, or feature breadth.
 - The connector component is its own Go module under
   `connector/codingagentconnector/`; the e2e validator is the repo-root module.
   The repo deliberately omits `go.work` — build each module independently.
+- Connector configuration follows the
+  [Configuration structure rules](docs/design.md#configuration-structure): the
+  YAML tree matches the Go type tree, a one-harness key lives in that harness
+  package's own `Config`, and the root holds only connector-wide keys. The
+  guard tests in
+  `connector/codingagentconnector/config_structure_test.go` enforce them, so a
+  new key or a new cross-harness import needs a deliberate test edit.
 - `connector/codingagentconnector/metadata.yaml` drives mdatagen; regenerate with
   `./scripts/generate.sh` (CI fails if the generated files are stale). mdatagen is
   pinned via `internal/tools` (a `tool` directive), not `go run tool@version`
