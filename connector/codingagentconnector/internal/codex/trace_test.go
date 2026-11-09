@@ -291,21 +291,79 @@ func TestConsecutiveUsageLessCallsEachGetChatSpan(t *testing.T) {
 	require.Equal(t, 3, traces.SpanCount()) // root + two chat spans
 }
 
-// TestFailedCompletionYieldsNoChatSpan pins that the failed-completion record
-// Codex logs when the response stream errors (only error.message, no duration)
-// still produces no chat span.
-func TestFailedCompletionYieldsNoChatSpan(t *testing.T) {
+// TestFailedCompletionYieldsChatSpanWithError pins that a failed completion
+// (Codex logs one per failed response stream, carrying only error.message) is
+// the failed call's chat span and reports the failure through its status.
+func TestFailedCompletionYieldsChatSpanWithError(t *testing.T) {
 	base := time.Unix(100, 0)
 	turn := &turnState{
 		conversationID: "c", first: base, last: base.Add(time.Second), promptSeen: true,
 		events: []agentEvent{
 			testEvent("codex.user_prompt", base, nil),
 			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
-				"event.kind": "response.completed", "error.message": "stream closed before response.completed",
+				"event.kind": "response.completed", "model": "gpt-test",
+				"error.message": "stream closed before response.completed",
 			}),
 		},
 	}
-	require.Equal(t, 1, mustBuildTrace(t, turn, "completed").SpanCount()) // root only
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 2, spans.Len()) // root + the failed call's chat span
+	chat := findSpan(t, spans, "chat gpt-test")
+	require.Equal(t, ptrace.StatusCodeError, chat.Status().Code())
+	require.Equal(t, "stream closed before response.completed", chat.Status().Message())
+	_, hasUsage := chat.Attributes().Get("gen_ai.usage.input_tokens")
+	require.False(t, hasUsage)
+}
+
+// TestFailedCompletionAfterUsageLessCallKeepsBothSpans pins that a failure is
+// its own call: the previous call's chat span stays in place and stays Unset.
+func TestFailedCompletionAfterUsageLessCallKeepsBothSpans(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "duration_ms": 38,
+			}),
+			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "error.message": "provider error",
+			}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 3, spans.Len()) // root + one chat span per call
+	require.Equal(t, "chat gpt-test", spans.At(1).Name())
+	require.Equal(t, ptrace.StatusCodeUnset, spans.At(1).Status().Code())
+	require.Equal(t, "chat gpt-test", spans.At(2).Name())
+	require.Equal(t, ptrace.StatusCodeError, spans.At(2).Status().Code())
+	require.Equal(t, "provider error", spans.At(2).Status().Message())
+}
+
+// TestFailedCompletionIsNeverAFrameRecord pins the guard in isFrameCompletion:
+// a failed record that happens to carry duration_ms is not the frame record of
+// a later completion, so neither the failure nor the call is lost.
+func TestFailedCompletionIsNeverAFrameRecord(t *testing.T) {
+	base := time.Unix(100, 0)
+	turn := &turnState{
+		conversationID: "c", first: base, last: base.Add(2 * time.Second), promptSeen: true,
+		events: []agentEvent{
+			testEvent("codex.user_prompt", base, nil),
+			testEvent("codex.sse_event", base.Add(time.Second), map[string]any{
+				"event.kind": "response.completed", "duration_ms": 38, "error.message": "frame failed",
+			}),
+			testEvent("codex.sse_event", base.Add(2*time.Second), map[string]any{
+				"event.kind": "response.completed", "model": "gpt-test", "ttft_ms": 30,
+			}),
+		},
+	}
+	spans := mustBuildTrace(t, turn, "completed").ResourceSpans().At(0).ScopeSpans().At(0).Spans()
+	require.Equal(t, 3, spans.Len()) // root + the failed record's span + the call's span
+	require.Equal(t, "chat", spans.At(1).Name())
+	require.Equal(t, ptrace.StatusCodeError, spans.At(1).Status().Code())
+	require.Equal(t, "frame failed", spans.At(1).Status().Message())
+	require.Equal(t, "chat gpt-test", spans.At(2).Name())
+	require.Equal(t, ptrace.StatusCodeUnset, spans.At(2).Status().Code())
 }
 
 // TestChatSpanCopiesReasoningEffortAndServiceTier pins the two optional
