@@ -24,24 +24,29 @@ import (
 // a record lands in at most one edge and unclaimed records stay out of the
 // canonical edge. Start and Shutdown fan out: the codex and cursor edges own
 // sweep loops and drain-on-shutdown state, while the stateless claudelogs
-// edge no-ops both. consume mirrors the signals config: when logs are off the
-// router is a pass-through and the edges never see a record.
+// edge no-ops both. The Codex edge is constructed only when the codex block's
+// signals enable logs — the one duplicate implementation; cursor and
+// claudelogs have no duplicate and are always constructed, so they run under
+// every signals value.
 type logsRouter struct {
-	edges   []connector.Logs
-	consume bool
+	edges []connector.Logs
 }
 
 func newLogsRouter(cfg *Config, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
-	codexEdge, err := codex.New(cfg.Codex, cfg.CaptureIdentity, set, next)
-	if err != nil {
-		return nil, err
+	var edges []connector.Logs
+	if cfg.Codex.SignalEnabled(codex.SignalLogs) {
+		codexEdge, err := codex.New(cfg.Codex, cfg.CaptureIdentity, set, next)
+		if err != nil {
+			return nil, err
+		}
+		edges = append(edges, codexEdge)
 	}
 	cursorEdge, err := cursor.New(cfg.Cursor, cfg.CaptureIdentity, set, next)
 	if err != nil {
 		return nil, err
 	}
-	claudelogsEdge := claudelogs.New(cfg.ClaudeCode.ChatFromLogs(), cfg.CaptureIdentity, set, next)
-	return &logsRouter{edges: []connector.Logs{codexEdge, cursorEdge, claudelogsEdge}, consume: cfg.ConsumesLogs()}, nil
+	edges = append(edges, cursorEdge, claudelogs.New(cfg.ClaudeCode.ChatFromLogs(), cfg.CaptureIdentity, set, next))
+	return &logsRouter{edges: edges}, nil
 }
 
 func (*logsRouter) Capabilities() consumer.Capabilities {
@@ -66,9 +71,6 @@ func (r *logsRouter) Shutdown(ctx context.Context) error {
 }
 
 func (r *logsRouter) ConsumeLogs(ctx context.Context, logs plog.Logs) error {
-	if !r.consume {
-		return nil
-	}
 	for _, edge := range r.edges {
 		if err := edge.ConsumeLogs(ctx, logs); err != nil {
 			return err

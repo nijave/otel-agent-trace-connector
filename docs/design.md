@@ -210,15 +210,17 @@ lives. The rules below are enforced by `config_structure_test.go` in the
 component root package.
 
 - **Connector-wide keys live in the root `Config`.** The root holds only keys
-  read by more than one harness or by the routers. Today those are
-  `capture_identity` (every edge applies the same identity policy) and
-  `signals` (the routers gate whole pipelines on it).
+  read by more than one harness or by the routers. Today that is
+  `capture_identity` alone (every edge applies the same identity policy).
 - **A key only one harness reads lives in that harness package's own `Config`,**
   nested under the harness key: `codex:` decodes into `internal/codex.Config`,
   `cursor:` into `internal/cursor.Config`, and a later harness follows the same
   pattern (`claude_code:` into `internal/claude`, for example). The root
   field's `mapstructure` tag equals the YAML key, and a block's type is always
-  named `Config`.
+  named `Config`. `codex.signals` is the worked example of a former
+  connector-wide key that belongs to one block: it exists only to choose
+  between duplicate implementations of the same data, and Codex is the only
+  harness with duplicates.
 - **Each sub-config owns its defaults and validation.** `NewDefaultConfig`
   builds the block's defaults and `Validate` rejects its bad values; the root
   `Validate` delegates and prefixes the key in the error
@@ -383,8 +385,8 @@ These controls are intentionally configuration-driven.
 
 Every tuning key in this section lives in the connector's `codex:` block
 (`codex.turn_timeout`, `codex.reorder_window`, `codex.max_active_turns`,
-`codex.max_events_per_turn`); the connector-wide `capture_identity` and
-`signals` keys stay at the top level of the `coding_agent` block.
+`codex.max_events_per_turn`, `codex.signals`); the connector-wide
+`capture_identity` key stays at the top level of the `coding_agent` block.
 
 ## Cursor correlation model
 

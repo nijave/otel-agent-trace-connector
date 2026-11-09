@@ -29,6 +29,7 @@ func TestConfigValidate(t *testing.T) {
 		{name: "cursor reorder exceeds timeout", mutate: func(c *Config) { c.Cursor.ReorderWindow = c.Cursor.TurnTimeout }, wantError: "cursor: reorder_window must be less than"},
 		{name: "cursor active turn bound", mutate: func(c *Config) { c.Cursor.MaxActiveTurns = 0 }, wantError: "cursor: max_active_turns must be positive"},
 		{name: "cursor event bound", mutate: func(c *Config) { c.Cursor.MaxEvents = 0 }, wantError: "cursor: max_events_per_turn must be positive"},
+		{name: "codex signals empty", mutate: func(c *Config) { c.Codex.Signals = nil }, wantError: "codex: signals must list at least one"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -53,11 +54,11 @@ func TestConfigValidateNamesTheFailingBlock(t *testing.T) {
 	require.ErrorContains(t, cfg.Validate(), "cursor: max_events_per_turn must be positive")
 }
 
-func TestDefaultConfigConsumesBothSignals(t *testing.T) {
+func TestDefaultConfigSignalsCodexLogs(t *testing.T) {
 	cfg := createDefaultConfig()
-	require.Equal(t, []string{"logs", "traces"}, cfg.Signals)
-	require.True(t, cfg.ConsumesLogs())
-	require.True(t, cfg.ConsumesTraces())
+	require.Equal(t, []string{codex.SignalLogs}, cfg.Codex.Signals)
+	require.True(t, cfg.Codex.SignalEnabled(codex.SignalLogs))
+	require.False(t, cfg.Codex.SignalEnabled(codex.SignalTraces))
 }
 
 func TestDefaultConfigMatchesSubConfigDefaults(t *testing.T) {
@@ -66,42 +67,24 @@ func TestDefaultConfigMatchesSubConfigDefaults(t *testing.T) {
 	require.Equal(t, cursor.NewDefaultConfig(), cfg.Cursor)
 }
 
-func TestConfigValidateSignals(t *testing.T) {
-	tests := []struct {
-		name      string
-		signals   []string
-		wantError string
-	}{
-		{name: "logs only", signals: []string{"logs"}},
-		{name: "traces only", signals: []string{"traces"}},
-		{name: "empty", signals: []string{}, wantError: "signals"},
-		{name: "unknown", signals: []string{"metrics"}, wantError: `"metrics"`},
-		{name: "duplicate", signals: []string{"logs", "logs"}, wantError: "twice"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := createDefaultConfig()
-			cfg.Signals = tt.signals
-			err := cfg.Validate()
-			if tt.wantError == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, tt.wantError)
-			}
-		})
-	}
-}
-
-// TestConfigDecodeSignalsReplacesDefault pins that a configured list replaces
-// the default rather than merging with it: `signals: [logs]` must turn traces
-// off.
-func TestConfigDecodeSignalsReplacesDefault(t *testing.T) {
+// TestConfigDecodeCodexSignalsReplacesDefault pins that a configured list
+// replaces the default rather than merging with it: `codex: {signals:
+// [traces]}` must yield exactly [traces], not [logs traces].
+func TestConfigDecodeCodexSignalsReplacesDefault(t *testing.T) {
 	cfg := createDefaultConfig()
-	conf := confmap.NewFromStringMap(map[string]any{"signals": []any{"logs"}})
+	conf := confmap.NewFromStringMap(map[string]any{"codex": map[string]any{"signals": []any{"traces"}}})
 	require.NoError(t, conf.Unmarshal(cfg))
-	require.Equal(t, []string{"logs"}, cfg.Signals)
-	require.True(t, cfg.ConsumesLogs())
-	require.False(t, cfg.ConsumesTraces())
+	require.Equal(t, []string{codex.SignalTraces}, cfg.Codex.Signals)
+	require.True(t, cfg.Codex.SignalEnabled(codex.SignalTraces))
+	require.False(t, cfg.Codex.SignalEnabled(codex.SignalLogs))
+	require.NoError(t, cfg.Validate())
+
+	// Both values together replace too.
+	cfg = createDefaultConfig()
+	conf = confmap.NewFromStringMap(map[string]any{"codex": map[string]any{"signals": []any{"logs", "traces"}}})
+	require.NoError(t, conf.Unmarshal(cfg))
+	require.Equal(t, []string{codex.SignalLogs, codex.SignalTraces}, cfg.Codex.Signals)
+	require.NoError(t, cfg.Validate())
 }
 
 // TestConfigDecodeNestedBlocks pins the YAML shape: each harness's tuning keys
@@ -115,9 +98,12 @@ func TestConfigDecodeNestedBlocks(t *testing.T) {
 	})
 	require.NoError(t, conf.Unmarshal(cfg))
 
-	require.Equal(t, codex.Config{
-		TurnTimeout: 30 * time.Second, ReorderWindow: 2 * time.Second, MaxActiveTurns: 5, MaxEvents: 7,
-	}, cfg.Codex)
+	wantCodex := codex.NewDefaultConfig()
+	wantCodex.TurnTimeout = 30 * time.Second
+	wantCodex.ReorderWindow = 2 * time.Second
+	wantCodex.MaxActiveTurns = 5
+	wantCodex.MaxEvents = 7
+	require.Equal(t, wantCodex, cfg.Codex, "a partial block must keep the edge's other defaults, including signals")
 	require.Equal(t, cursor.Config{
 		TurnTimeout:    10 * time.Minute,
 		ReorderWindow:  30 * time.Second,
@@ -163,9 +149,9 @@ func TestFactoryDefaultsAreIndependent(t *testing.T) {
 	first := factory.CreateDefaultConfig().(*Config)
 	second := factory.CreateDefaultConfig().(*Config)
 	first.Codex.MaxEvents = 1
-	first.Signals = nil
+	first.Codex.Signals[0] = codex.SignalTraces
 	require.Equal(t, 1000, second.Codex.MaxEvents)
-	require.Equal(t, []string{"logs", "traces"}, second.Signals)
+	require.Equal(t, []string{codex.SignalLogs}, second.Codex.Signals, "each default config owns its signals slice")
 	require.Equal(t, componentType, factory.Type())
 }
 
