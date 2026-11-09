@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/ptrace"
+
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 )
 
 func TestBuildTraceProducesCanonicalTree(t *testing.T) {
@@ -360,7 +362,7 @@ func TestBuildTraceReportsResourceCopyFailure(t *testing.T) {
 		// chan int cannot round-trip into pdata; FromRaw rejects it.
 		resource: map[string]any{"service.name": "codex_cli_rs", "poison": make(chan int)},
 		events:   []agentEvent{testEvent("codex.api_request", base, nil)}}
-	traces, err := buildTrace(turn, "shutdown", DefaultScopeVersion, true)
+	traces, err := buildTrace(turn, "shutdown", canonical.DefaultScopeVersion, true)
 	require.Error(t, err)
 	require.NotNil(t, traces)
 	spans := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans()
@@ -390,7 +392,7 @@ func TestBuildTraceHugeDurationKeepsSpanBoundsSane(t *testing.T) {
 
 func mustBuildTrace(t *testing.T, turn *turnState, reason string) ptrace.Traces {
 	t.Helper()
-	traces, err := buildTrace(turn, reason, DefaultScopeVersion, true)
+	traces, err := buildTrace(turn, reason, canonical.DefaultScopeVersion, true)
 	require.NoError(t, err)
 	return traces
 }
@@ -437,7 +439,7 @@ func TestBuildTraceCapturesIdentity(t *testing.T) {
 		},
 	}
 
-	traces, err := buildTrace(turn, "completed", DefaultScopeVersion, true)
+	traces, err := buildTrace(turn, "completed", canonical.DefaultScopeVersion, true)
 	require.NoError(t, err)
 	root := findSpan(t, traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent codex")
 	require.Equal(t, "acct-123", attrString(t, root, "coding_agent.user.id"))
@@ -447,7 +449,7 @@ func TestBuildTraceCapturesIdentity(t *testing.T) {
 	require.True(t, hasHostName)
 	require.Equal(t, "host-01", hostName.Str())
 
-	off, err := buildTrace(turn, "completed", DefaultScopeVersion, false)
+	off, err := buildTrace(turn, "completed", canonical.DefaultScopeVersion, false)
 	require.NoError(t, err)
 	rootOff := findSpan(t, off.ResourceSpans().At(0).ScopeSpans().At(0).Spans(), "invoke_agent codex")
 	_, hasUserID := rootOff.Attributes().Get("coding_agent.user.id")

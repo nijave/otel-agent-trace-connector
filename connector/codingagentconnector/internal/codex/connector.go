@@ -21,6 +21,7 @@ import (
 	noopmetric "go.opentelemetry.io/otel/metric/noop"
 	"go.uber.org/zap"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/canonical"
 	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadata"
 )
 
@@ -47,10 +48,11 @@ type turnState struct {
 }
 
 type codingAgentConnector struct {
-	config       *Config
-	set          connector.Settings
-	next         consumer.Traces
-	scopeVersion string
+	config          Config
+	captureIdentity bool
+	set             connector.Settings
+	next            consumer.Traces
+	scopeVersion    string
 
 	mu        sync.Mutex
 	turns     map[string]*turnState
@@ -63,7 +65,7 @@ type codingAgentConnector struct {
 	telemetry *telemetry
 }
 
-func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*codingAgentConnector, error) {
+func newConnector(cfg Config, captureIdentity bool, set connector.Settings, next consumer.Traces) (*codingAgentConnector, error) {
 	// The generated Meter helper dereferences the MeterProvider directly, so
 	// supply a no-op provider when the settings omit one (e.g. in unit tests).
 	ts := set.TelemetrySettings
@@ -76,10 +78,10 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 	}
 	scopeVersion := set.BuildInfo.Version
 	if scopeVersion == "" {
-		scopeVersion = DefaultScopeVersion
+		scopeVersion = canonical.DefaultScopeVersion
 	}
 	c := &codingAgentConnector{
-		config: cfg, set: set, next: next, scopeVersion: scopeVersion,
+		config: cfg, captureIdentity: captureIdentity, set: set, next: next, scopeVersion: scopeVersion,
 		turns: make(map[string]*turnState),
 		stop:  make(chan struct{}), done: make(chan struct{}),
 		telemetry: &telemetry{builder: builder},
@@ -98,8 +100,8 @@ func newConnector(cfg *Config, set connector.Settings, next consumer.Traces) (*c
 }
 
 // New creates the stateful Codex logs-to-traces edge.
-func New(cfg *Config, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
-	return newConnector(cfg, set, next)
+func New(cfg Config, captureIdentity bool, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
+	return newConnector(cfg, captureIdentity, set, next)
 }
 
 func (c *codingAgentConnector) activeTurnCount() int64 {
@@ -288,7 +290,7 @@ func (c *codingAgentConnector) emit(ctx context.Context, finalized []finalizedTu
 		if ft.turn == nil {
 			continue
 		}
-		traces, err := buildTrace(ft.turn, ft.reason, c.scopeVersion, c.config.CaptureIdentity)
+		traces, err := buildTrace(ft.turn, ft.reason, c.scopeVersion, c.captureIdentity)
 		if err != nil {
 			// Deliver anyway: the spans are intact even when resource
 			// attributes fail to copy, and returning the error would make the

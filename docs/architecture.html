@@ -299,7 +299,7 @@
     <p class="sub">Public Collector surface (own Go module, built into the distribution via OCB)</p>
     <ul class="types">
       <li><code>NewFactory</code> &#8212; factory.go; registers the logs and traces edges (<code>connector.NewFactory</code>), default config, stability from generated metadata.</li>
-      <li><code>Config = codex.Config</code> &#8212; config.go alias so mdatagen docs/validation stay on the component type. The same knobs bound both stateful edges.</li>
+      <li><code>Config</code> &#8212; config.go; connector-wide <code>capture_identity</code> and <code>signals</code> plus one block per stateful edge (<code>codex:</code>, <code>cursor:</code>), so the YAML nesting and the Go package nesting are the same tree. The type is the component's own, not an alias. Validate wraps each block's error with its key.</li>
       <li><code>logsRouter</code> &#8212; logs.go; fans each logs batch to the codex and cursor claimers; Start/Shutdown fan out because both edges own sweep loops and drain state. Each record lands in at most one edge; unclaimed records stay out of canonical output.</li>
       <li><code>tracesRouter</code> &#8212; traces.go; fans each traces batch to the four stateless normalizers (claude, genai, opencode, pi). Claims are disjoint: genai yields groups to Claude and OpenCode first, and the remaining predicates match disjoint scope/name sets, so a group is emitted at most once.</li>
       <li><code>internal/metadata</code> &#8212; mdatagen-generated status and TelemetryBuilder (self-metrics wiring).</li>
@@ -315,7 +315,7 @@
       <li><code>parseEvent</code> (event.go) &#8212; claims records whose <code>event.name</code> starts <code>codex.</code> and carries <code>conversation.id</code>; strips prompt/arguments/output before retention.</li>
       <li><code>fingerprint()</code> &#8212; sha256 over name, timestamp, attributes; dedupes at-least-once redelivery inside a live turn so token usage is not double-counted.</li>
       <li><code>buildTrace</code> (trace.go) &#8212; deterministic IDs: traceID = sha256(conversationID + prompt timestamp). One chat span per turn-completion <code>response.completed</code>, execute_tool spans per tool_result joined by call_id, remaining events as root span events. Re-emitting a finalized turn reproduces identical IDs.</li>
-      <li>Bounds and finalization &#8212; <code>max_active_turns</code> LRU eviction, <code>max_events_per_turn</code> truncation flag; reasons: completed, superseded, timeout, shutdown, evicted.</li>
+      <li>Bounds and finalization &#8212; <code>codex.max_active_turns</code> LRU eviction, <code>codex.max_events_per_turn</code> truncation flag; reasons: completed, superseded, timeout, shutdown, evicted.</li>
       <li><code>telemetry</code> (metrics.go) &#8212; coding_agent.active_turns gauge (provider=codex) plus emitted/dropped/truncated counters.</li>
     </ul>
   </div>

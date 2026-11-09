@@ -401,9 +401,9 @@ func TestConnectorAgainstRealCodexCapture(t *testing.T) {
 	}
 }
 
-func newTestConnector(t *testing.T, cfg *Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
+func newTestConnector(t *testing.T, cfg Config, set connector.Settings, next consumer.Traces) *codingAgentConnector {
 	t.Helper()
-	instance, err := newConnector(cfg, set, next)
+	instance, err := newConnector(cfg, true, set, next)
 	require.NoError(t, err)
 	return instance
 }

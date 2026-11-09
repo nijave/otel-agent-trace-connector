@@ -232,14 +232,14 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 			ID:                component.NewID(component.MustNewType("coding_agent")),
 			TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()},
 		}
-		return codex.New(codex.NewDefaultConfig(), set, next)
+		return codex.New(codex.NewDefaultConfig(), true, set, next)
 	})
 	cursorNormalize := conformanceConsumeLogs(func(next consumer.Traces) (connector.Logs, error) {
 		set := connector.Settings{
 			ID:                component.NewID(component.MustNewType("coding_agent")),
 			TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()},
 		}
-		return cursor.New(codex.NewDefaultConfig(), set, next)
+		return cursor.New(cursor.NewDefaultConfig(), true, set, next)
 	})
 
 	fixtures := []conformanceFixture{

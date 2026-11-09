@@ -19,10 +19,6 @@ import (
 
 const instrumentationScope = "github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector"
 
-// DefaultScopeVersion is used for the emitted instrumentation scope when the
-// Collector build info does not carry a version (for example in unit tests).
-const DefaultScopeVersion = "0.1.0"
-
 // tokenUsageAttrs maps Codex completion token counts to their canonical
 // destination attributes. It is the single source of truth for per-chat-span
 // usage; the invoke_agent root carries no usage of its own.

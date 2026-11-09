@@ -16,8 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
 )
 
 // requireTraceJSONEqual compares two marshaled OTLP/JSON trace documents for
@@ -89,7 +87,7 @@ func loadFixtureLogs(t *testing.T) plog.Logs {
 func replayFixture(t *testing.T, shuffle bool) []ptrace.Traces {
 	t.Helper()
 	sink := &traceSink{}
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 20 * time.Millisecond
 	// The timeout clock measures from the burst's first source timestamp, which
 	// is fixed near 2026-08-21T10:00Z; a short turn_timeout would trip the
@@ -97,7 +95,7 @@ func replayFixture(t *testing.T, shuffle bool) []ptrace.Traces {
 	// nondeterministically. Keep it far beyond any possible test run so quiet
 	// and shutdown are the only reachable closers.
 	cfg.TurnTimeout = 365 * 24 * time.Hour
-	connectorLogs, err := New(cfg, testSettings(), sink)
+	connectorLogs, err := New(cfg, true, testSettings(), sink)
 	require.NoError(t, err)
 	require.NoError(t, connectorLogs.Start(context.Background(), nil))
 	t.Cleanup(func() { require.NoError(t, connectorLogs.Shutdown(context.Background())) })

@@ -29,11 +29,11 @@ type logsRouter struct {
 }
 
 func newLogsRouter(cfg *Config, set connector.Settings, next consumer.Traces) (connector.Logs, error) {
-	codexEdge, err := codex.New(cfg, set, next)
+	codexEdge, err := codex.New(cfg.Codex, cfg.CaptureIdentity, set, next)
 	if err != nil {
 		return nil, err
 	}
-	cursorEdge, err := cursor.New(cfg, set, next)
+	cursorEdge, err := cursor.New(cfg.Cursor, cfg.CaptureIdentity, set, next)
 	if err != nil {
 		return nil, err
 	}

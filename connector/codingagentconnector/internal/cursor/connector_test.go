@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadatatest"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenttest"
@@ -24,9 +25,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
 	"go.uber.org/zap"
-
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/codex"
-	"github.com/nijave/otel-agent-trace-connector/connector/codingagentconnector/internal/metadatatest"
 )
 
 type testRecord struct {
@@ -109,8 +107,8 @@ func testSettings() connector.Settings {
 }
 
 func TestConsumeLogsOpensOneBurstPerConversation(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	cfg := NewDefaultConfig()
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
@@ -125,8 +123,8 @@ func TestConsumeLogsOpensOneBurstPerConversation(t *testing.T) {
 }
 
 func TestDedupeDropsRedeliveredRecords(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	cfg := NewDefaultConfig()
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
@@ -140,10 +138,10 @@ func TestDedupeDropsRedeliveredRecords(t *testing.T) {
 }
 
 func TestQuietWindowClosesBurst(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 5 * time.Millisecond
 	sink := &traceSink{}
-	connectorLogs, err := New(cfg, testSettings(), sink)
+	connectorLogs, err := New(cfg, true, testSettings(), sink)
 	require.NoError(t, err)
 	require.NoError(t, connectorLogs.Start(context.Background(), nil))
 	t.Cleanup(func() { require.NoError(t, connectorLogs.Shutdown(context.Background())) })
@@ -156,10 +154,10 @@ func TestQuietWindowClosesBurst(t *testing.T) {
 }
 
 func TestTimeoutClosesLongBurst(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 5 * time.Millisecond
 	cfg.TurnTimeout = time.Second
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	require.NoError(t, instance.Start(context.Background(), nil))
@@ -185,9 +183,9 @@ func TestTimeoutClosesLongBurst(t *testing.T) {
 func TestQuietBeatsNothingWhenBurstIdle(t *testing.T) {
 	// Only ReorderWindow shrinks: with the default 10m turn_timeout the
 	// burst is far too young for timeout, so quiet is the only ready reason.
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 5 * time.Millisecond
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	now := time.Now()
@@ -205,8 +203,8 @@ func TestQuietBeatsNothingWhenBurstIdle(t *testing.T) {
 }
 
 func TestResumedConversationOpensNewBurst(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	cfg := NewDefaultConfig()
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
@@ -225,9 +223,9 @@ func TestResumedConversationOpensNewBurst(t *testing.T) {
 }
 
 func TestEvictionBoundsActiveBursts(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.MaxActiveTurns = 1
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
@@ -244,9 +242,9 @@ func TestEvictionBoundsActiveBursts(t *testing.T) {
 }
 
 func TestTruncationSetsMarker(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.MaxEvents = 1
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
@@ -267,14 +265,14 @@ func TestTruncationSetsMarker(t *testing.T) {
 // never fired while the storm lasted, and turn_timeout closed the burst with
 // an error status instead of closing quiet.
 func TestTruncatedBurstStillClosesQuietUnderRedeliveryStorm(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.MaxEvents = 2
 	cfg.ReorderWindow = 25 * time.Millisecond
 	// Short enough that a regression fails fast by emitting "timeout" instead
 	// of hanging the loop to its deadline.
 	cfg.TurnTimeout = 500 * time.Millisecond
 	sink := &traceSink{}
-	connectorLogs, err := New(cfg, testSettings(), sink)
+	connectorLogs, err := New(cfg, true, testSettings(), sink)
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	require.NoError(t, instance.Start(context.Background(), nil))
@@ -316,7 +314,7 @@ func TestTruncationBoundsEventsAndIDs(t *testing.T) {
 // retained, so overflow redeliveries are re-examined, but they remain
 // side-effect free.
 func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.ReorderWindow = 5 * time.Millisecond
 	base := time.Now().Add(-time.Second)
 	now := time.Now()
@@ -336,7 +334,7 @@ func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
 
 	// The dropped record must not skew the close reason: with only stored
 	// records considered, the burst goes quiet rather than timing out.
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	instance.bursts[testConversation] = burst
@@ -346,13 +344,13 @@ func TestPostTruncationRecordDoesNotMutateBurstState(t *testing.T) {
 }
 
 func TestTelemetryCountsRetainedDuplicateAfterTruncation(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	cfg.MaxEvents = 1
 	reader := sdkmetric.NewManualReader()
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	set := testSettings()
 	set.MeterProvider = provider
-	edge, err := New(cfg, set, &traceSink{})
+	edge, err := New(cfg, true, set, &traceSink{})
 	require.NoError(t, err)
 	instance := edge.(*cursorConnector)
 	t.Cleanup(func() {
@@ -386,8 +384,8 @@ func TestTelemetryCountsRetainedDuplicateAfterTruncation(t *testing.T) {
 }
 
 func TestIgnoresForeignAndScopelessRecords(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
-	connectorLogs, err := New(cfg, testSettings(), &traceSink{})
+	cfg := NewDefaultConfig()
+	connectorLogs, err := New(cfg, true, testSettings(), &traceSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	t.Cleanup(func() { require.NoError(t, instance.Shutdown(context.Background())) })
@@ -404,9 +402,9 @@ func TestIgnoresForeignAndScopelessRecords(t *testing.T) {
 }
 
 func TestShutdownFlushesOpenBurst(t *testing.T) {
-	cfg := codex.NewDefaultConfig()
+	cfg := NewDefaultConfig()
 	sink := &traceSink{}
-	connectorLogs, err := New(cfg, testSettings(), sink)
+	connectorLogs, err := New(cfg, true, testSettings(), sink)
 	require.NoError(t, err)
 	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
 	require.NoError(t, connectorLogs.ConsumeLogs(context.Background(), makeCursorLogs(
@@ -428,7 +426,7 @@ func TestEmittedTurnMetricSkipsFailedDelivery(t *testing.T) {
 	testTel := componenttest.NewTelemetry()
 	t.Cleanup(func() { require.NoError(t, testTel.Shutdown(context.Background())) })
 
-	connectorLogs, err := New(codex.NewDefaultConfig(), metadatatest.NewSettings(testTel), &failingSink{})
+	connectorLogs, err := New(NewDefaultConfig(), true, metadatatest.NewSettings(testTel), &failingSink{})
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 	// Start is never called, so Shutdown drains synchronously without a sweep loop.
@@ -456,7 +454,7 @@ func TestEmittedTurnMetricCountsSuccessfulDelivery(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, testTel.Shutdown(context.Background())) })
 
 	sink := &traceSink{}
-	connectorLogs, err := New(codex.NewDefaultConfig(), metadatatest.NewSettings(testTel), sink)
+	connectorLogs, err := New(NewDefaultConfig(), true, metadatatest.NewSettings(testTel), sink)
 	require.NoError(t, err)
 	instance := connectorLogs.(*cursorConnector)
 
@@ -480,7 +478,7 @@ func TestEmittedTurnMetricCountsSuccessfulDelivery(t *testing.T) {
 // instead of naming root span events and coding_agent.source.event after them.
 func TestConversationContentNeverReachesCanonicalOutput(t *testing.T) {
 	sink := &traceSink{}
-	connectorLogs, err := New(codex.NewDefaultConfig(), testSettings(), sink)
+	connectorLogs, err := New(NewDefaultConfig(), true, testSettings(), sink)
 	require.NoError(t, err)
 
 	base := time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC)
