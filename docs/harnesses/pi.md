@@ -98,7 +98,7 @@ only in one serialized object, provider only inside the model id).
 | `usage` → `cost` → `input`/`output`/`cacheRead`/`cacheWrite`, `usage` → `cacheWrite1h` | — | dropped (per-component cost breakdown and the 1h cache-write counter have no canonical counterpart) |
 | `reasoning`, `cacheWrite1h` (standalone attributes) | — | dropped (0.1.28 duplicates the same numbers inside the `usage` object, which is the source the edge reads) |
 | `llmGenerationId` | — | dropped |
-| `sessionId` | — | dropped (the turn root carries the conversation id — but only when the `chat-turn` ships in the same batch; see below) |
+| `sessionId` | `gen_ai.conversation.id` | mapped (every raw Pi span carries its own `sessionId`, so the canonical `chat` span carries the conversation id even when Pi exports children in batches without their turn; absent when empty or when the wire carries a non-empty native `gen_ai.conversation.id`, which wins) |
 | `status`, `api`, `source`, `costSource` | — | dropped |
 
 Provider values may carry harness/route labels (for example a router or
@@ -110,7 +110,7 @@ than normalizing it, and derives one from `model` only in the exact
 
 | Raw key | Canonical key | Status |
 |---|---|---|
-| `sessionId` | `gen_ai.conversation.id` | mapped (`chat-turn` spans only; Pi exports children in batches without their turn, and such a batch emits `chat`/`execute_tool` spans with no conversation id anywhere — the `sessionId` they carry drops) |
+| `sessionId` | `gen_ai.conversation.id` | mapped (absent when empty or when the wire carries a non-empty native `gen_ai.conversation.id`, which wins) |
 | `eventType` | (`coding_agent.source.event`) | dropped (the connector pins the event name to `chat-turn`) |
 | `promptNumber` | — | dropped (0.1.28 prompt counter; no canonical counterpart) |
 | `durationMs` | — | dropped (whole-turn duration, not a TTFT source) |
@@ -134,7 +134,7 @@ allowlist. Raw events remain unchanged in the raw pipeline.
 | `toolName` | `gen_ai.tool.name` | mapped (also the discriminator: only spans carrying `toolName` become `execute_tool`) |
 | `toolCallId` | `gen_ai.tool.call.id` | mapped (when non-empty; `toolName` alone still produces the span) |
 | `status` | — | dropped |
-| `sessionId` | — | dropped (see the `chat-turn` row for the split-batch consequence) |
+| `sessionId` | `gen_ai.conversation.id` | mapped (absent when empty or when the wire carries a non-empty native `gen_ai.conversation.id`, which wins) |
 | `durationMs` | — | dropped (0.1.28 tool duration; no canonical counterpart) |
 
 ##### llm-stream span → dropped

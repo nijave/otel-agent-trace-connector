@@ -101,6 +101,8 @@ func TestPiTraceNormalizerRebuildsCanonicalTree(t *testing.T) {
 	require.Equal(t, "chat", attrString(t, chat, "gen_ai.operation.name"))
 	require.Equal(t, "deepseek-v4-flash", attrString(t, chat, "gen_ai.request.model"))
 	require.Equal(t, "opencode-go", attrString(t, chat, "gen_ai.provider.name"))
+	require.Equal(t, "session-1", attrString(t, chat, "gen_ai.conversation.id"),
+		"the chat child maps its own sessionId like the root does")
 	require.Equal(t, int64(3335), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(3), attrInt(t, chat, "gen_ai.usage.output_tokens"))
 	require.Equal(t, int64(3338), attrInt(t, chat, "gen_ai.usage.total_tokens"))
@@ -384,6 +386,95 @@ func TestPiTraceNormalizerPreservesParentsAcrossBatches(t *testing.T) {
 		"children from a later batch keep the parent linkage for backend reassembly")
 }
 
+// TestPiTraceNormalizerMapsConversationIDOnEverySpan pins that every raw
+// span's own sessionId maps onto gen_ai.conversation.id, not only the
+// chat-turn: Pi exports children in batches without their turn, so chat and
+// execute_tool spans must carry the conversation ID on their own. A native
+// gen_ai.conversation.id on the wire wins over sessionId, and an empty
+// sessionId maps nothing.
+func TestPiTraceNormalizerMapsConversationIDOnEverySpan(t *testing.T) {
+	t.Run("children-only batch without its chat-turn", func(t *testing.T) {
+		input := piConversationInput(nil, map[string]string{"sessionId": "session-1"}, map[string]string{"sessionId": "session-1"})
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		all := reassemble(sink)
+		for i := 0; i < all.Len(); i++ {
+			require.NotEqual(t, "invoke_agent pi", all.At(i).Name(),
+				"the chat-turn shipped in an earlier batch; none exists here")
+		}
+		for _, name := range []string{"chat glm-5.3", "execute_tool bash"} {
+			require.Equal(t, "session-1", attrString(t, findSpan(t, all, name), "gen_ai.conversation.id"),
+				"%s maps its own sessionId even when the batch has no chat-turn", name)
+		}
+	})
+
+	t.Run("mixed sessions keep each span's own id", func(t *testing.T) {
+		input := piConversationInput(
+			map[string]string{"sessionId": "session-1"},
+			map[string]string{"sessionId": "session-A"},
+			map[string]string{"sessionId": "session-B"})
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		all := reassemble(sink)
+		require.Equal(t, "session-1", attrString(t, findSpan(t, all, "invoke_agent pi"), "gen_ai.conversation.id"))
+		require.Equal(t, "session-A", attrString(t, findSpan(t, all, "chat glm-5.3"), "gen_ai.conversation.id"))
+		require.Equal(t, "session-B", attrString(t, findSpan(t, all, "execute_tool bash"), "gen_ai.conversation.id"),
+			"one batch may mix sessions; each span keeps its own ID")
+	})
+
+	t.Run("native gen_ai.conversation.id wins", func(t *testing.T) {
+		input := piConversationInput(
+			map[string]string{"sessionId": "session-1", "gen_ai.conversation.id": "native-conv"}, nil, nil)
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		all := reassemble(sink)
+		require.Equal(t, "native-conv", attrString(t, findSpan(t, all, "invoke_agent pi"), "gen_ai.conversation.id"))
+	})
+
+	t.Run("empty sessionId maps nothing", func(t *testing.T) {
+		input := piConversationInput(map[string]string{"sessionId": ""}, nil, nil)
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+		all := reassemble(sink)
+		_, ok := findSpan(t, all, "invoke_agent pi").Attributes().Get("gen_ai.conversation.id")
+		require.False(t, ok, "an empty sessionId must not produce a canonical key")
+	})
+}
+
+// piConversationInput builds a claimed Pi group with a chat-turn (turn attrs),
+// one generation, and one tool span (gen/tool attrs). The generation and tool
+// spans always dangle on a phantom parent, so a batch without turn attrs
+// mirrors Pi's child-only exports.
+func piConversationInput(turn, gen, tool map[string]string) ptrace.Traces {
+	input := ptrace.NewTraces()
+	scope := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty()
+	scope.Scope().SetName("@amaster.ai/pi-telemetry")
+	spans := scope.Spans()
+	if turn != nil {
+		turnSpan := spans.AppendEmpty()
+		turnSpan.SetName("chat-turn")
+		turnSpan.SetSpanID(pcommon.SpanID{2})
+		for key, value := range turn {
+			turnSpan.Attributes().PutStr(key, value)
+		}
+	}
+	genSpan := spans.AppendEmpty()
+	genSpan.SetName("llm-generation [main] [request]")
+	genSpan.SetParentSpanID(pcommon.SpanID{2})
+	genSpan.Attributes().PutStr("model", "glm-5.3")
+	for key, value := range gen {
+		genSpan.Attributes().PutStr(key, value)
+	}
+	toolSpan := spans.AppendEmpty()
+	toolSpan.SetName("bash")
+	toolSpan.SetParentSpanID(pcommon.SpanID{2})
+	toolSpan.Attributes().PutStr("toolName", "bash")
+	for key, value := range tool {
+		toolSpan.Attributes().PutStr(key, value)
+	}
+	return input
+}
+
 func findSpan(t *testing.T, spans ptrace.SpanSlice, name string) ptrace.Span {
 	t.Helper()
 	for i := 0; i < spans.Len(); i++ {
@@ -451,6 +542,7 @@ func TestPiTraceNormalizerAllowlistsEverySpanType(t *testing.T) {
 	gen.Attributes().PutStr("model", "opencode-go/claude-haiku-5-5")
 	gen.Attributes().PutStr("requestedModel", "claude-haiku-5-5")
 	gen.Attributes().PutStr("thinkingLevel", "high")
+	gen.Attributes().PutStr("sessionId", "session-1")
 	gen.Attributes().PutStr("stopReason", "stop")
 	gen.Attributes().PutStr("responseId", "resp-1")
 	gen.Attributes().PutStr("api", "anthropic-messages")
@@ -500,6 +592,7 @@ func TestPiTraceNormalizerAllowlistsEverySpanType(t *testing.T) {
 		"gen_ai.request.model":                  "claude-haiku-5-5",
 		"gen_ai.provider.name":                  "opencode-go",
 		"gen_ai.request.reasoning.level":        "high",
+		"gen_ai.conversation.id":                "session-1",
 		"gen_ai.response.finish_reasons":        []any{"stop"},
 		"gen_ai.response.id":                    "resp-1",
 		"gen_ai.usage.input_tokens":             int64(1),
@@ -516,6 +609,7 @@ func TestPiTraceNormalizerAllowlistsEverySpanType(t *testing.T) {
 		"gen_ai.operation.name":     "execute_tool",
 		"gen_ai.tool.name":          "bash",
 		"gen_ai.tool.call.id":       "call-1",
+		"gen_ai.conversation.id":    "session-1",
 		"coding_agent.source.event": "bash",
 	}), findSpan(t, all, "execute_tool bash").Attributes().AsRaw(), "tool")
 }
@@ -835,6 +929,8 @@ func TestPiTraceNormalizerAgainstCaptureV019(t *testing.T) {
 
 	chat := findSpan(t, all, "chat deepseek-v4-flash")
 	require.Equal(t, root.SpanID(), chat.ParentSpanID())
+	require.Equal(t, "db74a224-1b5d-4b7e-8736-5bc9b160fbd2", attrString(t, chat, "gen_ai.conversation.id"),
+		"the chat child maps its own sessionId like the root does")
 	require.Equal(t, "opencode-go", attrString(t, chat, "gen_ai.provider.name"))
 	require.Equal(t, int64(2286), attrInt(t, chat, "gen_ai.usage.input_tokens"))
 	require.Equal(t, int64(2334), attrInt(t, chat, "gen_ai.usage.total_tokens"))
@@ -856,6 +952,7 @@ func TestPiTraceNormalizerAgainstCaptureV019(t *testing.T) {
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())
 	require.Equal(t, "bash", attrString(t, tool, "gen_ai.tool.name"))
 	require.NotEmpty(t, attrString(t, tool, "gen_ai.tool.call.id"))
+	require.Equal(t, "db74a224-1b5d-4b7e-8736-5bc9b160fbd2", attrString(t, tool, "gen_ai.conversation.id"))
 
 	// The capture's stop reasons and response IDs land under canonical keys:
 	// the first generation stopped on a tool call, the second on "stop".
@@ -903,6 +1000,8 @@ func TestPiTraceNormalizerAgainstCaptureV0128(t *testing.T) {
 	require.Len(t, chats, 2, "the span name takes requestedModel, not the provider-prefixed model")
 	for _, chat := range chats {
 		require.Equal(t, root.SpanID(), chat.ParentSpanID())
+		require.Equal(t, "01a1568c-4a0b-766c-9f64-8056c3c86f9e", attrString(t, chat, "gen_ai.conversation.id"),
+			"each chat child maps its own sessionId")
 		require.Equal(t, "claude-haiku-5-5", attrString(t, chat, "gen_ai.request.model"))
 		require.Equal(t, "opencode-go", attrString(t, chat, "gen_ai.provider.name"),
 			"the provider comes from the model's <prefix>/<requestedModel> shape")
@@ -938,6 +1037,8 @@ func TestPiTraceNormalizerAgainstCaptureV0128(t *testing.T) {
 	require.Equal(t, root.SpanID(), tool.ParentSpanID())
 	require.Equal(t, "bash", attrString(t, tool, "gen_ai.tool.name"))
 	require.Equal(t, "toolu_01LUsBwN85yx7wHRRL4z1PuA", attrString(t, tool, "gen_ai.tool.call.id"))
+	require.Equal(t, "01a1568c-4a0b-766c-9f64-8056c3c86f9e", attrString(t, tool, "gen_ai.conversation.id"),
+		"every canonical span type carries the conversation id from its own sessionId")
 
 	// llm-stream is not a canonical span type, and no raw key survives.
 	for i := 0; i < all.Len(); i++ {
