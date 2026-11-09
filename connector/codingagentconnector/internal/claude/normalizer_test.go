@@ -639,3 +639,124 @@ func TestClaudeMapsOrganizationToTeam(t *testing.T) {
 	_, ok = findSpan(t, reassemble(bareSink), "invoke_agent claude_code").Attributes().Get("coding_agent.team.id")
 	require.False(t, ok, "no organization.id on the wire, no key")
 }
+
+// buildToolBatch builds a batch with a claude_code.tool span (span ID {4}) and
+// a claude_code.tool.execution child, configured through the knobs below.
+func buildToolBatch(childStatus ptrace.StatusCode, childMessage string, parentStatus *ptrace.StatusCode) ptrace.Traces {
+	input := ptrace.NewTraces()
+	spans := input.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	tool := spans.AppendEmpty()
+	tool.SetName("claude_code.tool")
+	tool.SetTraceID(pcommon.TraceID{1})
+	tool.SetSpanID(pcommon.SpanID{4})
+	tool.Attributes().PutStr("tool_name", "Bash")
+	if parentStatus != nil {
+		tool.Status().SetCode(*parentStatus)
+	}
+	child := spans.AppendEmpty()
+	child.SetName("claude_code.tool.execution")
+	child.SetTraceID(pcommon.TraceID{1})
+	child.SetParentSpanID(pcommon.SpanID{4})
+	child.Status().SetCode(childStatus)
+	if childMessage != "" {
+		child.Status().SetMessage(childMessage)
+	}
+	return input
+}
+
+// TestClaudePropagatesToolFailureToExecuteTool covers the same-batch status
+// propagation: an Error tool.execution child lifts its execute_tool parent to
+// Error with the child's message. Live evidence (7 days to 2026-11-08): 115
+// failed execution sub-spans whose execute_tool parents all stayed Unset.
+func TestClaudePropagatesToolFailureToExecuteTool(t *testing.T) {
+	input := buildToolBatch(ptrace.StatusCodeError, "command exited with code 1", nil)
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	tool := findSpan(t, reassemble(sink), "execute_tool Bash")
+	require.Equal(t, ptrace.StatusCodeError, tool.Status().Code())
+	require.Equal(t, "command exited with code 1", tool.Status().Message())
+	// The child keeps its own Error: the parent copy is additive.
+	child := findSpan(t, reassemble(sink), "claude_code.tool.execution")
+	require.Equal(t, ptrace.StatusCodeError, child.Status().Code())
+	// The input is not mutated: the fan-out may send it elsewhere.
+	inTool := input.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+	require.Equal(t, ptrace.StatusCodeUnset, inTool.Status().Code())
+}
+
+// TestClaudeToolFailurePropagatesAcrossScopeGroups pins the batch-wide lookup:
+// the parent→child search spans every resource and scope group in the batch,
+// so a tool parent and its failed execution child in different groups still
+// propagate when trace ID and parent span ID match.
+func TestClaudeToolFailurePropagatesAcrossScopeGroups(t *testing.T) {
+	input := ptrace.NewTraces()
+	toolRS := input.ResourceSpans().AppendEmpty()
+	tool := toolRS.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	tool.SetName("claude_code.tool")
+	tool.SetTraceID(pcommon.TraceID{7})
+	tool.SetSpanID(pcommon.SpanID{4})
+	tool.Attributes().PutStr("tool_name", "Bash")
+
+	childRS := input.ResourceSpans().AppendEmpty()
+	childRS.Resource().Attributes().PutStr("service.name", "claude-code")
+	child := childRS.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	child.SetName("claude_code.tool.execution")
+	child.SetTraceID(pcommon.TraceID{7})
+	child.SetParentSpanID(pcommon.SpanID{4})
+	child.Status().SetCode(ptrace.StatusCodeError)
+	child.Status().SetMessage("timeout waiting for tool")
+
+	sink := &traceSink{}
+	require.NoError(t, New(sink, true).ConsumeTraces(context.Background(), input))
+	toolOut := findSpan(t, reassemble(sink), "execute_tool Bash")
+	require.Equal(t, ptrace.StatusCodeError, toolOut.Status().Code())
+	require.Equal(t, "timeout waiting for tool", toolOut.Status().Message())
+}
+
+// TestClaudeToolFailurePropagationGuards covers the no-op cases: a child in
+// another batch (the edge holds no cross-batch state — the child still carries
+// its own Error), a successful child, and a parent that is already Error.
+func TestClaudeToolFailurePropagationGuards(t *testing.T) {
+	errCode := ptrace.StatusCodeError
+
+	t.Run("child in another batch", func(t *testing.T) {
+		sink := &traceSink{}
+		normalizer := New(sink, true)
+		// First batch: only the parent tool span.
+		parentBatch := buildToolBatch(ptrace.StatusCodeUnset, "", nil)
+		parentBatch.ResourceSpans().At(0).ScopeSpans().At(0).Spans().RemoveIf(func(s ptrace.Span) bool {
+			return s.Name() == toolExecutionSpanName
+		})
+		require.NoError(t, normalizer.ConsumeTraces(context.Background(), parentBatch))
+		// Second batch: only the failed child.
+		childBatch := ptrace.NewTraces()
+		child := childBatch.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		child.SetName("claude_code.tool.execution")
+		child.SetTraceID(pcommon.TraceID{1})
+		child.SetParentSpanID(pcommon.SpanID{4})
+		child.Status().SetCode(ptrace.StatusCodeError)
+		child.Status().SetMessage("command exited with code 1")
+		require.NoError(t, normalizer.ConsumeTraces(context.Background(), childBatch))
+		require.Len(t, sink.all(), 2)
+		tool := findSpan(t, reassemble(sink), "execute_tool Bash")
+		require.Equal(t, ptrace.StatusCodeUnset, tool.Status().Code(),
+			"no cross-batch state: the parent keeps Unset (the child still carries its own Error)")
+	})
+
+	t.Run("successful child", func(t *testing.T) {
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(),
+			buildToolBatch(ptrace.StatusCodeOk, "", nil)))
+		tool := findSpan(t, reassemble(sink), "execute_tool Bash")
+		require.Equal(t, ptrace.StatusCodeUnset, tool.Status().Code(), "a successful child changes nothing")
+	})
+
+	t.Run("parent already Error", func(t *testing.T) {
+		sink := &traceSink{}
+		require.NoError(t, New(sink, true).ConsumeTraces(context.Background(),
+			buildToolBatch(ptrace.StatusCodeError, "child message", &errCode)))
+		tool := findSpan(t, reassemble(sink), "execute_tool Bash")
+		require.Equal(t, ptrace.StatusCodeError, tool.Status().Code())
+		require.Empty(t, tool.Status().Message(), "an already-Error parent keeps its own message")
+	})
+}

@@ -88,6 +88,7 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 	if output.SpanCount() == 0 {
 		return nil
 	}
+	propagateToolExecutionFailures(output)
 	return n.next.ConsumeTraces(ctx, output)
 }
 
@@ -101,6 +102,16 @@ const claudeSpanPrefix = "claude_code."
 // llmRequestSpanName is the native chat span; the claudelogs edge replaces it
 // under claude_code.chat_source: logs.
 const llmRequestSpanName = "claude_code.llm_request"
+
+// toolExecutionSpanName is the unrenamed execution child of a claude_code.tool
+// span. Claude Code sets span status ERROR on a failed execution but leaves the
+// parent tool span Unset, so failures are invisible at the canonical
+// execute_tool level without the propagation below.
+const toolExecutionSpanName = "claude_code.tool.execution"
+
+// executeToolSpanNamePrefix matches every canonical execute_tool span name,
+// with or without the tool-name suffix ("execute_tool Bash").
+const executeToolSpanNamePrefix = "execute_tool"
 
 // ContainsClaudeSpans reports whether any span in the group carries Claude
 // Code's native span-name namespace. The GenAI edge also calls this to leave
@@ -199,6 +210,62 @@ func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, ca
 		}
 		attrs.PutStr("gen_ai.operation.name", operation)
 		putClaudeCommon(attrs, version)
+	}
+}
+
+// propagateToolExecutionFailures closes the tool-failure visibility gap inside
+// one batch: Claude Code marks a failed execution only on the
+// claude_code.tool.execution child, so its canonical execute_tool parent stays
+// Unset and the failure is invisible at the execute_tool level. When an Error
+// child's parent (same trace ID, ParentSpanId equal to the parent's SpanId) is
+// an execute_tool span in this batch, the parent's status becomes Error with
+// the child's message; a parent that is already Error stays unchanged, and a
+// child with Ok/Unset status changes nothing.
+//
+// This is best-effort by design: Claude Code exports a span when it ends, so a
+// child can land in a batch without its parent — that child keeps its own
+// Error, the parent keeps Unset, and the edge does not hold cross-batch state
+// to fix it. The parent→child lookup spans every resource and scope group in
+// the batch, so a parent and child in different groups still propagate when
+// trace ID and parent span ID match.
+func propagateToolExecutionFailures(traces ptrace.Traces) {
+	type spanKey struct {
+		traceID pcommon.TraceID
+		spanID  pcommon.SpanID
+	}
+	parents := map[spanKey]ptrace.Span{}
+	var failedChildren []ptrace.Span
+	for i := 0; i < traces.ResourceSpans().Len(); i++ {
+		rs := traces.ResourceSpans().At(i)
+		for j := 0; j < rs.ScopeSpans().Len(); j++ {
+			spans := rs.ScopeSpans().At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				span := spans.At(k)
+				switch span.Name() {
+				case toolExecutionSpanName:
+					if span.Status().Code() == ptrace.StatusCodeError {
+						failedChildren = append(failedChildren, span)
+					}
+				default:
+					if strings.HasPrefix(span.Name(), executeToolSpanNamePrefix) {
+						parents[spanKey{span.TraceID(), span.SpanID()}] = span
+					}
+				}
+			}
+		}
+	}
+	if len(failedChildren) == 0 {
+		return
+	}
+	for _, child := range failedChildren {
+		parent, ok := parents[spanKey{child.TraceID(), child.ParentSpanID()}]
+		if !ok || parent.Status().Code() == ptrace.StatusCodeError {
+			continue
+		}
+		parent.Status().SetCode(ptrace.StatusCodeError)
+		if msg := child.Status().Message(); msg != "" {
+			parent.Status().SetMessage(msg)
+		}
 	}
 }
 
