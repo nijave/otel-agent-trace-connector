@@ -9,7 +9,7 @@
 // drops everything else. Every kept span rebuilds its attribute map from
 // scratch, so tracing-opentelemetry bookkeeping and codex.* keys never reach
 // canonical output. The Codex logs edge (internal/codex) synthesizes the same
-// trace from logs; the signals config picks which one an operator consumes.
+// trace from logs; `codex.signals` picks which one an operator consumes.
 package codextraces
 
 import (

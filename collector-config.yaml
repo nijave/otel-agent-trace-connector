@@ -17,6 +17,12 @@ connectors:
       reorder_window: 2s
       max_active_turns: 100
       max_events_per_turn: 1000
+      # This file is also the Codex e2e stack's collector config, and that
+      # stack's agent exports both Codex signals while its validator requires a
+      # root from each edge. Enable both so the stack keeps exercising both
+      # implementations; the default (codex.signals: [logs]) consumes logs
+      # only.
+      signals: [logs, traces]
     cursor:
       turn_timeout: 30s
       reorder_window: 2s

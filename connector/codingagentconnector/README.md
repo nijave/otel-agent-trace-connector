@@ -127,7 +127,7 @@ references.
 | Setting | Default | Description |
 | --- | --- | --- |
 | `capture_identity` | `true` | Controls `coding_agent.user.id`, `coding_agent.user.email`, `coding_agent.team.id`, and resource `host.name`. Set `false` to suppress identity. |
-| `signals` | `[logs, traces]` | Input signals this instance consumes. A disabled input edge emits nothing; pipeline wiring is the other way to select signals. |
+| `codex.signals` | `[logs]` | Per-harness choice between Codex's duplicate implementations of the same data on different signals. Valid values are `logs` and `traces`; the disabled edge is not built, so its records pass through untouched. Every other harness has a single implementation and is always constructed. |
 | `codex.turn_timeout` / `cursor.turn_timeout` | `10m` | Codex idle timeout without completion; Cursor maximum burst age measured from its first record. Timeout roots have Error status. |
 | `codex.reorder_window` / `cursor.reorder_window` | `30s` | Quiet period after the last event before a completed Codex turn or any Cursor burst finalizes. Must be less than that block's `turn_timeout`; zero is allowed. |
 | `codex.max_active_turns` / `cursor.max_active_turns` | `10000` | Bound on concurrently correlated Codex turns or Cursor bursts, per edge; the least-recently-seen state emits before admitting a new one. |
@@ -144,8 +144,12 @@ match because both edges bound the same things.
 > `reorder_window`, `max_active_turns`, `max_events_per_turn`) moved from the
 > top level of the `coding_agent` block into the `codex:` and `cursor:`
 > blocks. A tuning key left at the top level is now rejected as an unknown key;
-> move each value under the block whose edge it tunes. `capture_identity` and
-> `signals` stay at the top level because they apply to every edge.
+> move each value under the block whose edge it tunes. `capture_identity`
+> stays at the top level because every edge applies it; `signals` moved into
+> the `codex:` block because Codex is the only harness with a duplicate
+> implementation, and it now defaults to `[logs]` instead of `[logs, traces]`.
+> Set `codex: {signals: [traces]}` if your clients export Codex native traces
+> only.
 
 Example (both edges bridging into a canonical traces pipeline):
 
@@ -153,12 +157,12 @@ Example (both edges bridging into a canonical traces pipeline):
 connectors:
   coding_agent:
     capture_identity: true
-    signals: [logs, traces]
     codex:
       turn_timeout: 10m
       reorder_window: 30s
       max_active_turns: 10000
       max_events_per_turn: 1000
+      signals: [logs]
     cursor:
       turn_timeout: 10m
       reorder_window: 30s

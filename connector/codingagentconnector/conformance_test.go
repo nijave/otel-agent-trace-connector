@@ -464,10 +464,15 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 		}},
 	}
 
-	// Named mirror of the edges newTracesRouter and newLogsRouter construct,
-	// in construction order. The count assertion below keeps this list tied to
-	// the real routers; coverage is asserted by identity, not count.
-	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codextraces", "codex", "cursor", "claudelogs"}
+	// Named mirror of the edges newTracesRouter and newLogsRouter construct with
+	// the DEFAULT config (codex signals: [logs]), in construction order. The
+	// count assertion below keeps this list tied to the real routers; coverage is
+	// asserted by identity, not count. codextraces is absent because the default
+	// enables codex logs only — it is wireable under `codex: {signals: [traces]}`
+	// / `[logs, traces]` (pinned by
+	// TestTracesRouterBuildsCodexEdgeWhenSignalsEnableIt), and its fixture
+	// constructs the edge directly, so the coverage check below accepts it.
+	wiredPipelines := []string{"claude", "genai", "opencode", "pi", "openhands", "codex", "cursor", "claudelogs"}
 	tracesWired := len(newTracesRouter(createDefaultConfig(), &conformanceSink{}).(*tracesRouter).edges)
 	set := connector.Settings{TelemetrySettings: component.TelemetrySettings{Logger: zap.NewNop()}}
 	logsEdge, err := newLogsRouter(createDefaultConfig(), set, &conformanceSink{})
@@ -476,9 +481,9 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 	}
 	logsWired := len(logsEdge.(*logsRouter).edges)
 	if got := tracesWired + logsWired; got != len(wiredPipelines) {
-		t.Fatalf("traces.go/logs.go construct %d edges but the named mirror holds %d pipelines: extend wiredPipelines alongside the router constructors", got, len(wiredPipelines))
+		t.Fatalf("traces.go/logs.go construct %d edges with the default config but the named mirror holds %d pipelines: extend wiredPipelines alongside the router constructors", got, len(wiredPipelines))
 	}
-	for _, problem := range fixtureCoverageProblems(wiredPipelines, fixtures) {
+	for _, problem := range fixtureCoverageProblems(append(wiredPipelines, "codextraces"), fixtures) {
 		t.Error(problem)
 	}
 
@@ -494,8 +499,9 @@ func TestCrossHarnessConformanceRegistry(t *testing.T) {
 }
 
 // TestFixtureCoverageAcceptsMultiEdgeFixtures pins the coverage assertion to
-// identity rather than counts. The real registry holds ten fixture edges over
-// eight wired pipelines (the GenAI pipeline serves three fixtures), so any
+// identity rather than counts. The real registry holds eleven fixture edges
+// over nine named pipelines (the GenAI pipeline serves three fixtures, and
+// codextraces is wireable but not built by the default config), so any
 // comparison between a wired-edge count and an entry or fixture count holds
 // only by coincidence and breaks under harmless reshuffles; matching pipeline
 // names in both directions does not.

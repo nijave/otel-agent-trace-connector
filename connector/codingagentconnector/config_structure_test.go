@@ -63,7 +63,6 @@ var harnessBlocks = map[string]string{
 // block, with the reason the key is connector-wide.
 var connectorWideFields = map[string]string{
 	"capture_identity": "every edge applies the same identity policy, so the routers pass it to each edge",
-	"signals":          "the logs and traces routers gate whole pipelines on it",
 }
 
 // TestNoCrossHarnessImports fails when a harness package imports another
