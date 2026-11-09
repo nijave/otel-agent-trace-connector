@@ -192,6 +192,7 @@ drop without a denylist entry naming them.
 | `gen_ai.request.max_tokens` / `gen_ai.request.stream` | not provided (0.1.28 carries `max_tokens` only inside Langfuse model-parameter bags, which the edge does not parse) |
 | `gen_ai.response.model` | not provided |
 | `server.address` / `server.port` | not provided |
+| `coding_agent.request.attempt` | not provided |
 | `gen_ai.agent.version` | not provided |
 | `exception.*` | not provided |
 | `gen_ai.agent.id` / `coding_agent.agent.parent_id` on the `invoke_agent` root and on main-agent spans | not provided (mapped on a subagent's `chat` and `execute_tool` spans instead — the wire states the subagent's `childSessionId`/`parentSessionId` only there; a subagent's own turn exports as a `subagent …` span, which is not a canonical shape and drops) |

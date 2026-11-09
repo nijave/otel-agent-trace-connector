@@ -37,6 +37,7 @@ func TestClaudelogsConformance(t *testing.T) {
 			{RawKey: "cost_usd", CanonicalKey: "coding_agent.usage.cost", Kind: canonical.Presence},
 			{RawKey: "ttft_ms", CanonicalKey: "gen_ai.response.time_to_first_chunk", Kind: canonical.Presence},
 			{RawKey: "effort", CanonicalKey: "gen_ai.request.reasoning.level", Kind: canonical.Presence},
+			{RawKey: "attempt", CanonicalKey: "coding_agent.request.attempt", Kind: canonical.Presence},
 			{RawKey: "model", CanonicalKey: "gen_ai.request.model", Kind: canonical.Presence},
 			{RawKey: "request_id", CanonicalKey: "gen_ai.response.id", Kind: canonical.Presence},
 			{RawKey: "session.id", CanonicalKey: "gen_ai.conversation.id", Kind: canonical.Presence},
