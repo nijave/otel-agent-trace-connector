@@ -128,6 +128,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 			attrs.PutStr("gen_ai.tool.call.id", callID)
 		}
 		putConversationID(attrs, wire)
+		putAgentAttribution(attrs, wire)
 		attrs.CopyTo(wire)
 		return true, true
 	}
@@ -176,6 +177,7 @@ func normalizePiSpan(span ptrace.Span, version string) (child, native bool) {
 			attrs.PutStr("gen_ai.response.id", responseID)
 		}
 		putConversationID(attrs, wire)
+		putAgentAttribution(attrs, wire)
 		mapTimeToFirstChunk(attrs, wire, span.StartTimestamp())
 		mapUsage(attrs, wire)
 	default:
@@ -228,6 +230,25 @@ func putConversationID(attrs, wire pcommon.Map) {
 	}
 	if value, ok := wire.Get("sessionId"); ok && value.Str() != "" {
 		attrs.PutStr("gen_ai.conversation.id", value.Str())
+	}
+}
+
+// putAgentAttribution maps the subagent lineage the wire states onto the
+// canonical agent keys. A subagent pi process stamps every event it publishes
+// with its own session id as childSessionId and the session that spawned it
+// as parentSessionId; the same childSessionId is what switches the raw span
+// name to `llm-generation [subagent] …`, so its presence is the stateless
+// subagent marker. Main-process events carry neither key and map neither,
+// so main-agent spans stay without gen_ai.agent.id. The subagent's own
+// session id is the only agent identifier its spans state, and
+// parentSessionId joins to the parent's gen_ai.conversation.id the way
+// OpenHands' parent_session_id does.
+func putAgentAttribution(attrs, wire pcommon.Map) {
+	if value, ok := wire.Get("childSessionId"); ok && value.Str() != "" {
+		attrs.PutStr("gen_ai.agent.id", value.Str())
+	}
+	if value, ok := wire.Get("parentSessionId"); ok && value.Str() != "" {
+		attrs.PutStr("coding_agent.agent.parent_id", value.Str())
 	}
 }
 
