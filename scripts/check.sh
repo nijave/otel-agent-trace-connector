@@ -63,6 +63,7 @@ OTEL_QUEUE_DIRECTORY=/tmp/otelcol-queue \
 OTEL_QUEUE_MAX_SIZE_BYTES=10485760 \
 OTEL_S3_BUCKET=validation-only \
   ./dist/otelcol-coding-agents validate --config examples/otelcol-s3.yaml
+./dist/otelcol-coding-agents validate --config examples/otelcol-metrics.yaml
 CANONICAL_OUT=/tmp/otelcol-routing-validate.json \
   ./dist/otelcol-coding-agents validate --config e2e/routing/tier2.yaml
 docker run --rm -v "$PWD/e2e/routing/gateway.yaml:/gateway.yaml:ro" \
