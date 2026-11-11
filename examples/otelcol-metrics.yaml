@@ -7,7 +7,11 @@
 # delta_to_cumulative keeps accumulation state in memory per metric stream.
 # In a multi-instance (HA) deployment, every sample of a stream must reach
 # the same replica: route metrics through a dedicated load_balancing
-# exporter with `routing_key: streamID` at tier 1. See
+# exporter with `routing_key: streamID` at tier 1. Each replica must also
+# write its own series (the collector_replica label below): a stream that
+# moves to another replica and back within max_stale (5m) resumes the stale
+# total, and in a shared series increase() over-counts by that total. Query
+# with `sum without (collector_replica) (...)`. See
 # docs/multi-instance-ha.md.
 #
 # The connector does not normalize metrics; this pipeline forwards them
@@ -38,6 +42,11 @@ exporters:
     # equivalent of `resource_to_telemetry_conversion.enabled: true`.
     resource_constant_labels:
       included: ["*"]
+    # One series per replica. Set COLLECTOR_REPLICA to a name unique per
+    # running replica (in Kubernetes, the pod name from the downward API).
+    # A single instance can keep the default.
+    external_labels:
+      collector_replica: ${env:COLLECTOR_REPLICA:-single}
 
 service:
   extensions: [health_check]

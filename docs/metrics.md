@@ -14,7 +14,10 @@ metrics pass through unmodified. The distribution ships a reference metrics
 pipeline ([examples/otelcol-metrics.yaml](../examples/otelcol-metrics.yaml))
 that converts delta to cumulative before Prometheus remote write, because
 Claude Code and Cursor export delta temporality by default and the remote
-write exporter drops non-cumulative monotonic sums and histograms.
+write exporter drops non-cumulative monotonic sums and histograms. With more
+than one replica, the example's `collector_replica` label keeps each
+replica's series separate; sum it away when querying (see
+[docs/multi-instance-ha.md](multi-instance-ha.md)).
 
 Research refreshed 2026-08-21 against primary sources (official docs and the
 harnesses' own source trees). Provider schemas are not stable APIs; treat the
