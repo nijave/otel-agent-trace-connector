@@ -338,7 +338,8 @@ an OTLP receiver feeds the `delta_to_cumulative` processor and the
 Code (and Cursor) export delta temporality by default and the remote-write
 exporter drops non-cumulative monotonic sums and histograms. The processor
 keeps per-series state, so a multi-instance deployment must route metrics
-with `routing_key: streamID` (see
+with `routing_key: streamID` and give each replica its own series with the
+`collector_replica` label (set `COLLECTOR_REPLICA` per replica; see
 [`docs/multi-instance-ha.md`](docs/multi-instance-ha.md)). Point
 `PROMETHEUS_RW_ENDPOINT` at a remote-write backend and run the example with
 `./dist/otelcol-coding-agents --config examples/otelcol-metrics.yaml`.

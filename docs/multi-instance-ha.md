@@ -174,6 +174,25 @@ state per series, so a stream's points must all reach the same tier-2
 replica. `streamID` routes on metric stream identity, which is exactly that
 grouping.
 
+Routing alone does not keep the remote-written series correct when the
+tier-2 set changes. With more than one replica running `deltatocumulative`,
+each replica must write its own series: add a per-replica label, as
+`examples/otelcol-metrics.yaml` does with
+`external_labels: {collector_replica: ...}` on `prometheus_remote_write`, and
+query with `sum without (collector_replica) (...)`. Without the label, a
+stream that moves to another replica and back within `max_stale` (5m by
+default) resumes the first replica's stale total in the same series. In a
+local two-tier run, a stream went `1..9` on one replica, `1..11` on a second,
+then `10..21` on the first again; `increase()` read the `11 -> 10` step as a
+reset worth 10 where the true increase was 1, over-counting by the stale
+total of 9. A replica that fails readiness briefly and recovers, or a
+replacement that joins and leaves again, is enough to cause it. Two tier-1
+replicas that briefly disagree on the endpoint list make it worse: both
+tier-2 replicas write half of the stream's deltas into one series, and
+`increase()` read 499 of 720 in the same setup. With the per-replica label,
+`sum without (collector_replica) (increase(...))` matched the deltas sent
+within 0.25% for a move, a return, and two writers.
+
 Required supporting changes:
 
 - Add `loadbalancingexporter` and `routingconnector` to tier-1 images (stock
