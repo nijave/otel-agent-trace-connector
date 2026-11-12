@@ -62,27 +62,35 @@ func (*genAITraceNormalizer) Capabilities() consumer.Capabilities {
 	return consumer.Capabilities{MutatesData: false}
 }
 
+// ownedElsewhere lists the edges that own a resource group before this one.
+// Claude, OpenCode, Pi, and OpenHands groups can also carry GenAI scopes;
+// claiming them here would emit each group twice. The Codex native edge claims
+// scope==service.name groups, which no GenAI scope prefix can ever equal, so it
+// is not listed.
+var ownedElsewhere = []canonical.Claimer{
+	claude.Claimer,
+	opencode.Claimer,
+	pi.Claimer,
+	openhands.Claimer,
+}
+
+// claimedElsewhere reports whether another edge owns rs.
+func claimedElsewhere(rs ptrace.ResourceSpans) bool {
+	for _, c := range ownedElsewhere {
+		if c.Claim(rs) {
+			return true
+		}
+	}
+	return false
+}
+
 func (n *genAITraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Traces) error {
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputResourceSpans := input.ResourceSpans().At(i)
-		// Claude, OpenCode, Pi, and OpenHands groups belong to their own
-		// normalizers even when they also carry GenAI scopes; claiming here
-		// would emit each group twice.
-		if claude.ContainsClaudeSpans(inputResourceSpans) {
+		if claimedElsewhere(inputResourceSpans) {
 			continue
 		}
-		if opencode.ContainsOpenCodeSpans(inputResourceSpans) {
-			continue
-		}
-		if pi.ContainsPiSpans(inputResourceSpans) {
-			continue
-		}
-		if openhands.ContainsOpenHandsSpans(inputResourceSpans) {
-			continue
-		}
-		// The Codex native edge claims scope==service.name groups, which no
-		// GenAI scope prefix can ever equal, so it needs no defer check.
 		if !containsGenAIScopes(inputResourceSpans) {
 			continue
 		}

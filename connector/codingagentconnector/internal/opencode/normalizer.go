@@ -49,7 +49,7 @@ func (n *opencodeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrac
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputResourceSpans := input.ResourceSpans().At(i)
-		if !ContainsOpenCodeSpans(inputResourceSpans) {
+		if !containsOpenCodeSpans(inputResourceSpans) {
 			continue
 		}
 		rs := output.ResourceSpans().AppendEmpty()
@@ -83,10 +83,10 @@ func (n *opencodeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrac
 	return n.next.ConsumeTraces(ctx, output)
 }
 
-// ContainsOpenCodeSpans reports whether any scope in the group is OpenCode's
+// containsOpenCodeSpans reports whether any scope in the group is OpenCode's
 // native tracer. Exact match: prefixed scopes such as opencode.* plugins or
 // Kilo's com.opencode are separate surfaces this edge must not claim.
-func ContainsOpenCodeSpans(resourceSpans ptrace.ResourceSpans) bool {
+func containsOpenCodeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
 		if resourceSpans.ScopeSpans().At(i).Scope().Name() == scopeName {
 			return true
@@ -100,7 +100,7 @@ var Claimer canonical.Claimer = claimer{}
 
 type claimer struct{}
 
-func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsOpenCodeSpans(rs) }
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return containsOpenCodeSpans(rs) }
 
 // isClaimedSpan lists the exact wire span names rewritten into canonical
 // vocabulary; every other span OpenCode exports is internal Effect

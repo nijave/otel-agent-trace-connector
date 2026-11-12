@@ -102,7 +102,7 @@ func (n *openhandsTraceNormalizer) ConsumeTraces(ctx context.Context, input ptra
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputRS := input.ResourceSpans().At(i)
-		if !ContainsOpenHandsSpans(inputRS) {
+		if !containsOpenHandsSpans(inputRS) {
 			continue
 		}
 		groups, order := collect(inputRS)
@@ -137,10 +137,10 @@ func scopeVersion(rs ptrace.ResourceSpans) string {
 	return ""
 }
 
-// ContainsOpenHandsSpans reports whether any lmnr.tracer scope in the group
+// containsOpenHandsSpans reports whether any lmnr.tracer scope in the group
 // carries an explicit OpenHands marker, keeping generic
 // Laminar-instrumented applications unclaimed.
-func ContainsOpenHandsSpans(resourceSpans ptrace.ResourceSpans) bool {
+func containsOpenHandsSpans(resourceSpans ptrace.ResourceSpans) bool {
 	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
 		ss := resourceSpans.ScopeSpans().At(i)
 		if ss.Scope().Name() != scopeName {
@@ -164,7 +164,7 @@ var Claimer canonical.Claimer = claimer{}
 
 type claimer struct{}
 
-func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsOpenHandsSpans(rs) }
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return containsOpenHandsSpans(rs) }
 
 // classify maps a wire span to its canonical role via the Laminar span
 // type, falling back to the conversation-name check for roots.

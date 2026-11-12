@@ -48,21 +48,21 @@ func newGroup(traces ptrace.Traces, scopeName, spanName string) ptrace.Span {
 	return span
 }
 
-func TestContainsOpenCodeSpansExactScopeOnly(t *testing.T) {
+func TestClaimExactScopeOnly(t *testing.T) {
 	input := ptrace.NewTraces()
-	require.False(t, ContainsOpenCodeSpans(input.ResourceSpans().AppendEmpty()))
+	require.False(t, containsOpenCodeSpans(input.ResourceSpans().AppendEmpty()))
 
 	exact := input.ResourceSpans().AppendEmpty()
 	exact.ScopeSpans().AppendEmpty().Scope().SetName("opencode")
-	require.True(t, ContainsOpenCodeSpans(exact))
+	require.True(t, containsOpenCodeSpans(exact))
 
 	plugin := input.ResourceSpans().AppendEmpty()
 	plugin.ScopeSpans().AppendEmpty().Scope().SetName("opencode.plugins")
-	require.False(t, ContainsOpenCodeSpans(plugin), "prefix matches belong to plugins/Kilo")
+	require.False(t, containsOpenCodeSpans(plugin), "prefix matches belong to plugins/Kilo")
 
 	kilo := input.ResourceSpans().AppendEmpty()
 	kilo.ScopeSpans().AppendEmpty().Scope().SetName("com.opencode")
-	require.False(t, ContainsOpenCodeSpans(kilo))
+	require.False(t, containsOpenCodeSpans(kilo))
 }
 
 func TestNormalizerClaimsGroupDropsNoiseAndKeepsIdentity(t *testing.T) {
