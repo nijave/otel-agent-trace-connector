@@ -87,7 +87,8 @@ tests cover it — before cleverness, flexibility, or feature breadth.
   package's own `Config`, and the root holds only connector-wide keys. The
   guard tests in
   `connector/codingagentconnector/config_structure_test.go` enforce them, so a
-  new key or a new cross-harness import needs a deliberate test edit.
+  new key needs a deliberate test edit, and a harness package may use nothing
+  from another harness package except its `Claimer`.
 - `connector/codingagentconnector/metadata.yaml` drives mdatagen; regenerate with
   `./scripts/generate.sh` (CI fails if the generated files are stale). mdatagen is
   pinned via `internal/tools` (a `tool` directive), not `go run tool@version`
