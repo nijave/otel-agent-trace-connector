@@ -95,6 +95,13 @@ func ContainsOpenCodeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	return false
 }
 
+// Claimer reports whether a resource group belongs to this edge.
+var Claimer canonical.Claimer = claimer{}
+
+type claimer struct{}
+
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsOpenCodeSpans(rs) }
+
 // isClaimedSpan lists the exact wire span names rewritten into canonical
 // vocabulary; every other span OpenCode exports is internal Effect
 // instrumentation and never enters canonical output.

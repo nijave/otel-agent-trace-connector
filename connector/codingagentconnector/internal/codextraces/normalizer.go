@@ -178,6 +178,13 @@ func ContainsCodexSpans(rs ptrace.ResourceSpans) bool {
 	return false
 }
 
+// Claimer reports whether a resource group belongs to this edge.
+var Claimer canonical.Claimer = claimer{}
+
+type claimer struct{}
+
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsCodexSpans(rs) }
+
 // batchTurnModels returns each trace's earliest turn model. Response spans
 // inherit only the model from their own trace; other turns in the OTLP batch
 // are unrelated. Only claimed groups contribute.

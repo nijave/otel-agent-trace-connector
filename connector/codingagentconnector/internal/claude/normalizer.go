@@ -128,6 +128,13 @@ func ContainsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	return false
 }
 
+// Claimer reports whether a resource group belongs to this edge.
+var Claimer canonical.Claimer = claimer{}
+
+type claimer struct{}
+
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsClaudeSpans(rs) }
+
 func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, captureIdentity bool) {
 	// agent_id is the subagent's own id and parent_agent_id the agent that
 	// spawned it, so canonical output names them gen_ai.agent.id and

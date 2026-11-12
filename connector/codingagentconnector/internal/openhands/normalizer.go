@@ -159,6 +159,13 @@ func ContainsOpenHandsSpans(resourceSpans ptrace.ResourceSpans) bool {
 	return false
 }
 
+// Claimer reports whether a resource group belongs to this edge.
+var Claimer canonical.Claimer = claimer{}
+
+type claimer struct{}
+
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsOpenHandsSpans(rs) }
+
 // classify maps a wire span to its canonical role via the Laminar span
 // type, falling back to the conversation-name check for roots.
 func classify(span ptrace.Span) role {
