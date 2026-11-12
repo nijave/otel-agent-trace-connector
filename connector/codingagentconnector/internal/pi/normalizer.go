@@ -58,7 +58,7 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputResourceSpans := input.ResourceSpans().At(i)
-		if !ContainsPiSpans(inputResourceSpans) {
+		if !containsPiSpans(inputResourceSpans) {
 			continue
 		}
 		rs := output.ResourceSpans().AppendEmpty()
@@ -92,10 +92,10 @@ func (n *piTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.Trac
 	return n.next.ConsumeTraces(ctx, output)
 }
 
-// ContainsPiSpans reports whether the group carries Pi telemetry, matched by
+// containsPiSpans reports whether the group carries Pi telemetry, matched by
 // instrumentation-scope name or the resource's telemetry.sdk.name. Both are
 // set by @amaster.ai/pi-telemetry on every export.
-func ContainsPiSpans(resourceSpans ptrace.ResourceSpans) bool {
+func containsPiSpans(resourceSpans ptrace.ResourceSpans) bool {
 	if value := resourceString(resourceSpans.Resource(), sdkNameKey); strings.HasPrefix(value, scopePrefix) {
 		return true
 	}
@@ -112,7 +112,7 @@ var Claimer canonical.Claimer = claimer{}
 
 type claimer struct{}
 
-func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsPiSpans(rs) }
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return containsPiSpans(rs) }
 
 // normalizePiSpan rewrites one span into the canonical vocabulary and reports
 // whether the span is native Pi and whether it becomes a canonical child of

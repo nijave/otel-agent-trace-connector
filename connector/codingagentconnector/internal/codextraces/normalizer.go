@@ -118,7 +118,7 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 	kinds := make(map[spanKey]spanKind, input.SpanCount())
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputRS := input.ResourceSpans().At(i)
-		if !ContainsCodexSpans(inputRS) {
+		if !containsCodexSpans(inputRS) {
 			continue
 		}
 		rs := output.ResourceSpans().AppendEmpty()
@@ -146,7 +146,7 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 	return n.next.ConsumeTraces(ctx, output)
 }
 
-// ContainsCodexSpans reports whether the group is a Codex export: a scope
+// containsCodexSpans reports whether the group is a Codex export: a scope
 // named after the resource's service.name (Codex's tracer takes the service
 // name as its scope) holding a Codex marker. The marker keeps unrelated Rust
 // services whose scope happens to equal their service name unclaimed. Codex
@@ -154,7 +154,7 @@ func (n *codexTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.T
 // so a group often carries response or tool spans without their turn; the
 // codex.* attribute keys and the codex.tool_result event are Codex-specific
 // and mark those groups too.
-func ContainsCodexSpans(rs ptrace.ResourceSpans) bool {
+func containsCodexSpans(rs ptrace.ResourceSpans) bool {
 	service := resourceString(rs.Resource(), "service.name")
 	if service == "" {
 		return false
@@ -183,7 +183,7 @@ var Claimer canonical.Claimer = claimer{}
 
 type claimer struct{}
 
-func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsCodexSpans(rs) }
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return containsCodexSpans(rs) }
 
 // batchTurnModels returns each trace's earliest turn model. Response spans
 // inherit only the model from their own trace; other turns in the OTLP batch
@@ -193,7 +193,7 @@ func batchTurnModels(input ptrace.Traces) map[pcommon.TraceID]string {
 	earliest := make(map[pcommon.TraceID]pcommon.Timestamp)
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		rs := input.ResourceSpans().At(i)
-		if !ContainsCodexSpans(rs) {
+		if !containsCodexSpans(rs) {
 			continue
 		}
 		for j := 0; j < rs.ScopeSpans().Len(); j++ {

@@ -22,15 +22,14 @@ import (
 
 // tracesRouter fans the traces-to-traces edge across the stateless
 // normalizers. Each normalizer claims disjoint resource groups (the GenAI
-// edge defers to Claude via claude.ContainsClaudeSpans, to OpenCode via
-// opencode.ContainsOpenCodeSpans, and to Pi via pi.ContainsPiSpans; the
-// OpenHands edge claims lmnr.tracer scope groups carrying OpenHands markers,
-// and the Codex native edge claims groups whose scope equals the service name
-// and holds a Codex marker), so a group is emitted at most once and unclaimed
-// groups stay out of the canonical edge. The Codex native edge is constructed
-// only when the codex block's signals enable traces — the one duplicate
-// implementation; the other normalizers have no duplicate and are always
-// constructed.
+// edge defers to Claude, OpenCode, Pi, and OpenHands through each package's
+// Claimer; the OpenHands edge claims lmnr.tracer scope groups carrying
+// OpenHands markers, and the Codex native edge claims groups whose scope
+// equals the service name and holds a Codex marker), so a group is emitted at
+// most once and unclaimed groups stay out of the canonical edge. The Codex
+// native edge is constructed only when the codex block's signals enable
+// traces — the one duplicate implementation; the other normalizers have no
+// duplicate and are always constructed.
 type tracesRouter struct {
 	edges []connector.Traces
 	component.StartFunc

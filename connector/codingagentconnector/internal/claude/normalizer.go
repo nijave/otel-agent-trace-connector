@@ -55,7 +55,7 @@ func (n *claudeTraceNormalizer) ConsumeTraces(ctx context.Context, input ptrace.
 	output := ptrace.NewTraces()
 	for i := 0; i < input.ResourceSpans().Len(); i++ {
 		inputResourceSpans := input.ResourceSpans().At(i)
-		if !ContainsClaudeSpans(inputResourceSpans) {
+		if !containsClaudeSpans(inputResourceSpans) {
 			continue
 		}
 		rs := output.ResourceSpans().AppendEmpty()
@@ -113,10 +113,10 @@ const toolExecutionSpanName = "claude_code.tool.execution"
 // with or without the tool-name suffix ("execute_tool Bash").
 const executeToolSpanNamePrefix = "execute_tool"
 
-// ContainsClaudeSpans reports whether any span in the group carries Claude
-// Code's native span-name namespace. The GenAI edge also calls this to leave
-// Claude groups to the Claude normalizer.
-func ContainsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
+// containsClaudeSpans reports whether any span in the group carries Claude
+// Code's native span-name namespace. The GenAI edge reaches it through
+// Claimer to leave Claude groups to the Claude normalizer.
+func containsClaudeSpans(resourceSpans ptrace.ResourceSpans) bool {
 	for i := 0; i < resourceSpans.ScopeSpans().Len(); i++ {
 		spans := resourceSpans.ScopeSpans().At(i).Spans()
 		for j := 0; j < spans.Len(); j++ {
@@ -133,7 +133,7 @@ var Claimer canonical.Claimer = claimer{}
 
 type claimer struct{}
 
-func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsClaudeSpans(rs) }
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return containsClaudeSpans(rs) }
 
 func normalizeClaudeSpan(span ptrace.Span, version, resourceSessionID string, captureIdentity bool) {
 	// agent_id is the subagent's own id and parent_agent_id the agent that

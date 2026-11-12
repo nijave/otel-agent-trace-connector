@@ -145,15 +145,15 @@ func requireOnlyCanonical(t *testing.T, span ptrace.Span) {
 	})
 }
 
-func TestContainsCodexSpansNeedsScopeAndMarker(t *testing.T) {
+func TestClaimNeedsScopeAndMarker(t *testing.T) {
 	input := ptrace.NewTraces()
 	spans := newCodexGroup(input)
 	addTurn(spans)
-	require.True(t, ContainsCodexSpans(input.ResourceSpans().At(0)))
+	require.True(t, containsCodexSpans(input.ResourceSpans().At(0)))
 
 	noMarker := ptrace.NewTraces()
 	addSpan(newCodexGroup(noMarker), "run_turn", 1, 0, 0, time.Second)
-	require.False(t, ContainsCodexSpans(noMarker.ResourceSpans().At(0)), "bookkeeping spans alone do not claim")
+	require.False(t, containsCodexSpans(noMarker.ResourceSpans().At(0)), "bookkeeping spans alone do not claim")
 
 	wrongScope := ptrace.NewTraces()
 	rs := wrongScope.ResourceSpans().AppendEmpty()
@@ -161,28 +161,28 @@ func TestContainsCodexSpansNeedsScopeAndMarker(t *testing.T) {
 	ss := rs.ScopeSpans().AppendEmpty()
 	ss.Scope().SetName("codex_exec")
 	addTurn(ss.Spans())
-	require.False(t, ContainsCodexSpans(wrongScope.ResourceSpans().At(0)), "the scope must equal the service name")
+	require.False(t, containsCodexSpans(wrongScope.ResourceSpans().At(0)), "the scope must equal the service name")
 
 	dispatch := ptrace.NewTraces()
 	addSpan(newCodexGroup(dispatch), "op.dispatch.user_turn", 1, 0, 0, time.Second)
-	require.True(t, ContainsCodexSpans(dispatch.ResourceSpans().At(0)), "op.dispatch.* marks a Codex group too")
+	require.True(t, containsCodexSpans(dispatch.ResourceSpans().At(0)), "op.dispatch.* marks a Codex group too")
 
 	// Codex exports a span when it ends, so a group often carries only the
 	// response spans of a turn that has not closed yet; their codex.* usage
 	// keys mark the group.
 	responseOnly := ptrace.NewTraces()
 	addResponse(newCodexGroup(responseOnly), "handle_responses", 3, 2)
-	require.True(t, ContainsCodexSpans(responseOnly.ResourceSpans().At(0)), "codex.* attribute keys mark a Codex group too")
+	require.True(t, containsCodexSpans(responseOnly.ResourceSpans().At(0)), "codex.* attribute keys mark a Codex group too")
 
 	toolOnly := ptrace.NewTraces()
 	carrier := addSpan(newCodexGroup(toolOnly), "dispatch_tool_call_with_state", 5, 2, 0, time.Second)
 	addToolResultEvent(carrier, true, "exec_command", "call-1", true)
-	require.True(t, ContainsCodexSpans(toolOnly.ResourceSpans().At(0)), "a codex.tool_result event marks a Codex group too")
+	require.True(t, containsCodexSpans(toolOnly.ResourceSpans().At(0)), "a codex.tool_result event marks a Codex group too")
 
 	genaiOnly := ptrace.NewTraces()
 	foreign := addSpan(newCodexGroup(genaiOnly), "handle_responses", 3, 2, 0, time.Second)
 	foreign.Attributes().PutInt("gen_ai.usage.input_tokens", 50)
-	require.False(t, ContainsCodexSpans(genaiOnly.ResourceSpans().At(0)), "generic GenAI usage keys alone do not claim")
+	require.False(t, containsCodexSpans(genaiOnly.ResourceSpans().At(0)), "generic GenAI usage keys alone do not claim")
 }
 
 // TestResponseOnlyGroupStillEmitsChat pins Review Focus 1 end to end: a batch
