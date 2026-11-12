@@ -4,6 +4,7 @@
 package codingagentconnector
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -35,22 +36,6 @@ var sharedPackages = map[string][]string{
 	"metadatatest": {"mdatagen-generated test helpers"},
 }
 
-// crossHarnessImports records every place a harness package may import another
-// harness package, keyed by importer and imported package. The only exception
-// is the generic GenAI edge, which defers a resource group to the provider edge
-// that owns it by calling that provider's Contains*Spans claim predicate.
-// Relocating those predicates to internal/canonical would remove the exception;
-// choosing between that and the deferral is a maintainer's call, so the
-// exception is enumerated here rather than left implicit.
-var crossHarnessImports = map[string]map[string]string{
-	"genai": {
-		"claude":    "ContainsClaudeSpans defers Claude groups",
-		"opencode":  "ContainsOpenCodeSpans defers OpenCode groups",
-		"openhands": "ContainsOpenHandsSpans defers OpenHands groups",
-		"pi":        "ContainsPiSpans defers Pi groups",
-	},
-}
-
 // harnessBlocks maps a root Config field's mapstructure tag — the YAML key — to
 // the package that owns that block.
 var harnessBlocks = map[string]string{
@@ -65,8 +50,9 @@ var connectorWideFields = map[string]string{
 	"capture_identity": "every edge applies the same identity policy, so the routers pass it to each edge",
 }
 
-// TestNoCrossHarnessImports fails when a harness package imports another
-// harness package, and when an enumerated exception is stale.
+// TestNoCrossHarnessImports fails when a harness package uses anything from
+// another harness package except its Claimer, and when a harness package that
+// another imports does not declare `var Claimer canonical.Claimer`.
 func TestNoCrossHarnessImports(t *testing.T) {
 	packages := harnessPackages(t)
 
@@ -74,35 +60,25 @@ func TestNoCrossHarnessImports(t *testing.T) {
 		require.DirExistsf(t, filepath.Join("internal", shared), "sharedPackages lists %q, which is not an internal package", shared)
 	}
 
-	importedHarness := map[string]map[string]bool{}
 	for _, pkg := range packages {
-		dir := filepath.Join("internal", pkg)
-		harness := map[string]bool{}
-		for _, imported := range internalImports(t, dir) {
-			if sharedPackages[imported] != nil {
-				continue
-			}
+		refs, err := harnessReferences(filepath.Join("internal", pkg))
+		require.NoErrorf(t, err, "scan internal/%s", pkg)
+		for _, imported := range sortedKeys(refs) {
 			require.NotEqualf(t, pkg, imported, "internal/%s imports itself", pkg)
-			harness[imported] = true
-			if _, ok := crossHarnessImports[pkg][imported]; ok {
-				continue
+			for _, ident := range sortedKeys(refs[imported]) {
+				if ident == claimerName {
+					continue
+				}
+				t.Errorf("internal/%s uses %s.%s from harness package internal/%s.\n"+
+					"Harness packages may use only another harness's %s (docs/design.md#configuration-structure).\n"+
+					"Move the shared helper or constant into internal/canonical or internal/content.",
+					pkg, filepath.Base(imported), ident, imported, claimerName)
 			}
-			t.Errorf("internal/%s imports harness package internal/%s.\n"+
-				"Harness packages must not import each other (docs/design.md#configuration-structure).\n"+
-				"Move the shared helper or constant into internal/canonical or internal/content, or — "+
-				"if the dependency is deliberate and documented — add %q to %q under %q in this test.",
-				pkg, imported, imported, "crossHarnessImports", pkg)
-		}
-		importedHarness[pkg] = harness
-	}
-
-	for importer, exceptions := range crossHarnessImports {
-		require.Containsf(t, packages, importer, "crossHarnessImports lists %q, which is not a harness package", importer)
-		for imported, reason := range exceptions {
-			require.NotEmptyf(t, reason, "crossHarnessImports[%q][%q] needs a reason", importer, imported)
-			require.Truef(t, importedHarness[importer][imported],
-				"crossHarnessImports[%q][%q] is stale: internal/%s no longer imports internal/%s",
-				importer, imported, importer, imported)
+			declared, err := declaresClaimer(filepath.Join("internal", imported))
+			require.NoErrorf(t, err, "scan internal/%s", imported)
+			require.Truef(t, declared,
+				"internal/%s imports internal/%s, which must declare `var %s canonical.%s`",
+				pkg, imported, claimerName, claimerName)
 		}
 	}
 }
@@ -190,24 +166,109 @@ func harnessPackages(t *testing.T) []string {
 	return packages
 }
 
-// internalImports returns the component-internal packages dir imports, one
-// entry per import (paths relative to internal/, e.g. "codex").
-func internalImports(t *testing.T, dir string) []string {
-	t.Helper()
+// claimerName is the one identifier a harness package may use from another
+// harness package (canonical.Claimer, docs/design.md#configuration-structure).
+const claimerName = "Claimer"
+
+// harnessReferences returns, for each non-shared internal package that dir's
+// Go files import, the identifiers those files select from it, keyed by the
+// package path relative to internal/ ("claude" -> {"Claimer"}). A dot or blank
+// import is recorded as the identifier "." or "_" so the caller can reject it:
+// a dot import hides every use from a selector scan. Selectors on a local
+// declaration that shadows the package name are not references.
+func harnessReferences(dir string) (map[string]map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	refs := map[string]map[string]bool{}
 	fset := token.NewFileSet()
-	var imports []string
-	for _, name := range goFiles(t, dir) {
-		path := filepath.Join(dir, name)
-		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-		require.NoErrorf(t, err, "parse %s", path)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, entry.Name()), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		local := map[string]string{}
 		for _, spec := range file.Imports {
-			if imported, ok := strings.CutPrefix(strings.Trim(spec.Path.Value, `"`), internalPrefix); ok {
-				imports = append(imports, imported)
+			imported, ok := strings.CutPrefix(strings.Trim(spec.Path.Value, `"`), internalPrefix)
+			if !ok || sharedPackages[imported] != nil {
+				continue
+			}
+			if refs[imported] == nil {
+				refs[imported] = map[string]bool{}
+			}
+			name := filepath.Base(imported)
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			if name == "." || name == "_" {
+				refs[imported][name] = true
+				continue
+			}
+			local[name] = imported
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := sel.X.(*ast.Ident)
+			if !ok || ident.Obj != nil {
+				return true
+			}
+			if imported, ok := local[ident.Name]; ok {
+				refs[imported][sel.Sel.Name] = true
+			}
+			return true
+		})
+	}
+	return refs, nil
+}
+
+// declaresClaimer reports whether dir's non-test Go files declare
+// `var Claimer canonical.Claimer`.
+func declaresClaimer(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			return false, err
+		}
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				value := spec.(*ast.ValueSpec)
+				typ, ok := value.Type.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+				pkg, ok := typ.X.(*ast.Ident)
+				if !ok || pkg.Name != "canonical" || typ.Sel.Name != claimerName {
+					continue
+				}
+				for _, n := range value.Names {
+					if n.Name == claimerName {
+						return true, nil
+					}
+				}
 			}
 		}
 	}
-	sort.Strings(imports)
-	return imports
+	return false, nil
 }
 
 // goFiles returns the names of dir's Go files.

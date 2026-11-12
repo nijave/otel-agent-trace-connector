@@ -230,15 +230,16 @@ component root package.
   bool`), never the root `Config`. That is what keeps an edge from importing
   another harness package, as `internal/cursor` no longer imports
   `internal/codex`.
-- **Harness packages never import another harness package.** Shared helpers and
-  constants go in `internal/canonical` or `internal/content`. The one
-  deliberate exception today is `internal/genai`: the generic GenAI edge defers
-  a resource group to the provider edge that owns it, so it calls each
-  provider's `Contains*Spans` claim predicate in `internal/claude`,
-  `internal/opencode`, `internal/pi`, and `internal/openhands`. Relocating those
-  predicates to a shared package would remove the exception, but choosing
-  between that and the deferral is a maintainer's call, so the guard test
-  records the exception explicitly: any other cross-harness import fails.
+- **Harness packages use nothing from another harness package except its
+  `Claimer`.** Shared helpers and constants go in `internal/canonical` or
+  `internal/content`. Each harness edge that other edges defer
+  to (claude, opencode, pi, openhands, codextraces) exports `var Claimer
+  canonical.Claimer`, which reports whether that edge owns a resource group.
+  An edge that defers to other edges calls their `Claimer` values: the generic
+  GenAI edge leaves Claude, OpenCode, Pi, and OpenHands groups to their own
+  edges this way. The guard test rejects any other identifier, a dot or blank
+  import of a harness package, and a harness package that is imported without
+  declaring a `Claimer`.
 
 #### Adding a config key
 
