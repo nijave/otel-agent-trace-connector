@@ -107,6 +107,13 @@ func ContainsPiSpans(resourceSpans ptrace.ResourceSpans) bool {
 	return false
 }
 
+// Claimer reports whether a resource group belongs to this edge.
+var Claimer canonical.Claimer = claimer{}
+
+type claimer struct{}
+
+func (claimer) Claim(rs ptrace.ResourceSpans) bool { return ContainsPiSpans(rs) }
+
 // normalizePiSpan rewrites one span into the canonical vocabulary and reports
 // whether the span is native Pi and whether it becomes a canonical child of
 // an agent root. Canonical attributes are collected in a fresh map that
