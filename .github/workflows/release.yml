@@ -32,6 +32,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GoReleaser guesses the tag by version-sorting every tag pointing at
+          # HEAD, and that sort ranks a pre-release above its final release, so
+          # tagging both on one commit re-releases the beta (v0.9.0 did). Bind
+          # it to the pushed tag instead of letting the sort decide.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
   image:
     name: Container image
